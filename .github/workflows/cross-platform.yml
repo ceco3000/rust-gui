@@ -38,8 +38,16 @@ jobs:
         run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
         timeout-minutes: 15
 
-      - name: AV2 Skia CPU render → PNG
+      - name: AV2 Skia CPU render → PNG (non-Windows)
+        if: runner.os != 'Windows'
         run: cargo run --release -p verify-av2-skia
+        timeout-minutes: 15
+
+      - name: AV2 Skia CPU render → PNG (Windows)
+        if: runner.os == 'Windows'
+        run: cargo run --release -p verify-av2-skia
+        env:
+          RUSTFLAGS: "-C link-arg=/defaultlib:advapi32"
         timeout-minutes: 15
 
       - name: Verify PNG generated
