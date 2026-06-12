@@ -5,6 +5,7 @@
 use skia_safe::{surfaces, Color4f, Font, FontMgr, FontStyle, Paint, PaintStyle, Rect, EncodedImageFormat};
 use std::fs;
 
+#[allow(deprecated)]
 fn main() {
     println!("AV2: Skia CPU rendering (no GPU)\n");
 
