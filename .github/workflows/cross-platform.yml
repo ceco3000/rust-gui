@@ -51,9 +51,10 @@ jobs:
         timeout-minutes: 15
 
       - name: Verify PNG generated
+        shell: bash
         run: |
           ls -lh verify/av2-skia/output.png
-          test -f verify/av2-skia/output.png && echo "✅ Skia CPU render OK"
+          [ -f verify/av2-skia/output.png ] && echo "✅ Skia CPU render OK" || { echo "❌ PNG missing"; exit 1; }
 
       - name: Upload PNG artifact
         uses: actions/upload-artifact@v4
