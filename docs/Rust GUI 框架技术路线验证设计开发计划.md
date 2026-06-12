@@ -13,7 +13,7 @@
 - [x] V1：[Vello + cosmic-text 协同渲染](./Rust%20GUI%20框架技术路线验证设计.md#v1-vello--cosmic-text-协同渲染) ✅（含 SwashCache 字形纹理渲染）
 - [x] V2：[cosmic-text CJK 文本渲染质量](./Rust%20GUI%20框架技术路线验证设计.md#v2-cosmic-text-cjk-文本渲染质量) ✅（10 类全通过：简繁日韩、Emoji、Bidi、生僻字；[报告](../verify/v2-cjk-text/report.md)）
 - [x] V3：[AccessKit 能力边界分析](./Rust%20GUI%20框架技术路线验证设计.md#v3-accesskit-能力边界分析) ✅（[报告](../verify/v3-accesskit-gap/report.md)）
-- [x] V4：[渲染管线跨平台三端可运行](./Rust%20GUI%20框架技术路线验证设计.md#v4-渲染管线跨平台三端可运行) 🟦（macOS 编译已验证；[CI 配置](../verify/v4-cross-platform/.github/workflows/cross-platform.yml) 就绪；Linux/Windows 待 runner 验证）
+- [x] V4：[渲染管线跨平台三端可运行](./Rust%20GUI%20框架技术路线验证设计.md#v4-渲染管线跨平台三端可运行) ✅（macOS/Linux/Windows 三平台编译通过；[CI](../../.github/workflows/cross-platform.yml)）
 - [x] V5：[WidgetView diff 性能基准](./Rust%20GUI%20框架技术路线验证设计.md#v5-widgetview-diff-性能基准) ✅（780 节点 24µs，9330 节点 246µs，大幅优于 1ms 目标；[报告](../verify/v5-diff-bench/report.md)）
 - [x] V6：[Taffy 布局 → 渲染坐标转换](./Rust%20GUI%20框架技术路线验证设计.md#v6-taffy-布局--渲染坐标转换) ✅（4 用例全通过；FlexRow/FlexColumn/Grid/嵌套；[报告](../verify/v6-taffy-layout/report.md)）
 - [x] V7：[状态快照性能基准](./Rust%20GUI%20框架技术路线验证设计.md#v7-状态快照性能基准) ✅（JSON 和 postcard 双格式通过，postcard 比 JSON 快 1.1-2.4x；[报告](../verify/v7-snapshot-bench/report.md)）
