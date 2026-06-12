@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "verify/v1-vello-cosmic",
+    "verify/baseline-restart",
+    "verify/v5-diff-bench",
+    "verify/v7-snapshot-bench",
+    "verify/av2-skia",
+    "verify/v2-cjk-text",
+    "verify/v6-taffy-layout",
+    "verify/v10-ime",
+]
+
+[workspace.package]
+license = "MIT OR Apache-2.0"

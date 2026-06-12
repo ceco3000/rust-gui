@@ -1,0 +1,15 @@
+# Rust 编译产物
+target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# 环境变量
+.env
+.env.local
