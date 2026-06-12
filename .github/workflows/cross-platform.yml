@@ -1,12 +1,13 @@
-# V4: Cross-platform build verification
+# V4: Cross-platform verification (V1 GPU build + AV2 Skia CPU render)
 # Ref: docs/Rust GUI 框架技术路线验证设计.md §V4
 
-name: V4 Cross-Platform Build
+name: V4 Cross-Platform
 
 on:
   push:
     paths:
       - 'verify/v1-vello-cosmic/**'
+      - 'verify/av2-skia/**'
       - '.github/workflows/cross-platform.yml'
   workflow_dispatch:
 
@@ -15,7 +16,7 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build:
+  build-and-render:
     strategy:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
@@ -27,12 +28,27 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install Linux dependencies
+      - name: Install Linux deps
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev
 
-      - name: Build V1 POC (release)
+      - name: V1 GPU build (release)
         run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
         timeout-minutes: 15
+
+      - name: AV2 Skia CPU render → PNG
+        run: cargo run --release -p verify-av2-skia
+        timeout-minutes: 15
+
+      - name: Verify PNG generated
+        run: |
+          ls -lh verify/av2-skia/output.png
+          test -f verify/av2-skia/output.png && echo "✅ Skia CPU render OK"
+
+      - name: Upload PNG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skia-output-${{ matrix.os }}
+          path: verify/av2-skia/output.png

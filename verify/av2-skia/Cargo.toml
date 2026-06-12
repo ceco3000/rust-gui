@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-skia-safe = { version = "0.75", features = ["metal", "textlayout"] }
+skia-safe = { version = "0.75", features = ["textlayout"] }
