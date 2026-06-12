@@ -10,7 +10,7 @@
 
 ## CI 配置
 
-CI 矩阵参见 [.github/workflows/cross-platform.yml](./.github/workflows/cross-platform.yml)。
+CI 矩阵参见仓库根目录 [.github/workflows/cross-platform.yml](../../.github/workflows/cross-platform.yml)。
 
 ## 手动验证
 
