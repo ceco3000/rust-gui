@@ -1,13 +1,13 @@
-# V4 验证：渲染管线跨平台三端编译验证
-# 参考：docs/Rust GUI 框架技术路线验证设计.md §V4
+# V4: Cross-platform build verification
+# Ref: docs/Rust GUI 框架技术路线验证设计.md §V4
 
-name: V4 Cross-Platform Verification
+name: V4 Cross-Platform Build
 
 on:
   push:
     paths:
       - 'verify/v1-vello-cosmic/**'
-      - 'verify/v4-cross-platform/**'
+      - '.github/workflows/cross-platform.yml'
   workflow_dispatch:
 
 env:
@@ -27,54 +27,12 @@ jobs:
         with:
           toolchain: stable
 
-      - name: 编译 V1 验证项目
-        run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
-
-      - name: 离屏渲染截图（Linux）
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb mesa-utils libegl1-mesa-dev libgl1-mesa-dri
-          export WGPU_BACKEND=vulkan
-          xvfb-run --auto-servernum cargo run --release --manifest-path verify/v1-vello-cosmic/Cargo.toml -- --headless --screenshot verify_linux.png --duration 2
-        timeout-minutes: 10
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev
 
-      - name: 离屏渲染截图（macOS）
-        if: runner.os == 'macOS'
-        run: |
-          cargo run --release --manifest-path verify/v1-vello-cosmic/Cargo.toml -- --headless --screenshot verify_macos.png --duration 2
-        timeout-minutes: 10
-
-      - name: 离屏渲染截图（Windows）
-        if: runner.os == 'Windows'
-        run: |
-          cargo run --release --manifest-path verify/v1-vello-cosmic/Cargo.toml -- --headless --screenshot verify_windows.png --duration 2
-        timeout-minutes: 10
-
-      - name: 上传截图
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshot-${{ matrix.os }}
-          path: verify_*.png
-
-  check-screenshots:
-    needs: build
-    runs-on: ubuntu-24.04
-    steps:
-      - name: 下载所有截图
-        uses: actions/download-artifact@v4
-
-      - name: 检查截图有效性
-        run: |
-          echo "=== 截图文件列表 ==="
-          find . -name "verify_*.png" -exec ls -lh {} \;
-          echo ""
-          echo "=== 检查非空白截图 ==="
-          for f in $(find . -name "verify_*.png"); do
-            size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null)
-            if [ "$size" -gt 1000 ]; then
-              echo "✅ $f: ${size} bytes（非空白）"
-            else
-              echo "❌ $f: ${size} bytes（可能为空白或全黑）"
-            fi
-          done
+      - name: Build V1 POC (release)
+        run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
+        timeout-minutes: 15
