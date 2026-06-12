@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
 
       - name: V1 GPU build (release)
         run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
