@@ -1,0 +1,31 @@
+[package]
+name = "rgui-render"
+description = "rgui 渲染管线——SceneGraph、Vello/Skia 后端、字形 Atlas"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "render", "gpu", "vello", "wgpu"]
+categories = ["gui", "rendering"]
+
+[dependencies]
+rgui-core.workspace = true
+rustc-hash.workspace = true
+log.workspace = true
+thiserror.workspace = true
+wgpu = { workspace = true, optional = true }
+vello = { workspace = true, optional = true }
+cosmic-text = { workspace = true, optional = true }
+skia-safe = { version = "0.82", optional = true }
+
+[features]
+default = ["vello-backend"]
+vello-backend = ["dep:wgpu", "dep:vello", "dep:cosmic-text"]
+skia-backend = ["dep:skia-safe"]
+offscreen = ["dep:image"]
+
+[dependencies.image]
+workspace = true
+optional = true
