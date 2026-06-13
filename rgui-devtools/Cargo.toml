@@ -1,0 +1,22 @@
+[package]
+name = "rgui-devtools"
+description = "rgui 开发工具——文件监控、热重载、快速重启、双进程通信"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "devtools", "hot-reload"]
+categories = ["gui", "development-tools"]
+
+[dependencies]
+rgui-core.workspace = true
+rgui-state.workspace = true
+rgui-style.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+postcard.workspace = true
+notify.workspace = true
+log.workspace = true
+thiserror.workspace = true
