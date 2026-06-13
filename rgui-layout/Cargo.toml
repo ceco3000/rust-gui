@@ -1,0 +1,16 @@
+[package]
+name = "rgui-layout"
+description = "rgui 布局引擎——Taffy 封装、CSS 属性映射、布局缓存"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "layout", "flexbox", "grid", "taffy"]
+categories = ["gui"]
+
+[dependencies]
+rgui-core.workspace = true
+taffy.workspace = true
+rustc-hash.workspace = true
