@@ -1,0 +1,66 @@
+{
+  "permissions": {
+    "allow": [
+      {
+        "tool": "Bash",
+        "pattern": "cargo (build|test|fmt|clippy|check|doc|llvm-cov|tree|audit|deny)( .*)?"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "git (status|diff|log|add|commit|push|pull|branch|checkout|switch|restore)( .*)?"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "rustup (show|update|component|target)( .*)?"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "ls .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "find .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "grep .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "head .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "tail .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "cat .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "wc .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "echo .*"
+      },
+      {
+        "tool": "Bash",
+        "pattern": "mkdir .*"
+      },
+      {
+        "tool": "Read",
+        "pattern": ".*"
+      },
+      {
+        "tool": "Write",
+        "pattern": ".*"
+      },
+      {
+        "tool": "Edit",
+        "pattern": ".*"
+      }
+    ]
+  }
+}
