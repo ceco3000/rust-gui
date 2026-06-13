@@ -1,0 +1,17 @@
+[package]
+name = "rgui-components"
+description = "rgui 内置组件库——Button、TextField、DataGrid、Form 等"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "components", "widgets"]
+categories = ["gui"]
+
+[dependencies]
+rgui-core.workspace = true
+rgui-macros.workspace = true
+ordered-float.workspace = true
+serde.workspace = true

@@ -1,0 +1,54 @@
+use rgui_core::a11y::AccessibilityNode;
+use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
+use rgui_core::geometry::{BoxConstraints, Rect, Size};
+use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
+use rgui_core::view::{PropValue, WidgetView};
+use rgui_macros::{AppMessage, PersistState};
+#[derive(Debug, Clone, Default, serde::Serialize, PersistState)]
+pub struct LabelState {
+    pub text: String,
+}
+#[derive(Debug, Clone, PartialEq, AppMessage)]
+pub enum LabelMessage {
+    NoOp,
+}
+pub struct Label;
+impl WidgetSpec for Label {
+    type State = LabelState;
+    type Message = LabelMessage;
+    fn name(&self) -> &'static str {
+        "rgui_components::Label"
+    }
+    fn view(&self, s: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
+        WidgetView::new("Label").prop("text", PropValue::str(s.text.as_str()))
+    }
+    fn update(&self, _: Self::Message, _: &mut Self::State, _: &mut UpdateContext) {}
+    fn measure(&self, s: &Self::State, _: BoxConstraints, _: &MeasureContext) -> Size {
+        Size::new(8_f64 * s.text.len() as f64 + 8.0, 20.0)
+    }
+    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
+        AccessibilityNode::none().label(s.text.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn name() {
+        assert_eq!(Label.name(), "rgui_components::Label");
+    }
+    #[test]
+    fn view() {
+        let v = Label.view(
+            &LabelState { text: "Hi".into() },
+            &ViewContext::new(Size::new(800.0, 600.0)),
+        );
+        assert!(v.props.contains_key("text"));
+    }
+    #[test]
+    fn schema() {
+        assert_eq!(LabelState::schema_name(), "LabelState");
+    }
+}
