@@ -1,39 +1,89 @@
 [workspace]
 resolver = "2"
 
-# === 验证期 crate（V1-V10） ===
+# === 所有 crate ===
 members = [
-    "verify/v1-vello-cosmic",
+    # 验证期 crate（V1-V10）——与框架 crate 无依赖冲突者
     "verify/baseline-restart",
     "verify/v5-diff-bench",
     "verify/v7-snapshot-bench",
-    "verify/av2-skia",
+    # "verify/av2-skia",        # 临时移除：skia-safe 0.75 与 rgui-render 的 0.82 冲突
     "verify/v2-cjk-text",
     "verify/v6-taffy-layout",
     "verify/v10-ime",
+
+    # 框架 crate（阶段 0 编码，定义见 D0 §2）
+    "rgui-core",
+    "rgui-state",
+    "rgui-render",
+    "rgui-layout",
+    "rgui-style",
+    "rgui-platform",
+    "rgui-a11y",
+    "rgui-devtools",
+    "rgui-macros",
+    "rgui-components",
+    "rgui",
+    "examples/*",
 ]
 
-# === 框架 crate（编码阶段启用，定义见 D0 §2） ===
-# 取消注释前需确保对应目录已创建且含 Cargo.toml：
-# members = [
-#     "rgui-core",
-#     "rgui-state",
-#     "rgui-render",
-#     "rgui-layout",
-#     "rgui-style",
-#     "rgui-platform",
-#     "rgui-a11y",
-#     "rgui-devtools",
-#     "rgui-macros",
-#     "rgui-components",
-#     "rgui",
-#     "examples/*",
-# ]
-
 [workspace.package]
-license = "MIT OR Apache-2.0"
-rust-version = "1.85"
+version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
+authors = ["The rgui Project Developers"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rgui-rs/rgui"
+homepage = "https://rgui.rs"
+documentation = "https://docs.rs/rgui"
+readme = "README.md"
+keywords = ["gui", "ui", "desktop", "widget", "cross-platform"]
+categories = ["gui", "rendering", "development-tools"]
+
+[workspace.dependencies]
+# 内部 crate（path + version 双约束）
+rgui-core = { path = "rgui-core", version = "0.1.0" }
+rgui-state = { path = "rgui-state", version = "0.1.0" }
+rgui-render = { path = "rgui-render", version = "0.1.0" }
+rgui-layout = { path = "rgui-layout", version = "0.1.0" }
+rgui-style = { path = "rgui-style", version = "0.1.0" }
+rgui-platform = { path = "rgui-platform", version = "0.1.0" }
+rgui-a11y = { path = "rgui-a11y", version = "0.1.0" }
+rgui-devtools = { path = "rgui-devtools", version = "0.1.0" }
+rgui-macros = { path = "rgui-macros", version = "0.1.0" }
+rgui-components = { path = "rgui-components", version = "0.1.0" }
+
+# 外部依赖——渲染
+wgpu = "28"
+vello = "0.8"
+cosmic-text = "0.12"
+
+# 外部依赖——布局
+taffy = "0.7"
+
+# 外部依赖——平台
+winit = "0.30"
+accesskit = "0.17"
+accesskit_winit = "0.23"
+
+# 外部依赖——序列化与工具
+serde = { version = "1", features = ["derive"] }
+postcard = "1"
+erased-serde = "0.4"
+log = "0.4"
+thiserror = "2"
+notify = "7"
+rustc-hash = "2"
+ordered-float = "4"
+serde_json = "1"
+
+# 外部依赖——开发
+criterion = "0.5"
+image = "0.25"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
 
 [workspace.lints.clippy]
 # 对齐 ECC Rust 编码风格：拒绝所有 warning 级别的 lint
@@ -67,4 +117,3 @@ unimplemented = "deny"
 # 性能
 large_stack_arrays = "warn"
 box_default = "warn"
-
