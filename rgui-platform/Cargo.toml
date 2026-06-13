@@ -1,0 +1,21 @@
+[package]
+name = "rgui-platform"
+description = "rgui 平台抽象——窗口管理、输入事件、IME、剪贴板"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "window", "input", "winit"]
+categories = ["gui"]
+
+[dependencies]
+rgui-core.workspace = true
+rgui-style.workspace = true
+winit.workspace = true
+rustc-hash.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+arboard = "3"
