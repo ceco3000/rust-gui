@@ -1,5 +1,7 @@
 [workspace]
 resolver = "2"
+
+# === 验证期 crate（V1-V10） ===
 members = [
     "verify/v1-vello-cosmic",
     "verify/baseline-restart",
@@ -11,5 +13,58 @@ members = [
     "verify/v10-ime",
 ]
 
+# === 框架 crate（编码阶段启用，定义见 D0 §2） ===
+# 取消注释前需确保对应目录已创建且含 Cargo.toml：
+# members = [
+#     "rgui-core",
+#     "rgui-state",
+#     "rgui-render",
+#     "rgui-layout",
+#     "rgui-style",
+#     "rgui-platform",
+#     "rgui-a11y",
+#     "rgui-devtools",
+#     "rgui-macros",
+#     "rgui-components",
+#     "rgui",
+#     "examples/*",
+# ]
+
 [workspace.package]
 license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+edition = "2021"
+
+[workspace.lints.clippy]
+# 对齐 ECC Rust 编码风格：拒绝所有 warning 级别的 lint
+all = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+# unsafe 代码审计（对齐 ECC Rust 安全规范）
+unsafe_code = "deny"
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "warn"
+
+# 函数式风格（对齐 ECC Rust 函数式编程优先）
+needless_for_each = "deny"
+needless_collect = "warn"
+manual_unwrap_or = "deny"
+manual_unwrap_or_default = "deny"
+map_unwrap_or = "deny"
+match_same_arms = "warn"
+redundant_clone = "deny"
+inefficient_to_string = "deny"
+
+# 错误处理
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# 性能
+large_stack_arrays = "warn"
+box_default = "warn"
+
