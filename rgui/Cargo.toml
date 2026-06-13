@@ -1,0 +1,26 @@
+[package]
+name = "rgui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+[dependencies]
+rgui-core.workspace = true
+rgui-state.workspace = true
+rgui-render.workspace = true
+rgui-layout.workspace = true
+rgui-style.workspace = true
+rgui-platform.workspace = true
+rgui-a11y.workspace = true
+rgui-macros.workspace = true
+rgui-components.workspace = true
+winit.workspace = true
+wgpu.workspace = true
+vello.workspace = true
+pollster = "0.4"
+[features]
+default = ["vello-backend"]
+vello-backend = ["rgui-render/vello-backend"]
+devtools = []
