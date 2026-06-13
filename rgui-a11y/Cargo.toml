@@ -1,0 +1,18 @@
+[package]
+name = "rgui-a11y"
+description = "rgui 无障碍系统——AccessKit 集成、无障碍树、焦点管理"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords = ["gui", "accessibility", "a11y", "accesskit", "wcag"]
+categories = ["gui", "accessibility"]
+
+[dependencies]
+rgui-core.workspace = true
+accesskit.workspace = true
+accesskit_winit.workspace = true
+rustc-hash.workspace = true
+thiserror.workspace = true
