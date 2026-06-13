@@ -13,3 +13,6 @@ target/
 # 环境变量
 .env
 .env.local
+
+# ECC 自动开发输出
+tools/out/
