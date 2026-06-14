@@ -4,6 +4,7 @@
 
 pub mod backend;
 pub mod dirty;
+pub mod focus_indicator;
 pub mod glyph;
 pub mod primitives;
 pub mod scene;
@@ -15,6 +16,7 @@ pub mod skia;
 
 pub use backend::{RenderBackend, RenderError, RenderParams};
 pub use dirty::DirtyRegionTracker;
+pub use focus_indicator::FocusIndicator;
 pub use glyph::GlyphAtlas;
 pub use primitives::{
     BlendMode, FillRule, GlyphData, GradientStop, ImageRepeat, LineCap, LineJoin, Paint,
