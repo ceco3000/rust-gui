@@ -16,6 +16,7 @@ pub mod texture;
 
 #[cfg(feature = "skia-backend")]
 pub mod offscreen;
+pub mod screenshot;
 #[cfg(feature = "skia-backend")]
 pub mod skia;
 
@@ -34,5 +35,8 @@ pub use texture::{TextureData, TextureFormat, TextureId};
 
 #[cfg(feature = "skia-backend")]
 pub use offscreen::OffscreenTestRunner;
+pub use screenshot::{ScreenshotTolerance, delta_e, pixel_diff_ratio};
+#[cfg(feature = "offscreen")]
+pub use screenshot::{assert_screenshot_matches, assert_screenshot_matches_with_tolerance};
 #[cfg(feature = "skia-backend")]
 pub use skia::SkiaBackend;
