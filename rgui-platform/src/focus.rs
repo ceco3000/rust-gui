@@ -14,7 +14,11 @@ pub struct FocusManager {
 impl FocusManager {
     #[must_use]
     pub fn new() -> Self {
-        Self { current: None, history: Vec::new(), trap_stack: Vec::new() }
+        Self {
+            current: None,
+            history: Vec::new(),
+            trap_stack: Vec::new(),
+        }
     }
 
     #[must_use]

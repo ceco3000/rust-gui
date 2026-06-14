@@ -13,7 +13,9 @@ pub struct HitTester {
 impl HitTester {
     #[must_use]
     pub fn new() -> Self {
-        Self { bounds: FxHashMap::default() }
+        Self {
+            bounds: FxHashMap::default(),
+        }
     }
 
     pub fn register(&mut self, widget_id: WidgetId, bounds: Rect) {
