@@ -173,7 +173,7 @@ mod tests {
     fn remove_node() {
         let mut engine = LayoutEngine::new();
         let widget_id = WidgetId::new();
-        let node = engine.create_node(widget_id, Style::default(), &[]);
+        let _node = engine.create_node(widget_id, Style::default(), &[]);
         engine.remove(widget_id);
         assert!(engine.get_layout(widget_id).is_none());
     }

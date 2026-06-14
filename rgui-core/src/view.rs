@@ -499,8 +499,8 @@ mod tests {
 
     #[test]
     fn prop_value_float_equality() {
-        let a = PropValue::Float(OrderedFloat(3.14));
-        let b = PropValue::Float(OrderedFloat(3.14));
+        let a = PropValue::Float(OrderedFloat(2.5));
+        let b = PropValue::Float(OrderedFloat(2.5));
         assert_eq!(a, b);
     }
 

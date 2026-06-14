@@ -13,6 +13,5 @@ categories = ["gui", "accessibility"]
 [dependencies]
 rgui-core.workspace = true
 accesskit.workspace = true
-accesskit_winit.workspace = true
 rustc-hash.workspace = true
 thiserror.workspace = true

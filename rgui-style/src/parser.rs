@@ -121,7 +121,8 @@ fn parse_media_query(chars: &[char], pos: &mut usize) -> Result<MediaCondition, 
             && chars[*pos..*pos + 3]
                 .iter()
                 .collect::<String>()
-                .eq_ignore_ascii_case("and") {
+                .eq_ignore_ascii_case("and")
+        {
             *pos += 3;
             let next = parse_single_media_condition(chars, pos)?;
             conditions.push(next);
@@ -131,7 +132,10 @@ fn parse_media_query(chars: &[char], pos: &mut usize) -> Result<MediaCondition, 
     }
 
     if conditions.len() == 1 {
-        Ok(conditions.into_iter().next().expect("已确认 conditions.len() == 1"))
+        Ok(conditions
+            .into_iter()
+            .next()
+            .expect("已确认 conditions.len() == 1"))
     } else {
         Ok(MediaCondition::And(conditions))
     }
@@ -186,9 +190,9 @@ fn parse_single_media_condition(
     match name.as_str() {
         "max-width" | "min-width" => {
             let raw = parse_media_numeric_value(chars, pos);
-            let px = raw.parse::<f64>().map_err(|_| {
-                ParseError::InvalidValue(format!("{name} 值: {raw}"))
-            })?;
+            let px = raw
+                .parse::<f64>()
+                .map_err(|_| ParseError::InvalidValue(format!("{name} 值: {raw}")))?;
 
             skip_whitespace(chars, pos);
 

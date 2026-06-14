@@ -64,7 +64,6 @@ taffy = "0.7"
 # 外部依赖——平台
 winit = "0.30"
 accesskit = "0.17"
-accesskit_winit = "0.23"
 
 # 外部依赖——序列化与工具
 serde = { version = "1", features = ["derive"] }

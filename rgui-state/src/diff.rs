@@ -373,6 +373,7 @@ mod tests {
 
     /// 测试用 AppMessage
     #[derive(Debug, Clone, PartialEq, Eq)]
+    #[allow(dead_code)]
     enum TestMsg {
         Nop,
     }

@@ -1,13 +1,27 @@
-# V4: Cross-platform verification (V1 GPU build + AV2 Skia CPU render)
-# Ref: docs/Rust GUI 框架技术路线验证设计.md §V4
+# P11: 三平台兼容性测试
+# 验证 rgui 在 Windows/macOS/Linux 三平台的编译与基本运行。
+# 对齐 D9 §7（CI 矩阵）和 D11 §2（Cargo 配置）。
+#
+# 触发条件：
+#   push: 每次提交到 main 时验证框架 crate 的三平台编译
+#   pull_request: 每次 PR 时验证
+#   workflow_dispatch: 手动触发
 
-name: V4 Cross-Platform
+name: Cross-Platform
 
 on:
   push:
+    branches: [main]
     paths:
-      - 'verify/v1-vello-cosmic/**'
-      - 'verify/av2-skia/**'
+      - 'rgui-*/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/cross-platform.yml'
+  pull_request:
+    paths:
+      - 'rgui-*/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
       - '.github/workflows/cross-platform.yml'
   workflow_dispatch:
 
@@ -16,17 +30,33 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build-and-render:
+  # ==========================================================================
+  # 三平台编译验证（MSRV + stable）
+  # ==========================================================================
+  build:
+    name: Build (${{ matrix.os }}, ${{ matrix.rust }})
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-24.04, macos-15, windows-2025]
-    runs-on: ${{ matrix.os }}
+        rust: ['1.85', 'stable']
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
+
+      - name: Rust Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: build-${{ matrix.os }}-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            build-${{ matrix.os }}-${{ matrix.rust }}-
 
       - name: Install Linux deps
         if: runner.os == 'Linux'
@@ -34,30 +64,164 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
 
-      - name: V1 GPU build (release)
-        run: cargo build --release --manifest-path verify/v1-vello-cosmic/Cargo.toml
-        timeout-minutes: 15
+      - name: Build workspace (default features)
+        run: cargo build --workspace
+        timeout-minutes: 30
 
-      - name: AV2 Skia CPU render → PNG (non-Windows)
-        if: runner.os != 'Windows'
-        run: cargo run --release -p verify-av2-skia
-        timeout-minutes: 15
+      - name: Build no-default-features
+        run: cargo build --workspace --no-default-features
+        timeout-minutes: 30
 
-      - name: AV2 Skia CPU render → PNG (Windows)
-        if: runner.os == 'Windows'
-        run: cargo run --release -p verify-av2-skia
-        env:
-          RUSTFLAGS: "-C link-arg=/defaultlib:advapi32"
-        timeout-minutes: 15
+  # ==========================================================================
+  # 三平台单元测试（MSRV + stable）
+  # ==========================================================================
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.rust }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        rust: ['1.85', 'stable']
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Verify PNG generated
-        shell: bash
-        run: |
-          ls -lh verify/av2-skia/output.png
-          [ -f verify/av2-skia/output.png ] && echo "✅ Skia CPU render OK" || { echo "❌ PNG missing"; exit 1; }
-
-      - name: Upload PNG artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          name: skia-output-${{ matrix.os }}
-          path: verify/av2-skia/output.png
+          toolchain: ${{ matrix.rust }}
+
+      - name: Rust Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: test-${{ matrix.os }}-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            test-${{ matrix.os }}-${{ matrix.rust }}-
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
+
+      - name: Run all tests
+        run: cargo test --workspace
+        timeout-minutes: 30
+
+  # ==========================================================================
+  # 代码风格检查（平台无关，仅 ubuntu）
+  # ==========================================================================
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: lint-ubuntu-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            lint-ubuntu-
+
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+  # ==========================================================================
+  # Feature flag 组合验证（三平台）
+  # ==========================================================================
+  features:
+    name: Features (${{ matrix.os }}, ${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+        features:
+          - 'skia-backend'
+          - 'devtools'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Rust Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: features-${{ matrix.os }}-${{ matrix.features }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            features-${{ matrix.os }}-${{ matrix.features }}-
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
+
+      - name: Build with ${{ matrix.features }}
+        run: cargo build -p rgui --features ${{ matrix.features }}
+        timeout-minutes: 30
+
+  # ==========================================================================
+  # 验证器兼容性构建（仅 stable）
+  # ==========================================================================
+  verify:
+    name: Verify Builds (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Rust Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: verify-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            verify-${{ matrix.os }}-
+
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev libfontconfig1-dev libfreetype6-dev
+
+      - name: Build verify crates
+        run: cargo build -p verify-baseline-restart -p verify-v5-diff-bench -p verify-v7-snapshot-bench -p verify-v2-cjk-text -p verify-v6-taffy-layout -p verify-v10-ime
+        timeout-minutes: 30
