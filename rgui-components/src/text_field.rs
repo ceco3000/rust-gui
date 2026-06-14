@@ -1,18 +1,33 @@
+//! TextField 组件——文本输入框。
+//!
+//! 支持文本编辑、占位符（placeholder）、禁用状态、焦点管理和光标定位。
+//! 发送 [`TextFieldMessage`] 消息。
+
 use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
+
+/// TextField 业务状态。
+///
+/// 包含当前文本、占位符、禁用标志、焦点状态和光标位置。
 #[derive(Debug, Clone, Default, serde::Serialize, PersistState)]
 pub struct TextFieldState {
+    /// 当前输入的文本内容。
     pub text: String,
+    /// 占位符文本（输入框为空时显示）。
     pub placeholder: String,
+    /// 是否禁用。
     pub disabled: bool,
+    /// 是否获得焦点。
     pub focused: bool,
+    /// 光标位置（字符索引）。
     pub cursor_position: usize,
 }
 impl TextFieldState {
+    /// 创建新的 TextFieldState，指定占位符文本。
     #[must_use]
     pub fn new(p: impl Into<String>) -> Self {
         Self {
@@ -21,6 +36,13 @@ impl TextFieldState {
         }
     }
 }
+
+/// TextField 消息类型。
+///
+/// - `TextChanged(String)`: 文本内容改变
+/// - `FocusIn` / `FocusOut`: 焦点变化
+/// - `CursorMoved(usize)`: 光标位置移动
+/// - `Submitted`: 提交（回车）
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum TextFieldMessage {
     TextChanged(String),
@@ -29,6 +51,10 @@ pub enum TextFieldMessage {
     CursorMoved(usize),
     Submitted,
 }
+
+/// TextField 组件（unit struct）。
+///
+/// 实现 [`WidgetSpec`] trait。用于单行文本输入场景。
 pub struct TextField;
 impl WidgetSpec for TextField {
     type State = TextFieldState;

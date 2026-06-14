@@ -1,16 +1,29 @@
+//! Switch 组件——开关切换。
+//!
+//! 支持开/关两种状态的切换、禁用状态。
+//! 发送 `SwitchMessage` 消息。
+
 use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
+
+/// Switch 业务状态。
+///
+/// 包含开关状态、禁用标志和标签文本。
 #[derive(Debug, Clone, Default, serde::Serialize, PersistState)]
 pub struct SwitchState {
+    /// 是否处于打开状态。
     pub on: bool,
+    /// 是否禁用。
     pub disabled: bool,
+    /// 开关标签文本。
     pub label: String,
 }
 impl SwitchState {
+    /// 创建新的 SwitchState，指定标签文本。
     #[must_use]
     pub fn new(l: impl Into<String>) -> Self {
         Self {
@@ -19,12 +32,21 @@ impl SwitchState {
         }
     }
 }
+
+/// Switch 消息类型。
+///
+/// - `Toggle(bool)`: 切换到指定状态
+/// - `FocusIn` / `FocusOut`: 焦点变化
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum SwitchMessage {
     Toggle(bool),
     FocusIn,
     FocusOut,
 }
+
+/// Switch 组件（unit struct）。
+///
+/// 实现 [`WidgetSpec`] trait。用于二元开关场景。
 pub struct Switch;
 impl WidgetSpec for Switch {
     type State = SwitchState;

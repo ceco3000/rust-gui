@@ -1,17 +1,31 @@
+//! RadioButton 组件——单选按钮。
+//!
+//! 支持分组选择（同一组内只能选中一项）、禁用状态。
+//! 发送 [`RadioButtonMessage`] 消息。
+
 use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
+
+/// RadioButton 业务状态。
+///
+/// 包含标签文本、是否选中、禁用标志和分组名称。
 #[derive(Debug, Clone, Default, serde::Serialize, PersistState)]
 pub struct RadioButtonState {
+    /// 单选按钮标签文本。
     pub label: String,
+    /// 是否处于选中状态。
     pub selected: bool,
+    /// 是否禁用。
     pub disabled: bool,
+    /// 所属分组名称。同一组内只能有一个 RadioButton 被选中。
     pub group: String,
 }
 impl RadioButtonState {
+    /// 创建新的 RadioButtonState，指定标签和分组。
     #[must_use]
     pub fn new(label: impl Into<String>, group: impl Into<String>) -> Self {
         Self {
@@ -21,12 +35,21 @@ impl RadioButtonState {
         }
     }
 }
+
+/// RadioButton 消息类型。
+///
+/// - `Select`: 选中此选项
+/// - `FocusIn` / `FocusOut`: 焦点变化
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum RadioButtonMessage {
     Select,
     FocusIn,
     FocusOut,
 }
+
+/// RadioButton 组件（unit struct）。
+///
+/// 实现 [`WidgetSpec`] trait。用于单选场景。
 pub struct RadioButton;
 impl WidgetSpec for RadioButton {
     type State = RadioButtonState;

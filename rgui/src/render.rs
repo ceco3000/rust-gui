@@ -5,6 +5,13 @@
 
 use std::sync::Arc;
 
+/// Vello 渲染上下文——管理 GPU 设备、表面和帧循环。
+///
+/// 使用 Vello 矢量渲染管线：
+/// `Scene → RGBA target → blitter → BGRA surface → present`
+///
+/// 封装 `vello::util::RenderContext` 和 `vello::Renderer`，
+/// 提供简化的 `render()` 方法完成完整帧提交。
 pub struct RenderContext {
     /// Vello 渲染上下文（管理 GPU 设备 + 表面）
     gpu: vello::util::RenderContext,
@@ -18,6 +25,15 @@ pub struct RenderContext {
 }
 
 impl RenderContext {
+    /// 创建新的 RenderContext。
+    ///
+    /// # 参数
+    ///
+    /// * `window` - winit 窗口的 Arc 引用。
+    ///
+    /// # 错误
+    ///
+    /// 如果表面创建或渲染器初始化失败，返回错误信息。
     pub fn new(window: Arc<winit::window::Window>) -> Result<Self, String> {
         let mut gpu = vello::util::RenderContext::new();
         let size = window.inner_size();
@@ -44,6 +60,7 @@ impl RenderContext {
         })
     }
 
+    /// 调整渲染表面尺寸。
     pub fn resize(&mut self, w: u32, h: u32) {
         self.gpu.resize_surface(&mut self.surface, w, h);
     }
@@ -113,6 +130,7 @@ impl RenderContext {
         Ok(())
     }
 
+    /// 返回已渲染帧数。
     pub fn frame_count(&self) -> u64 {
         self.frame_count
     }

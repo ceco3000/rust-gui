@@ -1,3 +1,8 @@
+//! Slider 组件——滑块拖拽选择。
+//!
+//! 支持在指定范围内通过拖拽选择数值、禁用状态。
+//! 发送 [`SliderMessage`] 消息。
+
 use rgui_core::a11y::{AccessibilityAction, AccessibilityNode};
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
@@ -5,13 +10,23 @@ use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 use std::sync::Arc;
+
+/// Slider 业务状态。
+///
+/// 包含当前值、最小/最大值、步长、禁用标志和拖拽状态。
 #[derive(Debug, Clone, serde::Serialize, PersistState)]
 pub struct SliderState {
+    /// 当前值。
     pub value: f64,
+    /// 最小值（滑块左侧）。
     pub min: f64,
+    /// 最大值（滑块右侧）。
     pub max: f64,
+    /// 步长（调整幅度）。
     pub step: f64,
+    /// 是否禁用。
     pub disabled: bool,
+    /// 是否正在拖拽中。
     pub dragging: bool,
 }
 impl Default for SliderState {
@@ -27,6 +42,7 @@ impl Default for SliderState {
     }
 }
 impl SliderState {
+    /// 创建新的 SliderState，指定初始值和范围。
     #[must_use]
     pub fn new(v: f64, min: f64, max: f64) -> Self {
         Self {
@@ -37,12 +53,22 @@ impl SliderState {
         }
     }
 }
+
+/// Slider 消息类型。
+///
+/// - `ValueChanged(f64)`: 滑块值改变
+/// - `DragStarted`: 开始拖拽
+/// - `DragEnded`: 拖拽结束
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum SliderMessage {
     ValueChanged(f64),
     DragStarted,
     DragEnded,
 }
+
+/// Slider 组件（unit struct）。
+///
+/// 实现 [`WidgetSpec`] trait。用于范围数值选择场景。
 pub struct Slider;
 impl WidgetSpec for Slider {
     type State = SliderState;

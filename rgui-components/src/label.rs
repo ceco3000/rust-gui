@@ -1,17 +1,35 @@
+//! Label 组件——纯文本标签。
+//!
+//! 用于显示只读文本，无交互行为。
+//! 发送 `LabelMessage::NoOp`（占位消息）。
+
 use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
+
+/// Label 业务状态。
+///
+/// 包含显示的文本内容。
 #[derive(Debug, Clone, Default, serde::Serialize, PersistState)]
 pub struct LabelState {
+    /// 标签显示的文本。
     pub text: String,
 }
+
+/// Label 消息类型（占位）。
+///
+/// Label 本身无交互行为，提供此枚举以满足 `WidgetSpec` 的关联类型约束。
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum LabelMessage {
     NoOp,
 }
+
+/// Label 组件（unit struct）。
+///
+/// 实现 [`WidgetSpec`] trait。用于显示只读文本内容。
 pub struct Label;
 impl WidgetSpec for Label {
     type State = LabelState;

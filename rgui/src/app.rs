@@ -30,11 +30,18 @@ pub type A11yCallback<'a> = Box<dyn FnOnce(&mut App) + 'a>;
 /// tick() 渲染回调。
 pub type RenderCallback<'a> = Box<dyn FnOnce(&mut App, &[Event]) -> Result<(), String> + 'a>;
 
+/// 应用配置。
+///
+/// 控制窗口标题、初始尺寸、是否可缩放和最小尺寸。
 #[derive(Clone, Debug)]
 pub struct AppConfig {
+    /// 窗口标题。
     pub title: String,
+    /// 初始窗口尺寸。
     pub window_size: Size,
+    /// 是否可缩放。
     pub resizable: bool,
+    /// 最小窗口尺寸。
     pub min_size: Option<Size>,
 }
 
@@ -50,15 +57,18 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
+    /// 创建默认配置。
     #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
+    /// 设置窗口标题（builder 风格）。
     #[must_use]
     pub fn title(mut self, t: impl Into<String>) -> Self {
         self.title = t.into();
         self
     }
+    /// 设置初始窗口尺寸（builder 风格）。
     #[must_use]
     pub fn window_size(mut self, w: f64, h: f64) -> Self {
         self.window_size = Size::new(w, h);
@@ -66,6 +76,10 @@ impl AppConfig {
     }
 }
 
+/// rgui 应用实例。
+///
+/// 管理窗口配置、注册表、事件队列、命中测试、焦点和交互区域。
+/// 通过 `run()` 方法启动 winit 事件循环。
 #[allow(dead_code)]
 pub struct App {
     config: AppConfig,
@@ -79,6 +93,7 @@ pub struct App {
 }
 
 impl App {
+    /// 创建应用实例。
     #[must_use]
     pub fn new(config: AppConfig) -> Self {
         Self {
@@ -92,26 +107,32 @@ impl App {
         }
     }
 
+    /// 返回应用配置。
     #[must_use]
     pub fn config(&self) -> &AppConfig {
         &self.config
     }
+    /// 返回 widget 注册表。
     #[must_use]
     pub fn registry(&self) -> &WidgetRegistry {
         &self.registry
     }
+    /// 返回可变 widget 注册表。
     pub fn registry_mut(&mut self) -> &mut WidgetRegistry {
         &mut self.registry
     }
+    /// 返回窗口 ID。
     #[must_use]
     pub fn window_id(&self) -> WindowId {
         self.window_id
     }
+    /// 注册内置组件（Button、Label、TextField）。
     pub fn register_defaults(&mut self) {
         self.registry.register("Button").ok();
         self.registry.register("Label").ok();
         self.registry.register("TextField").ok();
     }
+    /// 返回当前事件列表。
     #[must_use]
     pub fn events(&self) -> &[Event] {
         &self.events
@@ -164,10 +185,12 @@ impl App {
         Ok(())
     }
 
+    /// 返回未处理事件数量。
     pub fn event_count(&self) -> usize {
         self.events.len()
     }
 
+    /// 清空事件队列。
     pub fn clear_events(&mut self) {
         self.events.clear();
     }
