@@ -1,6 +1,10 @@
 //! .rgss 解析器——将 CSS-like 字符串解析为 StyleRule。
+//!
+//! 支持标准规则和 `@media` 块（D4 §8）。
+//! `@media` 块内的每条规则携带对应的媒体查询条件。
 
-use crate::selector::{Selector, StyleRule};
+use crate::selector::{MediaCondition, Selector, StyleRule};
+use crate::theme::ColorScheme;
 use rgui_core::view::PropValue;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -22,6 +26,9 @@ pub enum ParseError {
 /// - `WidgetType { prop: value; }`
 /// - `.class-name { prop: value; }`
 /// - `WidgetType:pseudo { prop: value; }`
+/// - `@media (max-width: 768px) { ... }`
+/// - `@media (min-width: 640px) and (max-width: 1024px) { ... }`
+/// - `@media (prefers-color-scheme: dark) { ... }`
 /// - 属性值支持：`14px`, `#FF0000`, `true/false`, `8`, `"text"`
 pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
     let mut rules = Vec::new();
@@ -35,43 +42,272 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
             break;
         }
 
-        // 解析选择器
+        // 检测 @media 关键字
+        if pos < chars.len() && chars[pos] == '@' {
+            let media_condition = parse_media_query(&chars, &mut pos)?;
+
+            // 跳过空白
+            skip_whitespace(&chars, &mut pos);
+
+            // 解析 { ... } 块内的所有规则
+            let block_rules = parse_rules_in_block(&chars, &mut pos)?;
+
+            // 为块内的每条规则附加媒体查询条件
+            for rule in block_rules {
+                rules.push(StyleRule::with_media(
+                    rule.selector,
+                    rule.declarations,
+                    media_condition.clone(),
+                ));
+            }
+            continue;
+        }
+
+        // 解析选择器（类型/类/ID）
         let selector = parse_selector(&chars, &mut pos)?;
 
         // 跳过空白
         skip_whitespace(&chars, &mut pos);
 
-        // 解析 `{ ... }`
+        // 解析 { ... }
         if pos >= chars.len() || chars[pos] != '{' {
             return Err(ParseError::Syntax("期望 `{`".into()));
         }
         pos += 1;
 
-        let mut declarations = BTreeMap::new();
-        loop {
-            skip_whitespace(&chars, &mut pos);
-            if pos >= chars.len() {
-                break;
-            }
-            if chars[pos] == '}' {
-                pos += 1;
-                break;
-            }
-
-            let (prop, value) = parse_declaration(&chars, &mut pos)?;
-            declarations.insert(Arc::from(prop), value);
-
-            // 跳过分号
-            skip_whitespace(&chars, &mut pos);
-            if pos < chars.len() && chars[pos] == ';' {
-                pos += 1;
-            }
-        }
+        let declarations = parse_declarations(&chars, &mut pos)?;
 
         rules.push(StyleRule::new(selector, declarations));
     }
 
     Ok(rules)
+}
+
+/// 解析 `@media` 查询条件。
+///
+/// 支持的格式：
+/// - `@media (max-width: 768px)`
+/// - `@media (min-width: 640px) and (max-width: 1024px)`
+/// - `@media (prefers-color-scheme: dark)`
+///
+/// 调用前 `chars[pos]` 指向 `@`，调用后指向块左花括号或之后（由调用方处理）。
+fn parse_media_query(chars: &[char], pos: &mut usize) -> Result<MediaCondition, ParseError> {
+    // 消耗 `@`
+    if *pos >= chars.len() || chars[*pos] != '@' {
+        return Err(ParseError::Syntax("期望 `@media`".into()));
+    }
+    *pos += 1;
+
+    // 解析 `media` 关键字
+    let keyword = parse_identifier(chars, pos);
+    if keyword != "media" {
+        return Err(ParseError::Syntax(format!(
+            "期望 `@media`，得到 `@{keyword}`"
+        )));
+    }
+
+    skip_whitespace(chars, pos);
+
+    // 解析至少一个条件
+    let first = parse_single_media_condition(chars, pos)?;
+
+    // 检查后续是否有 `and` 连接
+    let mut conditions = vec![first];
+
+    loop {
+        skip_whitespace(chars, pos);
+        // 检查 `and`
+        if *pos + 2 < chars.len()
+            && chars[*pos..*pos + 3]
+                .iter()
+                .collect::<String>()
+                .eq_ignore_ascii_case("and") {
+            *pos += 3;
+            let next = parse_single_media_condition(chars, pos)?;
+            conditions.push(next);
+        } else {
+            break;
+        }
+    }
+
+    if conditions.len() == 1 {
+        Ok(conditions.into_iter().next().expect("已确认 conditions.len() == 1"))
+    } else {
+        Ok(MediaCondition::And(conditions))
+    }
+}
+
+/// 解析媒体条件中的数值（带可选小数点和 `px` 后缀）。
+fn parse_media_numeric_value(chars: &[char], pos: &mut usize) -> String {
+    let mut s = String::new();
+    while *pos < chars.len()
+        && (chars[*pos].is_ascii_digit() || chars[*pos] == '.' || chars[*pos] == '-')
+    {
+        s.push(chars[*pos]);
+        *pos += 1;
+    }
+    // 跳过可选的 `px` 单位
+    if *pos + 1 < chars.len() && chars[*pos] == 'p' && chars[*pos + 1] == 'x' {
+        *pos += 2;
+    }
+    s
+}
+
+/// 解析单个媒体条件，格式 `(type: value)`。
+fn parse_single_media_condition(
+    chars: &[char],
+    pos: &mut usize,
+) -> Result<MediaCondition, ParseError> {
+    skip_whitespace(chars, pos);
+
+    // 期望 (
+    if *pos >= chars.len() || chars[*pos] != '(' {
+        return Err(ParseError::Syntax("期望 `(` 开始媒体条件".into()));
+    }
+    *pos += 1;
+
+    // 解析条件名
+    skip_whitespace(chars, pos);
+    let name = parse_identifier(chars, pos);
+
+    skip_whitespace(chars, pos);
+
+    // 期望 :
+    if *pos >= chars.len() || chars[*pos] != ':' {
+        return Err(ParseError::Syntax(format!(
+            "期望 `:` 在媒体条件 `{name}` 中"
+        )));
+    }
+    *pos += 1;
+
+    skip_whitespace(chars, pos);
+
+    // 根据条件名判断值类型
+    match name.as_str() {
+        "max-width" | "min-width" => {
+            let raw = parse_media_numeric_value(chars, pos);
+            let px = raw.parse::<f64>().map_err(|_| {
+                ParseError::InvalidValue(format!("{name} 值: {raw}"))
+            })?;
+
+            skip_whitespace(chars, pos);
+
+            // 期望 )
+            if *pos >= chars.len() || chars[*pos] != ')' {
+                return Err(ParseError::Syntax(format!(
+                    "期望 `)` 在媒体条件 {name}: {raw} 后"
+                )));
+            }
+            *pos += 1;
+
+            match name.as_str() {
+                "max-width" => Ok(MediaCondition::MaxWidth(px)),
+                _ => Ok(MediaCondition::MinWidth(px)),
+            }
+        },
+        "prefers-color-scheme" => {
+            let value = parse_identifier(chars, pos);
+
+            skip_whitespace(chars, pos);
+
+            // 期望 )
+            if *pos >= chars.len() || chars[*pos] != ')' {
+                return Err(ParseError::Syntax(format!(
+                    "期望 `)` 在媒体条件 {name}: {value} 后"
+                )));
+            }
+            *pos += 1;
+
+            match value.as_str() {
+                "dark" => Ok(MediaCondition::PrefersColorScheme(ColorScheme::Dark)),
+                "light" => Ok(MediaCondition::PrefersColorScheme(ColorScheme::Light)),
+                _ => Err(ParseError::InvalidValue(format!(
+                    "prefers-color-scheme 值: {value}"
+                ))),
+            }
+        },
+        _ => {
+            let value = parse_identifier(chars, pos);
+            skip_whitespace(chars, pos);
+
+            // 期望 )
+            if *pos >= chars.len() || chars[*pos] != ')' {
+                return Err(ParseError::Syntax(format!(
+                    "期望 `)` 在媒体条件 {name}: {value} 后"
+                )));
+            }
+            *pos += 1;
+
+            Err(ParseError::Syntax(format!("未知媒体条件: {name}")))
+        },
+    }
+}
+
+/// 解析 `{ ... }` 块内的样式规则列表。
+///
+/// 调用前假设 `chars[pos]` 指向 `{`。
+/// 调用后 `pos` 指向匹配的 `}` 之后。
+fn parse_rules_in_block(chars: &[char], pos: &mut usize) -> Result<Vec<StyleRule>, ParseError> {
+    if *pos >= chars.len() || chars[*pos] != '{' {
+        return Err(ParseError::Syntax("期望 `{` 开始规则块".into()));
+    }
+    *pos += 1;
+
+    let mut rules = Vec::new();
+
+    loop {
+        skip_whitespace_and_comments(chars, pos);
+        if *pos >= chars.len() {
+            break;
+        }
+        // 遇到块结束 `}` 则退出
+        if chars[*pos] == '}' {
+            *pos += 1;
+            break;
+        }
+
+        // 块内的规则不支持嵌套 @media（简化处理）
+        let selector = parse_selector(chars, pos)?;
+        skip_whitespace(chars, pos);
+
+        if *pos >= chars.len() || chars[*pos] != '{' {
+            return Err(ParseError::Syntax("期望 `{` 在 @media 块规则中".into()));
+        }
+        *pos += 1;
+
+        let declarations = parse_declarations(chars, pos)?;
+        rules.push(StyleRule::new(selector, declarations));
+    }
+
+    Ok(rules)
+}
+
+/// 解析 `{ ... }` 内的声明列表。
+fn parse_declarations(
+    chars: &[char],
+    pos: &mut usize,
+) -> Result<BTreeMap<Arc<str>, PropValue>, ParseError> {
+    let mut declarations = BTreeMap::new();
+    loop {
+        skip_whitespace_and_comments(chars, pos);
+        if *pos >= chars.len() {
+            break;
+        }
+        if chars[*pos] == '}' {
+            *pos += 1;
+            break;
+        }
+
+        let (prop, value) = parse_declaration(chars, pos)?;
+        declarations.insert(Arc::from(prop), value);
+
+        // 跳过分号
+        skip_whitespace(chars, pos);
+        if *pos < chars.len() && chars[*pos] == ';' {
+            *pos += 1;
+        }
+    }
+    Ok(declarations)
 }
 
 fn skip_whitespace(chars: &[char], pos: &mut usize) {
@@ -285,5 +521,183 @@ mod tests {
     fn parse_with_comment() {
         let rules = parse_rgss("/* comment */ Button { color: red; }").unwrap();
         assert_eq!(rules.len(), 1);
+    }
+
+    #[test]
+    fn parse_media_max_width() {
+        let rules = parse_rgss(
+            "@media (max-width: 768px) { \
+                .page { padding: 12px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].media_condition.is_some());
+        match &rules[0].selector {
+            Selector::Class(c) => assert_eq!(c, "page"),
+            _ => panic!("期望 Class 选择器"),
+        }
+    }
+
+    #[test]
+    fn parse_media_min_width() {
+        let rules = parse_rgss(
+            "@media (min-width: 1024px) { \
+                HBox { flex-direction: column; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        assert!(cond.eval(1024.0, ColorScheme::Light));
+        assert!(!cond.eval(800.0, ColorScheme::Light));
+    }
+
+    #[test]
+    fn parse_media_prefers_color_scheme() {
+        let rules = parse_rgss(
+            "@media (prefers-color-scheme: dark) { \
+                :root { --color-bg: #1A1A2E; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        assert!(cond.eval(800.0, ColorScheme::Dark));
+        assert!(!cond.eval(800.0, ColorScheme::Light));
+    }
+
+    #[test]
+    fn parse_media_multiple_rules_in_block() {
+        let rules = parse_rgss(
+            "@media (max-width: 768px) { \
+                Button { font-size: 12px; } \
+                Label { font-size: 10px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 2);
+        // 两条规则都应携带媒体条件
+        assert!(rules[0].media_condition.is_some());
+        assert!(rules[1].media_condition.is_some());
+        // 检查选择器类型
+        match &rules[0].selector {
+            Selector::Type(t) => assert_eq!(t, "Button"),
+            _ => panic!("期望 Type 选择器"),
+        }
+        match &rules[1].selector {
+            Selector::Type(t) => assert_eq!(t, "Label"),
+            _ => panic!("期望 Type 选择器"),
+        }
+    }
+
+    #[test]
+    fn parse_media_regular_rules_mixed() {
+        let source = "\
+            Button { color: red; } \
+            @media (max-width: 600px) { \
+                Button { color: blue; } \
+            } \
+            Label { color: black; }";
+        let rules = parse_rgss(source).unwrap();
+        assert_eq!(rules.len(), 3);
+        // 第一条无媒体条件
+        assert!(rules[0].media_condition.is_none());
+        // 第二条有媒体条件
+        assert!(rules[1].media_condition.is_some());
+        // 第三条无媒体条件
+        assert!(rules[2].media_condition.is_none());
+    }
+
+    #[test]
+    fn parse_media_and_composite() {
+        let rules = parse_rgss(
+            "@media (min-width: 640px) and (max-width: 1024px) { \
+                HBox { spacing: 8px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        match cond {
+            MediaCondition::And(v) => assert_eq!(v.len(), 2),
+            _ => panic!("期望 And 组合条件"),
+        }
+        // 复合条件在范围内
+        assert!(cond.eval(800.0, ColorScheme::Light));
+        assert!(!cond.eval(500.0, ColorScheme::Light)); // 小于 min
+        assert!(!cond.eval(1200.0, ColorScheme::Light)); // 大于 max
+    }
+
+    #[test]
+    fn parse_media_with_comments() {
+        let rules = parse_rgss(
+            "/* 媒体查询块 */ @media (max-width: 768px) { \
+                /* 内部规则 */ \
+                .page { padding: 12px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].media_condition.is_some());
+    }
+
+    #[test]
+    fn parse_media_unknown_condition_error() {
+        let result = parse_rgss("@media (unknown: 100px) { Button { x: 1; } }");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_media_missing_parenthesis_error() {
+        let result = parse_rgss("@media (max-width: 768px { Button { x: 1; } }");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_media_empty_block() {
+        let rules = parse_rgss("@media (max-width: 768px) { }").unwrap();
+        assert!(rules.is_empty());
+    }
+
+    #[test]
+    fn parse_media_decimal_threshold() {
+        let rules = parse_rgss(
+            "@media (max-width: 768.5px) { \
+                Button { font-size: 13px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        assert!(cond.eval(768.5, ColorScheme::Light));
+        assert!(!cond.eval(769.0, ColorScheme::Light));
+    }
+
+    #[test]
+    fn parse_media_and_case_insensitive() {
+        let rules = parse_rgss(
+            "@media (min-width: 640px) AND (max-width: 1024px) { \
+                HBox { spacing: 8px; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        assert!(cond.eval(800.0, ColorScheme::Light));
+    }
+
+    #[test]
+    fn parse_media_number_without_px_suffix() {
+        let rules = parse_rgss(
+            "@media (max-width: 768) { \
+                Button { color: red; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let cond = rules[0].media_condition.as_ref().unwrap();
+        assert!(cond.eval(768.0, ColorScheme::Light));
+        assert!(!cond.eval(769.0, ColorScheme::Light));
     }
 }

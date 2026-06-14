@@ -1,11 +1,74 @@
-//! 选择器引擎——Selector、Specificity、匹配算法。
+//! 选择器引擎——Selector、Specificity、匹配算法、媒体查询。
 //!
-//! 定义源自 D4 §4。
+//! 定义源自 D4 §4、§8。
 
 use rgui_core::view::PropValue;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
+
+// ============================================================================
+// 断点常量（D4 §8）
+// ============================================================================
+
+/// 最小断点宽度常量表（D4 §8）。
+pub mod breakpoints {
+    /// `xs`：手机竖屏（0px）。
+    pub const XS: f64 = 0.0;
+    /// `sm`：手机横屏（640px）。
+    pub const SM: f64 = 640.0;
+    /// `md`：平板（768px）。
+    pub const MD: f64 = 768.0;
+    /// `lg`：笔记本（1024px）。
+    pub const LG: f64 = 1024.0;
+    /// `xl`：桌面显示器（1280px）。
+    pub const XL: f64 = 1280.0;
+    /// `2xl`：大屏（1536px）。
+    pub const XXL: f64 = 1536.0;
+}
+
+// ============================================================================
+// MediaCondition
+// ============================================================================
+
+/// 媒体查询条件（D4 §8）。
+///
+/// 表示 `@media` 规则中的条件表达式，支持：
+/// - `max-width` 上限
+/// - `min-width` 下限
+/// - `prefers-color-scheme` 色彩方案偏好
+/// - `and` 复合条件
+#[derive(Debug, Clone, PartialEq)]
+pub enum MediaCondition {
+    /// `max-width: <px>`：窗口宽度小于等于指定值（含等号边界）。
+    MaxWidth(f64),
+    /// `min-width: <px>`：窗口宽度大于等于指定值（含等号边界）。
+    MinWidth(f64),
+    /// `prefers-color-scheme: light/dark`：用户色彩方案偏好。
+    PrefersColorScheme(crate::theme::ColorScheme),
+    /// `and` 复合条件：所有子条件同时满足时成立。
+    And(Vec<MediaCondition>),
+}
+
+impl MediaCondition {
+    /// 评估媒体查询条件是否在当前环境下成立。
+    ///
+    /// # 参数
+    ///
+    /// * `window_width` — 当前窗口逻辑宽度（像素）。
+    /// * `color_scheme` — 当前色彩方案。
+    #[must_use]
+    pub fn eval(&self, window_width: f64, color_scheme: crate::theme::ColorScheme) -> bool {
+        match self {
+            Self::MaxWidth(threshold) => window_width <= *threshold,
+            Self::MinWidth(threshold) => window_width >= *threshold,
+            Self::PrefersColorScheme(scheme) => color_scheme == *scheme,
+            Self::And(conditions) => conditions
+                .iter()
+                .all(|c| c.eval(window_width, color_scheme)),
+        }
+    }
+}
 
 // ============================================================================
 // Specificity
@@ -156,12 +219,18 @@ impl Selector {
 // ============================================================================
 
 /// 样式规则（D4 §4.2）。
+///
+/// 每条规则由选择器、声明块和可选媒体查询条件组成。
+/// 媒体查询条件在匹配时按当前窗口尺寸和色彩方案过滤。
 #[derive(Debug, Clone)]
 pub struct StyleRule {
     pub selector: Selector,
     /// 属性名 → 属性值
     pub declarations: BTreeMap<Arc<str>, PropValue>,
     pub specificity: Specificity,
+    /// 可选的媒体查询条件（D4 §8）。
+    /// 非 `None` 时，仅当条件满足时规则才生效。
+    pub media_condition: Option<MediaCondition>,
 }
 
 impl StyleRule {
@@ -172,6 +241,23 @@ impl StyleRule {
             selector,
             declarations,
             specificity,
+            media_condition: None,
+        }
+    }
+
+    /// 创建带媒体查询条件的样式规则。
+    #[must_use]
+    pub fn with_media(
+        selector: Selector,
+        declarations: BTreeMap<Arc<str>, PropValue>,
+        media_condition: MediaCondition,
+    ) -> Self {
+        let specificity = selector.specificity();
+        Self {
+            selector,
+            declarations,
+            specificity,
+            media_condition: Some(media_condition),
         }
     }
 }
@@ -202,6 +288,7 @@ impl SelectorEngine {
     /// 匹配 widget 的所有适用规则，按 specificity 升序合并。
     ///
     /// 后应用的规则覆盖先应用的规则（高 specificity 覆盖低 specificity）。
+    /// 此方法忽略媒体查询条件（等价于所有媒体条件均视为满足）。
     #[must_use]
     pub fn match_widget(
         &self,
@@ -210,12 +297,52 @@ impl SelectorEngine {
         pseudo_states: &[&str],
         attr_map: &BTreeMap<&str, PropValue>,
     ) -> BTreeMap<Arc<str>, PropValue> {
+        self.match_widget_with_media(
+            widget_type,
+            class_list,
+            pseudo_states,
+            attr_map,
+            0.0,
+            crate::theme::ColorScheme::Light,
+        )
+    }
+
+    /// 匹配 widget 的所有适用规则，支持媒体查询条件过滤（D4 §8）。
+    ///
+    /// # 参数
+    ///
+    /// * `widget_type` — widget 类型名（如 `"Button"`）
+    /// * `class_list` — widget 的 CSS 类列表
+    /// * `pseudo_states` — widget 的伪类状态列表
+    /// * `attr_map` — widget 的属性映射
+    /// * `window_width` — 当前窗口逻辑宽度（px），用于评估 `max-width`/`min-width` 条件
+    /// * `color_scheme` — 当前色彩方案
+    #[must_use]
+    pub fn match_widget_with_media(
+        &self,
+        widget_type: &str,
+        class_list: &[&str],
+        pseudo_states: &[&str],
+        attr_map: &BTreeMap<&str, PropValue>,
+        window_width: f64,
+        color_scheme: crate::theme::ColorScheme,
+    ) -> BTreeMap<Arc<str>, PropValue> {
         let mut matched: Vec<&StyleRule> = self
             .rules
             .iter()
             .filter(|r| {
-                r.selector
+                // 先检查选择器是否匹配
+                if !r
+                    .selector
                     .matches(widget_type, class_list, pseudo_states, attr_map)
+                {
+                    return false;
+                }
+                // 再检查媒体查询条件（有条件时需通过 eval）
+                match &r.media_condition {
+                    Some(condition) => condition.eval(window_width, color_scheme),
+                    None => true,
+                }
             })
             .collect();
 
@@ -252,6 +379,7 @@ impl fmt::Debug for SelectorEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ColorScheme;
 
     #[test]
     fn specificity_ordering() {
@@ -327,5 +455,298 @@ mod tests {
     fn selector_specificity_sum() {
         let s = Selector::descendant(Selector::type_selector("VBox"), Selector::class("primary"));
         assert_eq!(s.specificity(), Specificity(0, 1, 1));
+    }
+
+    // ========================================================================
+    // MediaCondition 测试
+    // ========================================================================
+
+    #[test]
+    fn media_max_width_pass() {
+        let cond = MediaCondition::MaxWidth(768.0);
+        assert!(cond.eval(768.0, ColorScheme::Light)); // 等于边界
+        assert!(cond.eval(600.0, ColorScheme::Light)); // 小于
+        assert!(!cond.eval(769.0, ColorScheme::Light)); // 大于
+    }
+
+    #[test]
+    fn media_min_width_pass() {
+        let cond = MediaCondition::MinWidth(768.0);
+        assert!(cond.eval(768.0, ColorScheme::Light)); // 等于边界
+        assert!(cond.eval(1024.0, ColorScheme::Light)); // 大于
+        assert!(!cond.eval(600.0, ColorScheme::Light)); // 小于
+    }
+
+    #[test]
+    fn media_prefers_color_scheme() {
+        let dark = MediaCondition::PrefersColorScheme(ColorScheme::Dark);
+        assert!(dark.eval(800.0, ColorScheme::Dark));
+        assert!(!dark.eval(800.0, ColorScheme::Light));
+
+        let light = MediaCondition::PrefersColorScheme(ColorScheme::Light);
+        assert!(light.eval(800.0, ColorScheme::Light));
+        assert!(!light.eval(800.0, ColorScheme::Dark));
+    }
+
+    #[test]
+    fn media_and_composite_both_pass() {
+        let cond = MediaCondition::And(vec![
+            MediaCondition::MinWidth(640.0),
+            MediaCondition::MaxWidth(1024.0),
+        ]);
+        assert!(cond.eval(768.0, ColorScheme::Light)); // 在范围内
+        assert!(cond.eval(640.0, ColorScheme::Light)); // 下边界
+        assert!(cond.eval(1024.0, ColorScheme::Light)); // 上边界
+    }
+
+    #[test]
+    fn media_and_composite_one_fails() {
+        let cond = MediaCondition::And(vec![
+            MediaCondition::MinWidth(640.0),
+            MediaCondition::PrefersColorScheme(ColorScheme::Dark),
+        ]);
+        // 宽度满足，色彩方案不满足
+        assert!(!cond.eval(800.0, ColorScheme::Light));
+        // 两者都满足
+        assert!(cond.eval(800.0, ColorScheme::Dark));
+    }
+
+    #[test]
+    fn media_and_composite_empty_is_true() {
+        let cond = MediaCondition::And(vec![]);
+        assert!(cond.eval(0.0, ColorScheme::Light));
+    }
+
+    #[test]
+    fn media_max_width_zero_boundary() {
+        let cond = MediaCondition::MaxWidth(0.0);
+        assert!(cond.eval(0.0, ColorScheme::Light));
+        assert!(!cond.eval(0.1, ColorScheme::Light));
+    }
+
+    #[test]
+    fn media_min_width_zero_boundary() {
+        let cond = MediaCondition::MinWidth(0.0);
+        assert!(cond.eval(0.0, ColorScheme::Light));
+        assert!(cond.eval(0.1, ColorScheme::Light));
+    }
+
+    #[test]
+    fn media_decimal_threshold() {
+        let cond = MediaCondition::MaxWidth(768.5);
+        assert!(cond.eval(768.5, ColorScheme::Light));
+        assert!(cond.eval(768.0, ColorScheme::Light));
+        assert!(!cond.eval(769.0, ColorScheme::Light));
+    }
+
+    // ========================================================================
+    // match_widget_with_media 测试
+    // ========================================================================
+
+    #[test]
+    fn match_widget_with_media_max_width_activated() {
+        let mut engine = SelectorEngine::new();
+
+        // 无媒体条件的规则（始终生效）
+        engine.add_rule(StyleRule::new(Selector::type_selector("Button"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("color"), PropValue::str("red"));
+            m
+        }));
+
+        // 带媒体查询的规则：max-width: 768px，小屏时应覆盖
+        engine.add_rule(StyleRule::with_media(
+            Selector::type_selector("Button"),
+            {
+                let mut m = BTreeMap::new();
+                m.insert(Arc::from("color"), PropValue::str("blue"));
+                m
+            },
+            MediaCondition::MaxWidth(768.0),
+        ));
+
+        // 窗口宽度 600 < 768，媒体条件满足 → color=blue
+        let narrow = engine.match_widget_with_media(
+            "Button",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            600.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            narrow.get("color").map(|v| format!("{v:?}")),
+            Some(r#"Str("blue")"#.to_string()),
+        );
+
+        // 窗口宽度 1024 > 768，媒体条件不满足 → color=red
+        let wide = engine.match_widget_with_media(
+            "Button",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            1024.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            wide.get("color").map(|v| format!("{v:?}")),
+            Some(r#"Str("red")"#.to_string()),
+        );
+    }
+
+    #[test]
+    fn match_widget_with_media_prefers_color_scheme() {
+        let mut engine = SelectorEngine::new();
+
+        engine.add_rule(StyleRule::new(Selector::type_selector("Label"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("color"), PropValue::str("black"));
+            m
+        }));
+
+        // 暗色主题覆盖
+        engine.add_rule(StyleRule::with_media(
+            Selector::type_selector("Label"),
+            {
+                let mut m = BTreeMap::new();
+                m.insert(Arc::from("color"), PropValue::str("white"));
+                m
+            },
+            MediaCondition::PrefersColorScheme(ColorScheme::Dark),
+        ));
+
+        // 亮色 → black
+        let light = engine.match_widget_with_media(
+            "Label",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            800.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            light.get("color").map(|v| format!("{v:?}")),
+            Some(r#"Str("black")"#.to_string()),
+        );
+
+        // 暗色 → white
+        let dark = engine.match_widget_with_media(
+            "Label",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            800.0,
+            ColorScheme::Dark,
+        );
+        assert_eq!(
+            dark.get("color").map(|v| format!("{v:?}")),
+            Some(r#"Str("white")"#.to_string()),
+        );
+    }
+
+    #[test]
+    fn match_widget_with_media_composite_and() {
+        let mut engine = SelectorEngine::new();
+
+        engine.add_rule(StyleRule::new(Selector::type_selector("VBox"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("padding"), PropValue::str("24px"));
+            m
+        }));
+
+        // (min-width: 640px) and (max-width: 768px) 时覆盖 padding
+        engine.add_rule(StyleRule::with_media(
+            Selector::type_selector("VBox"),
+            {
+                let mut m = BTreeMap::new();
+                m.insert(Arc::from("padding"), PropValue::str("12px"));
+                m
+            },
+            MediaCondition::And(vec![
+                MediaCondition::MinWidth(640.0),
+                MediaCondition::MaxWidth(768.0),
+            ]),
+        ));
+
+        // 窗口 500px，不满足 min-width → 24px
+        let small = engine.match_widget_with_media(
+            "VBox",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            500.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            small.get("padding").map(|v| format!("{v:?}")),
+            Some(r#"Str("24px")"#.to_string()),
+        );
+
+        // 窗口 700px，满足复合条件 → 12px
+        let medium = engine.match_widget_with_media(
+            "VBox",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            700.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            medium.get("padding").map(|v| format!("{v:?}")),
+            Some(r#"Str("12px")"#.to_string()),
+        );
+
+        // 窗口 1024px，不满足 max-width → 24px
+        let large = engine.match_widget_with_media(
+            "VBox",
+            &[],
+            &[],
+            &BTreeMap::new(),
+            1024.0,
+            ColorScheme::Light,
+        );
+        assert_eq!(
+            large.get("padding").map(|v| format!("{v:?}")),
+            Some(r#"Str("24px")"#.to_string()),
+        );
+    }
+
+    #[test]
+    fn match_widget_with_media_no_media_rules_always_apply() {
+        let mut engine = SelectorEngine::new();
+
+        engine.add_rule(StyleRule::new(Selector::type_selector("Button"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("font-size"), PropValue::str("14px"));
+            m
+        }));
+
+        // 不带媒体条件的规则在所有窗口尺寸下都生效
+        for width in &[0.0, 640.0, 768.0, 1024.0, 1920.0] {
+            let result = engine.match_widget_with_media(
+                "Button",
+                &[],
+                &[],
+                &BTreeMap::new(),
+                *width,
+                ColorScheme::Light,
+            );
+            assert_eq!(
+                result.get("font-size").map(|v| format!("{v:?}")),
+                Some(r#"Str("14px")"#.to_string()),
+                "width={} 时无媒体规则应始终生效",
+                width
+            );
+        }
+    }
+
+    #[test]
+    fn breakpoint_constants() {
+        assert_eq!(breakpoints::XS, 0.0);
+        assert_eq!(breakpoints::SM, 640.0);
+        assert_eq!(breakpoints::MD, 768.0);
+        assert_eq!(breakpoints::LG, 1024.0);
+        assert_eq!(breakpoints::XL, 1280.0);
+        assert_eq!(breakpoints::XXL, 1536.0);
     }
 }

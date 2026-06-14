@@ -10,7 +10,9 @@ pub mod hot_reload;
 
 pub use merger::StyleMerger;
 pub use parser::{ParseError, parse_rgss};
-pub use selector::{CombinatorKind, Selector, SelectorEngine, Specificity, StyleRule};
+pub use selector::{
+    CombinatorKind, MediaCondition, Selector, SelectorEngine, Specificity, StyleRule, breakpoints,
+};
 pub use theme::{ColorScheme, Theme, ThemeVariables};
 
 #[cfg(feature = "hot-reload")]
