@@ -7,5 +7,8 @@
 pub mod backend;
 pub mod tree;
 
-pub use backend::{AccessKitBackend, AccessibilityBackend, NullBackend, to_accesskit_role};
+pub use backend::{
+    AccessKitBackend, AccessibilityBackend, ActionHandlerCallback, NullBackend,
+    from_accesskit_action, to_accesskit_role,
+};
 pub use tree::AccessibilityTree;
