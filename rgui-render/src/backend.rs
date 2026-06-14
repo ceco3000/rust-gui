@@ -18,6 +18,12 @@ pub enum RenderError {
     RenderFailed(String),
     #[error("纹理注册失败：{0}")]
     TextureRegistrationFailed(String),
+    /// 无可用渲染后端（所有后端均不可用）。
+    #[error("无可用渲染后端")]
+    NoAvailableBackend,
+    /// 指定后端不可用（未编译或未实现）。
+    #[error("后端不可用：{0}")]
+    UnsupportedBackend(&'static str),
 }
 
 /// 渲染参数。

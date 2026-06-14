@@ -4,6 +4,7 @@
 
 pub mod backend;
 pub mod dirty;
+pub mod factory;
 pub mod focus_indicator;
 pub mod glyph;
 pub mod primitives;
@@ -16,6 +17,7 @@ pub mod skia;
 
 pub use backend::{RenderBackend, RenderError, RenderParams};
 pub use dirty::DirtyRegionTracker;
+pub use factory::{BackendType, RenderBackendFactory};
 pub use focus_indicator::FocusIndicator;
 pub use glyph::GlyphAtlas;
 pub use primitives::{
