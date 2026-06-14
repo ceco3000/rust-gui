@@ -3617,6 +3617,7 @@ name = "rgui-style"
 version = "0.1.0"
 dependencies = [
  "cssparser",
+ "log",
  "notify",
  "ordered-float 4.6.0",
  "rgui-core",

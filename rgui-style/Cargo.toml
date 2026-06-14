@@ -17,8 +17,9 @@ serde.workspace = true
 rustc-hash.workspace = true
 thiserror.workspace = true
 cssparser = "0.34"
+log = { workspace = true, optional = true }
 notify = { workspace = true, optional = true }
 
 [features]
 default = []
-hot-reload = ["dep:notify"]
+hot-reload = ["dep:notify", "dep:log"]
