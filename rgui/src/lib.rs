@@ -6,27 +6,27 @@ pub mod app;
 pub mod render;
 pub mod widget_node;
 
-pub use rgui_core::*;
-pub use rgui_state::*;
-pub use rgui_render::*;
-pub use rgui_layout::*;
-pub use rgui_style::*;
-pub use rgui_platform::*;
-pub use rgui_a11y::*;
-pub use rgui_components::*;
-pub use rgui_macros::ui;
 pub use app::{App, AppConfig};
 pub use render::RenderContext;
+pub use rgui_a11y::*;
+pub use rgui_components::*;
+pub use rgui_core::*;
+pub use rgui_layout::*;
+pub use rgui_macros::ui;
+pub use rgui_platform::*;
+pub use rgui_render::*;
+pub use rgui_state::*;
+pub use rgui_style::*;
 pub use widget_node::WidgetNode;
 
 pub mod prelude {
-    pub use rgui_core::prelude::*;
-    pub use rgui_state::*;
-    pub use rgui_render::*;
-    pub use rgui_layout::*;
-    pub use rgui_style::*;
-    pub use rgui_platform::*;
+    pub use crate::app::{App, AppConfig};
     pub use rgui_a11y::*;
     pub use rgui_components::*;
-    pub use crate::app::{App, AppConfig};
+    pub use rgui_core::prelude::*;
+    pub use rgui_layout::*;
+    pub use rgui_platform::*;
+    pub use rgui_render::*;
+    pub use rgui_state::*;
+    pub use rgui_style::*;
 }

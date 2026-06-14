@@ -31,13 +31,17 @@ impl RenderContext {
         .map_err(|e| format!("surface: {e}"))?;
 
         let device_handle = &gpu.devices[surface.dev_id];
-        let renderer = vello::Renderer::new(
-            &device_handle.device,
-            vello::RendererOptions::default(),
-        )
-        .map_err(|e| format!("vello: {e}"))?;
+        let renderer =
+            vello::Renderer::new(&device_handle.device, vello::RendererOptions::default())
+                .map_err(|e| format!("vello: {e}"))?;
 
-        Ok(Self { gpu, surface, renderer, scene: vello::Scene::new(), frame_count: 0 })
+        Ok(Self {
+            gpu,
+            surface,
+            renderer,
+            scene: vello::Scene::new(),
+            frame_count: 0,
+        })
     }
 
     pub fn resize(&mut self, w: u32, h: u32) {
@@ -45,7 +49,9 @@ impl RenderContext {
     }
 
     /// 获取 Vello 场景的可变引用——在此编码形状/文字。
-    pub fn scene_mut(&mut self) -> &mut vello::Scene { &mut self.scene }
+    pub fn scene_mut(&mut self) -> &mut vello::Scene {
+        &mut self.scene
+    }
 
     /// Vello 渲染一帧：scene → RGBA target → blit → BGRA surface → present
     pub fn render(&mut self) -> Result<(), String> {
@@ -67,7 +73,10 @@ impl RenderContext {
         // 阶段 1: Vello 渲染到 RGBA target 纹理
         self.renderer
             .render_to_texture(
-                device, queue, &self.scene, &self.surface.target_view,
+                device,
+                queue,
+                &self.scene,
+                &self.surface.target_view,
                 &vello::RenderParams {
                     base_color: vello::peniko::Color::TRANSPARENT,
                     width: self.surface.config.width,
@@ -78,17 +87,23 @@ impl RenderContext {
             .map_err(|e| format!("vello render: {e}"))?;
 
         // 阶段 2: Blit RGBA target → BGRA surface
-        let surface_texture = self.surface.surface
+        let surface_texture = self
+            .surface
+            .surface
             .get_current_texture()
             .map_err(|e| format!("surface: {e}"))?;
-        let surface_view = surface_texture.texture
+        let surface_view = surface_texture
+            .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor { label: Some("blit") },
-        );
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("blit"),
+        });
         self.surface.blitter.copy(
-            device, &mut encoder, &self.surface.target_view, &surface_view,
+            device,
+            &mut encoder,
+            &self.surface.target_view,
+            &surface_view,
         );
         queue.submit(Some(encoder.finish()));
         surface_texture.present();
@@ -98,13 +113,21 @@ impl RenderContext {
         Ok(())
     }
 
-    pub fn frame_count(&self) -> u64 { self.frame_count }
+    pub fn frame_count(&self) -> u64 {
+        self.frame_count
+    }
 }
 
 impl std::fmt::Debug for RenderContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RenderContext(Vello+blit)")
-            .field("size", &format!("{}x{}", self.surface.config.width, self.surface.config.height))
+            .field(
+                "size",
+                &format!(
+                    "{}x{}",
+                    self.surface.config.width, self.surface.config.height
+                ),
+            )
             .field("frames", &self.frame_count)
             .finish()
     }
