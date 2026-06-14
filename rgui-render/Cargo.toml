@@ -25,7 +25,7 @@ skia-safe = { version = "0.82", optional = true }
 default = ["vello-backend"]
 vello-backend = ["dep:wgpu", "dep:vello", "dep:cosmic-text", "dep:fontdb"]
 skia-backend = ["dep:skia-safe"]
-offscreen = ["dep:image"]
+offscreen = ["dep:image", "skia-backend"]
 
 [dependencies.image]
 workspace = true

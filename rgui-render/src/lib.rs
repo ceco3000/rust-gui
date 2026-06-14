@@ -15,6 +15,8 @@ pub mod skyline;
 pub mod texture;
 
 #[cfg(feature = "skia-backend")]
+pub mod offscreen;
+#[cfg(feature = "skia-backend")]
 pub mod skia;
 
 pub use backend::{RenderBackend, RenderError, RenderParams};
@@ -30,5 +32,7 @@ pub use scene::{ClipRegion, DrawCommand, SceneGraph, SceneGraphBuilder, SceneLay
 pub use skyline::{Allocation, SkylineAllocator};
 pub use texture::{TextureData, TextureFormat, TextureId};
 
+#[cfg(feature = "skia-backend")]
+pub use offscreen::OffscreenTestRunner;
 #[cfg(feature = "skia-backend")]
 pub use skia::SkiaBackend;

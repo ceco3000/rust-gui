@@ -92,11 +92,13 @@ impl RenderBackendFactory {
             // params 在此处不参与 SkiaBackend 构造，仅在 render() 时使用。
             // 保留引用以防未来需要传递初始化参数。
             let _ = params;
-            return Ok(Box::new(backend));
+            Ok(Box::new(backend))
         }
-
-        // 无可用后端
-        Err(RenderError::NoAvailableBackend)
+        #[cfg(not(feature = "skia-backend"))]
+        {
+            // 无可用后端
+            Err(RenderError::NoAvailableBackend)
+        }
     }
 
     /// 创建指定类型的渲染后端。
@@ -124,7 +126,7 @@ impl RenderBackendFactory {
                 #[cfg(feature = "skia-backend")]
                 {
                     let backend = SkiaBackend::new();
-                    return Ok(Box::new(backend));
+                    Ok(Box::new(backend))
                 }
                 #[cfg(not(feature = "skia-backend"))]
                 Err(RenderError::UnsupportedBackend(
@@ -139,17 +141,18 @@ impl RenderBackendFactory {
     /// 返回值按优先级排序（Vello > Skia）。
     #[must_use]
     pub fn available_backends() -> Vec<BackendType> {
-        #[allow(unused_mut)]
-        let mut backends = Vec::new();
-
-        // VelloBackend 将在 R05 中实现后在此处添加
+        // VelloBackend 将在 R05 中实现后在此处添加至列表首位
         // #[cfg(feature = "vello-backend")]
         // backends.push(BackendType::Vello);
 
         #[cfg(feature = "skia-backend")]
-        backends.push(BackendType::Skia);
-
-        backends
+        {
+            vec![BackendType::Skia]
+        }
+        #[cfg(not(feature = "skia-backend"))]
+        {
+            Vec::new()
+        }
     }
 }
 
@@ -208,7 +211,7 @@ mod tests {
         if cfg!(feature = "skia-backend") {
             assert!(result.is_ok(), "expected Ok, got Err");
             let backend = result.unwrap();
-            assert_eq!(backend.backend_name(), "SkiaBackend");
+            assert_eq!(backend.backend_name(), "Skia (CPU)");
         } else {
             // 无 skia-backend feature 时应返回 UnsupportedBackend
             match &result {
