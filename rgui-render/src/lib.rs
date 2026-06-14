@@ -10,6 +10,9 @@ pub mod scene;
 pub mod skyline;
 pub mod texture;
 
+#[cfg(feature = "skia-backend")]
+pub mod skia;
+
 pub use backend::{RenderBackend, RenderError, RenderParams};
 pub use dirty::DirtyRegionTracker;
 pub use glyph::GlyphAtlas;
@@ -20,3 +23,6 @@ pub use primitives::{
 pub use scene::{ClipRegion, DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer, TextureRef};
 pub use skyline::{Allocation, SkylineAllocator};
 pub use texture::{TextureData, TextureFormat, TextureId};
+
+#[cfg(feature = "skia-backend")]
+pub use skia::SkiaBackend;

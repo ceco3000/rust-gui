@@ -21,6 +21,8 @@ pub enum RenderError {
 }
 
 /// 渲染参数。
+///
+/// 定义源自 D3 §5.1。
 #[derive(Clone, Debug)]
 pub struct RenderParams {
     /// 逻辑像素密度比（DPI 缩放因子）。
@@ -29,6 +31,10 @@ pub struct RenderParams {
     pub vsync: bool,
     /// 清除颜色（窗口背景色）。
     pub clear_color: Option<rgui_core::Color>,
+    /// 渲染表面宽度（像素单位）。
+    pub width: u32,
+    /// 渲染表面高度（像素单位）。
+    pub height: u32,
 }
 
 impl Default for RenderParams {
@@ -37,6 +43,8 @@ impl Default for RenderParams {
             scale_factor: 1.0,
             vsync: true,
             clear_color: None,
+            width: 1,
+            height: 1,
         }
     }
 }
