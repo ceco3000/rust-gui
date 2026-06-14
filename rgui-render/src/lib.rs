@@ -3,6 +3,7 @@
 //! rgui 渲染管线——SceneGraph、Vello/Skia 后端、字形 Atlas。
 
 pub mod backend;
+pub mod dirty;
 pub mod glyph;
 pub mod primitives;
 pub mod scene;
@@ -10,6 +11,7 @@ pub mod skyline;
 pub mod texture;
 
 pub use backend::{RenderBackend, RenderError, RenderParams};
+pub use dirty::DirtyRegionTracker;
 pub use glyph::GlyphAtlas;
 pub use primitives::{
     BlendMode, FillRule, GlyphData, GradientStop, ImageRepeat, LineCap, LineJoin, Paint,
