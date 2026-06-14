@@ -22,7 +22,10 @@ pub struct AccessibilityTree {
 impl AccessibilityTree {
     #[must_use]
     pub fn new() -> Self {
-        Self { nodes: FxHashMap::default(), root: None }
+        Self {
+            nodes: FxHashMap::default(),
+            root: None,
+        }
     }
 
     /// 更新或插入无障碍节点。
@@ -48,10 +51,14 @@ impl AccessibilityTree {
 
     /// 节点数量。
     #[must_use]
-    pub fn len(&self) -> usize { self.nodes.len() }
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
 
     #[must_use]
-    pub fn is_empty(&self) -> bool { self.nodes.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
 
     /// 清除所有节点。
     pub fn clear(&mut self) {
@@ -61,7 +68,9 @@ impl AccessibilityTree {
 }
 
 impl Default for AccessibilityTree {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl std::fmt::Debug for AccessibilityTree {

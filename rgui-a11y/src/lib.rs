@@ -4,8 +4,8 @@
 //!
 //! 本 crate 基于 AccessKit 提供跨平台无障碍支持。
 
-pub mod tree;
 pub mod backend;
+pub mod tree;
 
+pub use backend::{AccessKitBackend, AccessibilityBackend, NullBackend, to_accesskit_role};
 pub use tree::AccessibilityTree;
-pub use backend::A11yBackend;
