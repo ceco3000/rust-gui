@@ -15,6 +15,7 @@ pub use rgui_layout::*;
 pub use rgui_macros::ui;
 pub use rgui_platform::*;
 pub use rgui_render::*;
+pub use rgui_state::TestHarness;
 pub use rgui_state::*;
 pub use rgui_style::*;
 pub use widget_node::WidgetNode;
