@@ -1,0 +1,11 @@
+[template]
+default_values = { project-name = "my-rgui-app" }
+description = "基于 rgui 的 Rust GUI 桌面应用"
+
+[placeholders]
+
+[hooks]
+post_setup = [
+    "echo '项目 {{project-name}} 创建成功！'",
+    "echo '运行 cd {{project-name}} && cargo run 启动应用。'",
+]
