@@ -50,10 +50,7 @@ impl StyleMerger {
         for key in keys {
             if let Some(PropValue::Str(ref s)) = result.get(&key) {
                 if s.starts_with(var_prefix) {
-                    let var_name = s
-                        .trim_start_matches("var(")
-                        .trim_end_matches(')')
-                        .trim();
+                    let var_name = s.trim_start_matches("var(").trim_end_matches(')').trim();
                     if let Some(resolved) = theme.var(var_name) {
                         result.insert(key, resolved.clone());
                     }
@@ -89,8 +86,10 @@ mod tests {
         let theme = Theme::light();
         let result = StyleMerger::merge(&default, &rgss, &inline, &theme);
 
-        assert_eq!(result.get("font-size").map(|v| format!("{v:?}")),
-                   Some(r#"Str("20px")"#.to_string()));
+        assert_eq!(
+            result.get("font-size").map(|v| format!("{v:?}")),
+            Some(r#"Str("20px")"#.to_string())
+        );
         assert!(result.contains_key("color"));
     }
 
@@ -104,7 +103,11 @@ mod tests {
 
         // var() 被解析为主题变量值
         let bg = result.get("background-color").and_then(|v| {
-            if let PropValue::Str(s) = v { Some(s.as_ref()) } else { None }
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
         });
         assert!(bg.is_some());
         assert_ne!(bg.unwrap(), "var(--color-primary)"); // 不应再是 var() 引用

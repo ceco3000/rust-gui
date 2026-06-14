@@ -1,10 +1,10 @@
 //! DataGrid 组件——数据表格。
 
 use rgui_core::a11y::AccessibilityNode;
-use rgui_core::context::{AccessContext,MeasureContext,PaintContext,UpdateContext,ViewContext};
-use rgui_core::geometry::{BoxConstraints,Rect,Size};
-use rgui_core::traits::{AppMessage as Am,PersistState as Ps,WidgetSpec};
-use rgui_core::view::{PropValue,WidgetView};
+use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
+use rgui_core::geometry::{BoxConstraints, Rect, Size};
+use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
+use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use std::sync::Arc;
 // ============================================================================
 
 /// 列定义。
-#[derive(Debug,Clone,serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct ColumnDef {
     pub name: String,
     pub title: String,
@@ -22,15 +22,29 @@ pub struct ColumnDef {
 }
 
 impl ColumnDef {
-    #[must_use] pub fn new(name: impl Into<String>, title: impl Into<String>) -> Self {
-        Self { name: name.into(), title: title.into(), width: 120.0, sortable: true }
+    #[must_use]
+    pub fn new(name: impl Into<String>, title: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            title: title.into(),
+            width: 120.0,
+            sortable: true,
+        }
     }
-    #[must_use] pub fn width(mut self, w: f64) -> Self { self.width = w; self }
-    #[must_use] pub fn sortable(mut self, v: bool) -> Self { self.sortable = v; self }
+    #[must_use]
+    pub fn width(mut self, w: f64) -> Self {
+        self.width = w;
+        self
+    }
+    #[must_use]
+    pub fn sortable(mut self, v: bool) -> Self {
+        self.sortable = v;
+        self
+    }
 }
 
 /// DataGrid 业务状态。
-#[derive(Debug,Clone,serde::Serialize,PersistState)]
+#[derive(Debug, Clone, serde::Serialize, PersistState)]
 pub struct DataGridState {
     pub columns: Vec<ColumnDef>,
     pub rows: Vec<Vec<String>>,
@@ -41,13 +55,23 @@ pub struct DataGridState {
 
 impl Default for DataGridState {
     fn default() -> Self {
-        Self { columns: Vec::new(), rows: Vec::new(), sort_column: None, sort_ascending: true, selected_row: None }
+        Self {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            sort_column: None,
+            sort_ascending: true,
+            selected_row: None,
+        }
     }
 }
 
 impl DataGridState {
-    #[must_use] pub fn new(columns: Vec<ColumnDef>) -> Self {
-        Self { columns, ..Self::default() }
+    #[must_use]
+    pub fn new(columns: Vec<ColumnDef>) -> Self {
+        Self {
+            columns,
+            ..Self::default()
+        }
     }
 
     /// 添加数据行。
@@ -63,7 +87,11 @@ impl DataGridState {
                 indices.sort_by(|&a, &b| {
                     let va = self.rows[a].get(col).map(|s| s.as_str()).unwrap_or("");
                     let vb = self.rows[b].get(col).map(|s| s.as_str()).unwrap_or("");
-                    if self.sort_ascending { va.cmp(vb) } else { vb.cmp(va) }
+                    if self.sort_ascending {
+                        va.cmp(vb)
+                    } else {
+                        vb.cmp(va)
+                    }
                 });
             }
         }
@@ -75,7 +103,7 @@ impl DataGridState {
 // DataGridMessage
 // ============================================================================
 
-#[derive(Debug,Clone,PartialEq,AppMessage)]
+#[derive(Debug, Clone, PartialEq, AppMessage)]
 pub enum DataGridMessage {
     SortBy(usize),
     SelectRow(usize),
@@ -92,7 +120,9 @@ impl WidgetSpec for DataGrid {
     type State = DataGridState;
     type Message = DataGridMessage;
 
-    fn name(&self) -> &'static str { "rgui_components::DataGrid" }
+    fn name(&self) -> &'static str {
+        "rgui_components::DataGrid"
+    }
 
     fn view(&self, state: &Self::State, _ctx: &ViewContext) -> WidgetView<Self::Message> {
         // 表头
@@ -100,9 +130,13 @@ impl WidgetSpec for DataGrid {
         for (i, col) in state.columns.iter().enumerate() {
             let sort_indicator = if state.sort_column == Some(i) {
                 if state.sort_ascending { " ▲" } else { " ▼" }
-            } else { "" };
-            header_props.push(WidgetView::new("Label")
-                .prop("text", PropValue::Str(Arc::from(format!("{}{}", col.title, sort_indicator)))));
+            } else {
+                ""
+            };
+            header_props.push(WidgetView::new("Label").prop(
+                "text",
+                PropValue::Str(Arc::from(format!("{}{}", col.title, sort_indicator))),
+            ));
         }
 
         // 数据行
@@ -114,14 +148,13 @@ impl WidgetSpec for DataGrid {
 
             let mut cells: Vec<WidgetView<DataGridMessage>> = Vec::new();
             for (col_idx, _col) in state.columns.iter().enumerate() {
-                let text = state.rows[row_idx].get(col_idx).cloned().unwrap_or_default();
-                cells.push(WidgetView::new("Label")
-                    .prop("text", PropValue::Str(Arc::from(text))));
+                let text = state.rows[row_idx]
+                    .get(col_idx)
+                    .cloned()
+                    .unwrap_or_default();
+                cells.push(WidgetView::new("Label").prop("text", PropValue::Str(Arc::from(text))));
             }
-            row_views.push(
-                WidgetView::new("TableRow")
-                    .prop("selected", PropValue::Bool(selected))
-            );
+            row_views.push(WidgetView::new("TableRow").prop("selected", PropValue::Bool(selected)));
         }
 
         WidgetView::new("DataGrid")
@@ -140,21 +173,30 @@ impl WidgetSpec for DataGrid {
                         state.sort_ascending = true;
                     }
                 }
-            }
+            },
             DataGridMessage::SelectRow(row_idx) => {
-                state.selected_row = if state.selected_row == Some(row_idx) { None } else { Some(row_idx) };
-            }
+                state.selected_row = if state.selected_row == Some(row_idx) {
+                    None
+                } else {
+                    Some(row_idx)
+                };
+            },
             DataGridMessage::CellEdited(row_idx, col_idx, value) => {
                 if let Some(row) = state.rows.get_mut(row_idx) {
                     if let Some(cell) = row.get_mut(col_idx) {
                         *cell = value;
                     }
                 }
-            }
+            },
         }
     }
 
-    fn measure(&self, state: &Self::State, constraints: BoxConstraints, _ctx: &MeasureContext) -> Size {
+    fn measure(
+        &self,
+        state: &Self::State,
+        constraints: BoxConstraints,
+        _ctx: &MeasureContext,
+    ) -> Size {
         let total_width: f64 = state.columns.iter().map(|c| c.width).sum();
         let row_height = 28.0_f64;
         let total_height = row_height * (state.rows.len() + 1) as f64 + 4.0;
@@ -167,7 +209,11 @@ impl WidgetSpec for DataGrid {
     fn paint(&self, _state: &Self::State, _bounds: Rect, _ctx: &mut PaintContext) {}
 
     fn accessibility(&self, state: &Self::State, _ctx: &AccessContext) -> AccessibilityNode {
-        AccessibilityNode::none().label(format!("数据表格: {} 列, {} 行", state.columns.len(), state.rows.len()))
+        AccessibilityNode::none().label(format!(
+            "数据表格: {} 列, {} 行",
+            state.columns.len(),
+            state.rows.len()
+        ))
     }
 }
 
@@ -197,7 +243,11 @@ mod tests {
     #[test]
     fn sort_by_column() {
         let mut state = make_state();
-        DataGrid.update(DataGridMessage::SortBy(0), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::SortBy(0),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert_eq!(state.sort_column, Some(0));
         assert!(state.sort_ascending);
     }
@@ -205,32 +255,56 @@ mod tests {
     #[test]
     fn sort_toggle_direction() {
         let mut state = make_state();
-        DataGrid.update(DataGridMessage::SortBy(1), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::SortBy(1),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert!(state.sort_ascending);
-        DataGrid.update(DataGridMessage::SortBy(1), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::SortBy(1),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert!(!state.sort_ascending);
     }
 
     #[test]
     fn select_row() {
         let mut state = make_state();
-        DataGrid.update(DataGridMessage::SelectRow(0), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::SelectRow(0),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert_eq!(state.selected_row, Some(0));
-        DataGrid.update(DataGridMessage::SelectRow(0), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::SelectRow(0),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert_eq!(state.selected_row, None);
     }
 
     #[test]
     fn cell_edit() {
         let mut state = make_state();
-        DataGrid.update(DataGridMessage::CellEdited(0, 0, "Carol".into()), &mut state, &mut UpdateContext::default());
+        DataGrid.update(
+            DataGridMessage::CellEdited(0, 0, "Carol".into()),
+            &mut state,
+            &mut UpdateContext::default(),
+        );
         assert_eq!(state.rows[0][0], "Carol");
     }
 
     #[test]
     fn measure_respects_constraints() {
         let state = make_state();
-        let sz = DataGrid.measure(&state, BoxConstraints::UNCONSTRAINED, &MeasureContext::default());
+        let sz = DataGrid.measure(
+            &state,
+            BoxConstraints::UNCONSTRAINED,
+            &MeasureContext::default(),
+        );
         assert!(sz.width > 0.0);
         assert!(sz.height > 0.0);
     }

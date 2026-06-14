@@ -98,7 +98,7 @@ impl SceneLayer {
 // DrawCommand
 // ============================================================================
 
-/// 绘制指令枚举（D3 §3.1，D0 不变式 4：具体枚举，无 Box<dyn>）。
+/// 绘制指令枚举（D3 §3.1，D0 不变式 4：具体枚举，无 `Box<dyn>`）。
 #[derive(Clone, Debug)]
 pub enum DrawCommand {
     FillRect {

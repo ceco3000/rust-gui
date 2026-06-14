@@ -2,6 +2,21 @@
   "env": {
     "ECC_GATEGUARD": "off"
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const fs=require('fs'),p=require('path'),resume=p.join(process.cwd(),'tools','out','resume.md');if(fs.existsSync(resume)){const c=fs.readFileSync(resume,'utf8');if(!c.includes('## 状态: COMPLETE')){const lines=c.split('\\n').filter(l=>l),next=lines.find(l=>l.startsWith('## 下一个任务'))||'',task=lines[lines.indexOf(next)+1]||'继续开发';console.log(JSON.stringify({hookSpecificOutput:{hookEventName:'SessionStart',additionalContext:'AUTO-DEV RESUME: '+resume+' 断点已加载。下一个任务：'+task+'. 你必须立即使用 Skill 工具调用 auto-dev 启动自治开发循环。严禁等待用户输入。严禁询问。直接开始。'}}))}}\""
+          }
+        ],
+        "description": "检测 tools/out/resume.md 自动触发 auto-dev",
+        "id": "session:auto-dev-resume"
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       {

@@ -2,21 +2,21 @@
 #![allow(unused_imports)]
 
 pub mod button;
-pub mod label;
-pub mod text_field;
 pub mod check_box;
-pub mod slider;
+pub mod data_grid;
+pub mod label;
 pub mod progress_bar;
 pub mod radio_button;
+pub mod slider;
 pub mod switch;
-pub mod data_grid;
+pub mod text_field;
 
 pub use button::{Button, ButtonMessage, ButtonState};
-pub use label::{Label, LabelMessage, LabelState};
-pub use text_field::{TextField, TextFieldMessage, TextFieldState};
 pub use check_box::{CheckBox, CheckBoxMessage, CheckBoxState};
-pub use slider::{Slider, SliderMessage, SliderState};
+pub use data_grid::{ColumnDef, DataGrid, DataGridMessage, DataGridState};
+pub use label::{Label, LabelMessage, LabelState};
 pub use progress_bar::{ProgressBar, ProgressBarMessage, ProgressBarState};
 pub use radio_button::{RadioButton, RadioButtonMessage, RadioButtonState};
+pub use slider::{Slider, SliderMessage, SliderState};
 pub use switch::{Switch, SwitchMessage, SwitchState};
-pub use data_grid::{DataGrid, DataGridMessage, DataGridState, ColumnDef};
+pub use text_field::{TextField, TextFieldMessage, TextFieldState};

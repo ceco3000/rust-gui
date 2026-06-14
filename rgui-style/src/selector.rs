@@ -31,7 +31,10 @@ impl Specificity {
 // ============================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CombinatorKind { Descendant, Child }
+pub enum CombinatorKind {
+    Descendant,
+    Child,
+}
 
 // ============================================================================
 // Selector
@@ -51,7 +54,11 @@ pub enum Selector {
     /// 伪类选择器：`:hover`
     PseudoClass(String),
     /// 组合器：`ancestor > descendant`
-    Combinator { ancestor: Box<Selector>, descendant: Box<Selector>, kind: CombinatorKind },
+    Combinator {
+        ancestor: Box<Selector>,
+        descendant: Box<Selector>,
+        kind: CombinatorKind,
+    },
 }
 
 impl Selector {
@@ -62,11 +69,15 @@ impl Selector {
             Self::Id(_) => Specificity::ID,
             Self::Class(_) | Self::Attribute { .. } | Self::PseudoClass(_) => Specificity::CLASS,
             Self::Type(_) => Specificity::TYPE,
-            Self::Combinator { ancestor, descendant, .. } => {
+            Self::Combinator {
+                ancestor,
+                descendant,
+                ..
+            } => {
                 let a = ancestor.specificity();
                 let d = descendant.specificity();
                 Specificity(a.0 + d.0, a.1 + d.1, a.2 + d.2)
-            }
+            },
         }
     }
 
@@ -86,32 +97,34 @@ impl Selector {
             Self::Type(t) => {
                 // 匹配 widget_type 的短名
                 widget_type == t.as_str() || widget_type.ends_with(&format!("::{t}"))
-            }
+            },
             Self::Class(c) => class_list.contains(&c.as_str()),
             Self::Id(_id) => {
                 // ID 匹配需要 widget 的 stable_id，当前简化为检查属性
-                attr_map.get("id").is_some_and(|v| matches!(v, PropValue::Str(s) if s.as_ref() == _id.as_str()))
-            }
+                attr_map
+                    .get("id")
+                    .is_some_and(|v| matches!(v, PropValue::Str(s) if s.as_ref() == _id.as_str()))
+            },
             Self::Attribute { name, value } => {
                 match attr_map.get(name.as_str()) {
                     Some(attr_val) => match value {
                         Some(expected) => {
                             // 简单字符串比较
                             format!("{attr_val:?}").contains(expected.as_str())
-                        }
+                        },
                         None => true, // [disabled] 等布尔属性——存在即匹配
                     },
                     None => false,
                 }
-            }
+            },
             Self::PseudoClass(_pc) => {
                 // 伪类匹配需要运行时状态（焦点、悬停等），当前简化返回 true
                 true
-            }
+            },
             Self::Combinator { descendant, .. } => {
                 // 简化：仅检查后代选择器
                 descendant.matches(widget_type, class_list, _pseudo_states, attr_map)
-            }
+            },
         }
     }
 
@@ -155,7 +168,11 @@ impl StyleRule {
     #[must_use]
     pub fn new(selector: Selector, declarations: BTreeMap<Arc<str>, PropValue>) -> Self {
         let specificity = selector.specificity();
-        Self { selector, declarations, specificity }
+        Self {
+            selector,
+            declarations,
+            specificity,
+        }
     }
 }
 
@@ -197,7 +214,8 @@ impl SelectorEngine {
             .rules
             .iter()
             .filter(|r| {
-                r.selector.matches(widget_type, class_list, pseudo_states, attr_map)
+                r.selector
+                    .matches(widget_type, class_list, pseudo_states, attr_map)
             })
             .collect();
 
@@ -282,39 +300,32 @@ mod tests {
         let mut engine = SelectorEngine::new();
 
         // 低特异性规则
-        engine.add_rule(StyleRule::new(
-            Selector::type_selector("Button"),
-            {
-                let mut m = BTreeMap::new();
-                m.insert(Arc::from("font-size"), PropValue::str("14px"));
-                m
-            },
-        ));
+        engine.add_rule(StyleRule::new(Selector::type_selector("Button"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("font-size"), PropValue::str("14px"));
+            m
+        }));
 
         // 高特异性规则
-        engine.add_rule(StyleRule::new(
-            Selector::class("primary"),
-            {
-                let mut m = BTreeMap::new();
-                m.insert(Arc::from("color"), PropValue::str("blue"));
-                m.insert(Arc::from("font-size"), PropValue::str("16px"));
-                m
-            },
-        ));
+        engine.add_rule(StyleRule::new(Selector::class("primary"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("color"), PropValue::str("blue"));
+            m.insert(Arc::from("font-size"), PropValue::str("16px"));
+            m
+        }));
 
         let result = engine.match_widget("Button", &["primary"], &[], &BTreeMap::new());
         // 高特异性覆盖 font-size
-        assert_eq!(result.get("font-size").map(|v| format!("{v:?}")),
-                   Some(r#"Str("16px")"#.to_string()));
+        assert_eq!(
+            result.get("font-size").map(|v| format!("{v:?}")),
+            Some(r#"Str("16px")"#.to_string())
+        );
         assert!(result.contains_key("color"));
     }
 
     #[test]
     fn selector_specificity_sum() {
-        let s = Selector::descendant(
-            Selector::type_selector("VBox"),
-            Selector::class("primary"),
-        );
+        let s = Selector::descendant(Selector::type_selector("VBox"), Selector::class("primary"));
         assert_eq!(s.specificity(), Specificity(0, 1, 1));
     }
 }

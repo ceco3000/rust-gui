@@ -54,7 +54,10 @@ pub fn diff(old: &WidgetView, new: &WidgetView) -> Vec<Patch> {
 fn diff_recursive(old: &WidgetView, new: &WidgetView, patches: &mut Vec<Patch>) {
     if old.widget_type != new.widget_type {
         if let Some(id) = old.id.clone() {
-            patches.push(Patch::Replace { id, new: new.clone() });
+            patches.push(Patch::Replace {
+                id,
+                new: new.clone(),
+            });
         }
         return;
     }
@@ -79,15 +82,22 @@ fn diff_recursive(old: &WidgetView, new: &WidgetView, patches: &mut Vec<Patch>) 
             (Some(a), Some(b)) => diff_recursive(a, b, patches),
             (None, Some(c)) => {
                 if let Some(pid) = old.id.clone() {
-                    patches.push(Patch::Insert { parent: pid, index: i, child: c.clone() });
+                    patches.push(Patch::Insert {
+                        parent: pid,
+                        index: i,
+                        child: c.clone(),
+                    });
                 }
-            }
+            },
             (Some(_), None) => {
                 if let Some(pid) = old.id.clone() {
-                    patches.push(Patch::Remove { parent: pid, index: i });
+                    patches.push(Patch::Remove {
+                        parent: pid,
+                        index: i,
+                    });
                 }
-            }
-            (None, None) => {}
+            },
+            (None, None) => {},
         }
     }
 }
@@ -106,12 +116,19 @@ fn build_node(depth: usize, fanout: usize, next_id: &mut u64) -> WidgetView {
     props.insert("opacity", PropValue::Num(1));
 
     let children = if depth > 0 {
-        (0..fanout).map(|_| build_node(depth - 1, fanout, next_id)).collect()
+        (0..fanout)
+            .map(|_| build_node(depth - 1, fanout, next_id))
+            .collect()
     } else {
         vec![]
     };
 
-    WidgetView { widget_type: "Container", id: Some(id), props, children }
+    WidgetView {
+        widget_type: "Container",
+        id: Some(id),
+        props,
+        children,
+    }
 }
 
 /// 修改约 n 个节点的属性
@@ -126,7 +143,7 @@ fn mutate_rec(view: &mut WidgetView, target: usize, count: &mut usize, depth: us
     if *count >= target {
         return;
     }
-    if depth % 3 == 0 {
+    if depth.is_multiple_of(3) {
         view.props.insert("modified", PropValue::Num(*count as i64));
         *count += 1;
     }

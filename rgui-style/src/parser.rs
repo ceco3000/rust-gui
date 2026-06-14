@@ -31,7 +31,9 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
     while pos < chars.len() {
         // 跳过空白和注释
         skip_whitespace_and_comments(&chars, &mut pos);
-        if pos >= chars.len() { break; }
+        if pos >= chars.len() {
+            break;
+        }
 
         // 解析选择器
         let selector = parse_selector(&chars, &mut pos)?;
@@ -48,15 +50,22 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
         let mut declarations = BTreeMap::new();
         loop {
             skip_whitespace(&chars, &mut pos);
-            if pos >= chars.len() { break; }
-            if chars[pos] == '}' { pos += 1; break; }
+            if pos >= chars.len() {
+                break;
+            }
+            if chars[pos] == '}' {
+                pos += 1;
+                break;
+            }
 
             let (prop, value) = parse_declaration(&chars, &mut pos)?;
             declarations.insert(Arc::from(prop), value);
 
             // 跳过分号
             skip_whitespace(&chars, &mut pos);
-            if pos < chars.len() && chars[pos] == ';' { pos += 1; }
+            if pos < chars.len() && chars[pos] == ';' {
+                pos += 1;
+            }
         }
 
         rules.push(StyleRule::new(selector, declarations));
@@ -66,7 +75,9 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
 }
 
 fn skip_whitespace(chars: &[char], pos: &mut usize) {
-    while *pos < chars.len() && chars[*pos].is_ascii_whitespace() { *pos += 1; }
+    while *pos < chars.len() && chars[*pos].is_ascii_whitespace() {
+        *pos += 1;
+    }
 }
 
 fn skip_whitespace_and_comments(chars: &[char], pos: &mut usize) {
@@ -74,15 +85,23 @@ fn skip_whitespace_and_comments(chars: &[char], pos: &mut usize) {
         skip_whitespace(chars, pos);
         if *pos + 1 < chars.len() && chars[*pos] == '/' && chars[*pos + 1] == '*' {
             *pos += 2;
-            while *pos + 1 < chars.len() && !(chars[*pos] == '*' && chars[*pos + 1] == '/') { *pos += 1; }
-            if *pos + 1 < chars.len() { *pos += 2; }
-        } else { break; }
+            while *pos + 1 < chars.len() && !(chars[*pos] == '*' && chars[*pos + 1] == '/') {
+                *pos += 1;
+            }
+            if *pos + 1 < chars.len() {
+                *pos += 2;
+            }
+        } else {
+            break;
+        }
     }
 }
 
 fn parse_identifier(chars: &[char], pos: &mut usize) -> String {
     let mut s = String::new();
-    while *pos < chars.len() && (chars[*pos].is_alphanumeric() || chars[*pos] == '_' || chars[*pos] == '-') {
+    while *pos < chars.len()
+        && (chars[*pos].is_alphanumeric() || chars[*pos] == '_' || chars[*pos] == '-')
+    {
         s.push(chars[*pos]);
         *pos += 1;
     }
@@ -90,7 +109,9 @@ fn parse_identifier(chars: &[char], pos: &mut usize) -> String {
 }
 
 fn parse_selector(chars: &[char], pos: &mut usize) -> Result<Selector, ParseError> {
-    if *pos >= chars.len() { return Err(ParseError::Syntax("空选择器".into())); }
+    if *pos >= chars.len() {
+        return Err(ParseError::Syntax("空选择器".into()));
+    }
 
     // 类选择器 `.classname`
     if chars[*pos] == '.' {
@@ -136,7 +157,9 @@ fn parse_declaration(chars: &[char], pos: &mut usize) -> Result<(String, PropVal
 }
 
 fn parse_value(chars: &[char], pos: &mut usize) -> Result<PropValue, ParseError> {
-    if *pos >= chars.len() { return Err(ParseError::InvalidValue("空值".into())); }
+    if *pos >= chars.len() {
+        return Err(ParseError::InvalidValue("空值".into()));
+    }
 
     // 字符串 `"..."`
     if chars[*pos] == '"' || chars[*pos] == '\'' {
@@ -147,7 +170,9 @@ fn parse_value(chars: &[char], pos: &mut usize) -> Result<PropValue, ParseError>
             s.push(chars[*pos]);
             *pos += 1;
         }
-        if *pos < chars.len() { *pos += 1; }
+        if *pos < chars.len() {
+            *pos += 1;
+        }
         return Ok(PropValue::Str(Arc::from(s)));
     }
 
@@ -223,7 +248,10 @@ mod tests {
     fn parse_class_selector() {
         let rules = parse_rgss(".primary { opacity: 0.5; }").unwrap();
         assert_eq!(rules.len(), 1);
-        match &rules[0].selector { Selector::Class(c) => assert_eq!(c, "primary"), _ => panic!() }
+        match &rules[0].selector {
+            Selector::Class(c) => assert_eq!(c, "primary"),
+            _ => panic!(),
+        }
     }
 
     #[test]

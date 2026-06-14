@@ -16,7 +16,14 @@ pub struct SliderState {
 }
 impl Default for SliderState {
     fn default() -> Self {
-        Self { value: 50.0, min: 0.0, max: 100.0, step: 1.0, disabled: false, dragging: false }
+        Self {
+            value: 50.0,
+            min: 0.0,
+            max: 100.0,
+            step: 1.0,
+            disabled: false,
+            dragging: false,
+        }
     }
 }
 impl SliderState {
