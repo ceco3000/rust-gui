@@ -57,6 +57,7 @@ rgui-components = { path = "rgui-components", version = "0.1.0" }
 wgpu = "28"
 vello = "0.8"
 cosmic-text = "0.12"
+fontdb = "0.16"
 
 # 外部依赖——布局
 taffy = "0.7"

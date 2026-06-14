@@ -18,11 +18,12 @@ thiserror.workspace = true
 wgpu = { workspace = true, optional = true }
 vello = { workspace = true, optional = true }
 cosmic-text = { workspace = true, optional = true }
+fontdb = { workspace = true, optional = true }
 skia-safe = { version = "0.82", optional = true }
 
 [features]
 default = ["vello-backend"]
-vello-backend = ["dep:wgpu", "dep:vello", "dep:cosmic-text"]
+vello-backend = ["dep:wgpu", "dep:vello", "dep:cosmic-text", "dep:fontdb"]
 skia-backend = ["dep:skia-safe"]
 offscreen = ["dep:image"]
 

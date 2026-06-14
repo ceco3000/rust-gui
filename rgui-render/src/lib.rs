@@ -6,6 +6,8 @@ pub mod backend;
 pub mod dirty;
 pub mod factory;
 pub mod focus_indicator;
+#[cfg(feature = "vello-backend")]
+pub mod font;
 pub mod glyph;
 pub mod primitives;
 pub mod scene;

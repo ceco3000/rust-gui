@@ -218,9 +218,7 @@ mod tests {
                         "unexpected error message: {msg}"
                     );
                 },
-                Err(other) => panic!(
-                    "expected UnsupportedBackend, got: {other:?}"
-                ),
+                Err(other) => panic!("expected UnsupportedBackend, got: {other:?}"),
                 Ok(_) => panic!("expected Err without skia-backend feature"),
             }
         }

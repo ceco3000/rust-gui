@@ -124,7 +124,10 @@ impl SkylineAllocator {
             width: w,
         });
 
-        let last = affected.last().unwrap();
+        // affected 在 line 106 已确保非空，此处直接引用最后一个元素
+        let last = affected
+            .last()
+            .expect("affected should be non-empty as checked above");
         let last_end = last.x + last.width;
         if end_x < last_end {
             result.push(SkylineSegment {
