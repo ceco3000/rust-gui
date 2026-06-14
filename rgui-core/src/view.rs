@@ -15,7 +15,17 @@ use std::sync::Arc;
 // Color
 // ============================================================================
 
-/// RGBA 颜色，各通道取值范围 0.0–1.0（sRGB 色彩空间）。
+/// RGBA 颜色，各通道取值范围 0.0–1.0。
+///
+/// ## 色彩空间约定
+///
+/// - **输入**：所有 `Color` 值均以 sRGB 色彩空间存储
+/// - **混合/插值**：应在 linear sRGB 空间完成（使用 `lerp_linear()`），
+///   避免 gamma 校正带来的插值颜色偏差
+/// - **输出**：渲染后端负责将 sRGB 值传递到 `*_Srgb` swapchain，
+///   由 GPU/平台完成最终 sRGB 编码
+///
+/// 此约定与 D0 设计文档和 WCAG 2.1 AA 对比度公式使用的 sRGB 相对亮度一致。
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Color {
     pub r: f64,
@@ -54,6 +64,87 @@ impl Color {
     #[must_use]
     pub fn with_alpha(self, a: f64) -> Self {
         Self { a, ..self }
+    }
+
+    // ------------------------------------------------------------------
+    // 色彩空间转换（sRGB ↔ linear sRGB）
+    // ------------------------------------------------------------------
+
+    /// 将当前 sRGB 值转换为 linear sRGB 色彩空间。
+    ///
+    /// 使用标准 sRGB 传输函数（IEC 61966-2-1）。
+    /// alpha 通道保持不变。
+    #[must_use]
+    pub fn to_linear(self) -> Self {
+        fn srgb_channel(c: f64) -> f64 {
+            debug_assert!((0.0..=1.0).contains(&c), "sRGB channel value out of range: {c}");
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        }
+        Self {
+            r: srgb_channel(self.r),
+            g: srgb_channel(self.g),
+            b: srgb_channel(self.b),
+            a: self.a,
+        }
+    }
+
+    /// 将当前 linear sRGB 值转换回 sRGB 色彩空间。
+    ///
+    /// 使用标准 sRGB 传输函数的逆函数。
+    /// alpha 通道保持不变。
+    #[must_use]
+    pub fn from_linear(self) -> Self {
+        fn linear_channel(c: f64) -> f64 {
+            debug_assert!(
+                (0.0..=1.0).contains(&c),
+                "linear channel value out of range: {c}"
+            );
+            if c <= 0.0031308 {
+                c * 12.92
+            } else {
+                1.055 * c.powf(1.0 / 2.4) - 0.055
+            }
+        }
+        Self {
+            r: linear_channel(self.r),
+            g: linear_channel(self.g),
+            b: linear_channel(self.b),
+            a: self.a,
+        }
+    }
+
+    /// 在 linear sRGB 空间中线性插值。
+    ///
+    /// 将两个 sRGB 颜色分别转换到 linear 空间做线性插值，
+    /// 再将结果转回 sRGB，避免直接在 sRGB 空间插值导致的
+    /// gamma 暗化偏差。
+    ///
+    /// `t` 取值范围 [0.0, 1.0]：
+    /// - `t = 0.0` 返回 `self`
+    /// - `t = 1.0` 返回 `other`
+    #[must_use]
+    pub fn lerp_linear(self, other: Self, t: f64) -> Self {
+        let t = t.clamp(0.0, 1.0);
+        // 当 t 为端点值时直接返回，避免 powf 精度损失
+        if t <= 0.0 {
+            return self;
+        }
+        if t >= 1.0 {
+            return other;
+        }
+        let a = self.to_linear();
+        let b = other.to_linear();
+        Color {
+            r: a.r + (b.r - a.r) * t,
+            g: a.g + (b.g - a.g) * t,
+            b: a.b + (b.b - a.b) * t,
+            a: a.a + (b.a - a.a) * t,
+        }
+        .from_linear()
     }
 }
 
@@ -453,6 +544,239 @@ mod tests {
     #[test]
     fn color_display() {
         assert_eq!(format!("{}", Color::WHITE), "rgba(1.00, 1.00, 1.00, 1.00)");
+    }
+
+    // --- 色彩空间转换 ---
+
+    #[test]
+    fn color_to_linear_black() {
+        // 黑色在两种色彩空间中相同
+        let result = Color::BLACK.to_linear();
+        assert!((result.r - 0.0).abs() < 1e-10);
+        assert!((result.g - 0.0).abs() < 1e-10);
+        assert!((result.b - 0.0).abs() < 1e-10);
+        assert!((result.a - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_to_linear_white() {
+        // 白色在两种色彩空间中相同
+        let result = Color::WHITE.to_linear();
+        assert!((result.r - 1.0).abs() < 1e-10);
+        assert!((result.g - 1.0).abs() < 1e-10);
+        assert!((result.b - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_srgb_to_linear_known() {
+        // sRGB 0.5 → linear ~0.21404 (标准转换)
+        let c = Color::new(0.5, 0.5, 0.5, 1.0);
+        let linear = c.to_linear();
+        let expected: f64 = ((0.5_f64 + 0.055_f64) / 1.055_f64).powf(2.4_f64);
+        assert!((linear.r - expected).abs() < 1e-6);
+        assert!((linear.g - expected).abs() < 1e-6);
+        assert!((linear.b - expected).abs() < 1e-6);
+        assert!((linear.a - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_srgb_low_value_linear() {
+        // sRGB 0.01 → linear 0.01 / 12.92 (线性段)
+        let c = Color::new(0.01, 0.01, 0.01, 1.0);
+        let linear = c.to_linear();
+        let expected = 0.01 / 12.92;
+        assert!((linear.r - expected).abs() < 1e-10);
+        assert!((linear.g - expected).abs() < 1e-10);
+        assert!((linear.b - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_from_linear_known() {
+        // linear 0.5 → sRGB ~0.73536 (标准逆转换)
+        let c = Color::new(0.5, 0.5, 0.5, 1.0);
+        let srgb = c.from_linear();
+        let expected: f64 = 1.055_f64 * 0.5_f64.powf(1.0_f64 / 2.4_f64) - 0.055_f64;
+        assert!((srgb.r - expected).abs() < 1e-6);
+        assert!((srgb.g - expected).abs() < 1e-6);
+        assert!((srgb.b - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn color_from_linear_low_value() {
+        // linear 0.001 → sRGB 0.001 * 12.92 (线性段)
+        let c = Color::new(0.001, 0.001, 0.001, 1.0);
+        let srgb = c.from_linear();
+        let expected = 0.001 * 12.92;
+        assert!((srgb.r - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_srgb_linear_roundtrip() {
+        // 完整的 sRGB → linear → sRGB 往返测试
+        // 注意：膝关节精确值（0.04045/0.0031308）处于分段函数切换点，
+        // 由专用边界测试覆盖此处的浮点精度问题。
+        let test_values = [0.0, 0.001, 0.01, 0.04, 0.1, 0.25, 0.5, 0.75, 0.95, 1.0];
+        for &r in &test_values {
+            for &g in &test_values {
+                for &b in &test_values {
+                    let original = Color::new(r, g, b, 1.0);
+                    let roundtripped = original.to_linear().from_linear();
+                    assert!(
+                        (original.r - roundtripped.r).abs() < 1e-10,
+                        "R roundtrip failed at sRGB={r}"
+                    );
+                    assert!(
+                        (original.g - roundtripped.g).abs() < 1e-10,
+                        "G roundtrip failed at sRGB={g}"
+                    );
+                    assert!(
+                        (original.b - roundtripped.b).abs() < 1e-10,
+                        "B roundtrip failed at sRGB={b}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn color_reverse_roundtrip() {
+        // linear → sRGB → linear 往返测试
+        // 膝关节精确值由专用边界测试覆盖
+        let test_values = [0.0, 0.001, 0.01, 0.05, 0.2, 0.5, 0.8, 0.95, 1.0];
+        for &r in &test_values {
+            let original = Color::new(r, 0.0, 0.0, 0.5);
+            let roundtripped = original.from_linear().to_linear();
+            assert!(
+                (original.r - roundtripped.r).abs() < 1e-10,
+                "reverse R roundtrip failed at linear={r}"
+            );
+        }
+    }
+
+    #[test]
+    fn alpha_preserved_during_conversion() {
+        // alpha 通道在色彩空间转换中保持不变
+        let c = Color::new(0.5, 0.3, 0.7, 0.33);
+        assert!((c.to_linear().a - 0.33).abs() < 1e-10);
+        assert!((c.from_linear().a - 0.33).abs() < 1e-10);
+    }
+
+    #[test]
+    fn color_srgb_knee_boundary() {
+        // sRGB 传输函数膝关节边界值 0.04045
+        // 线性段公式：0.04045 / 12.92 ≈ 0.0031308
+        let at_knee = Color::new(0.04045, 0.04045, 0.04045, 1.0);
+        let linear = at_knee.to_linear();
+        let expected = 0.04045_f64 / 12.92_f64;
+        assert!((linear.r - expected).abs() < 1e-12);
+        assert!((linear.g - expected).abs() < 1e-12);
+        assert!((linear.b - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn color_linear_knee_boundary() {
+        // linear 传输函数膝关节边界值 0.0031308
+        // 线性段公式：0.0031308 * 12.92 ≈ 0.04045
+        let at_knee = Color::new(0.0031308, 0.0031308, 0.0031308, 1.0);
+        let srgb = at_knee.from_linear();
+        let expected = 0.0031308_f64 * 12.92_f64;
+        assert!((srgb.r - expected).abs() < 1e-12);
+        assert!((srgb.g - expected).abs() < 1e-12);
+        assert!((srgb.b - expected).abs() < 1e-12);
+    }
+
+    // --- 线性空间插值 ---
+
+    #[test]
+    fn lerp_linear_t_zero_returns_self() {
+        let a = Color::new(0.2, 0.4, 0.6, 0.8);
+        let b = Color::new(0.9, 0.1, 0.3, 0.2);
+        let result = a.lerp_linear(b, 0.0);
+        assert_eq!(result, a);
+    }
+
+    #[test]
+    fn lerp_linear_t_one_returns_other() {
+        let a = Color::new(0.2, 0.4, 0.6, 0.8);
+        let b = Color::new(0.9, 0.1, 0.3, 0.2);
+        let result = a.lerp_linear(b, 1.0);
+        assert_eq!(result, b);
+    }
+
+    #[test]
+    fn lerp_linear_midpoint() {
+        // 在 linear 空间插值 0.5 结果不等于 sRGB 直接取平均
+        let black = Color::BLACK;
+        let white = Color::WHITE;
+        let mid = black.lerp_linear(white, 0.5);
+        // linear 空间中 gray = 0.5, 转回 sRGB = ~0.735
+        // 而非 sRGB 空间的 0.5
+        let expected_r: f64 = Color::new(0.5, 0.5, 0.5, 1.0).from_linear().r;
+        assert!((mid.r - expected_r).abs() < 1e-6);
+        assert!((mid.g - expected_r).abs() < 1e-6);
+        assert!((mid.b - expected_r).abs() < 1e-6);
+        // BLACK 和 WHITE 的 alpha 都是 1.0，插值结果仍为 1.0
+        assert!((mid.a - 1.0).abs() < 1e-10);
+
+        // 验证不等于 sRGB 空间的线性插值
+        let srgb_mid = Color::new(0.5, 0.5, 0.5, 1.0);
+        assert!(
+            (mid.r - srgb_mid.r).abs() > 0.1,
+            "linear-space midpoint should differ from sRGB midpoint"
+        );
+    }
+
+    #[test]
+    fn lerp_linear_alpha_interpolation() {
+        // alpha 通道也在 linear 空间插值（alpha 本来就是线性的）
+        let a = Color::new(1.0, 0.0, 0.0, 0.0);
+        let b = Color::new(0.0, 0.0, 1.0, 1.0);
+        let mid = a.lerp_linear(b, 0.5);
+        assert!((mid.a - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn lerp_linear_clamps_t() {
+        let a = Color::RED;
+        let b = Color::BLUE;
+        let below = a.lerp_linear(b, -0.5);
+        let above = a.lerp_linear(b, 1.5);
+        // 端点优化直接返回原值，应完全精确
+        assert_eq!(below, a);
+        assert_eq!(above, b);
+    }
+
+    #[test]
+    fn lerp_linear_symmetric() {
+        // lerp_linear(a, b, 0.3) 应等于 lerp_linear(b, a, 0.7)
+        let a = Color::new(0.1, 0.2, 0.8, 0.3);
+        let b = Color::new(0.9, 0.7, 0.1, 0.9);
+        let forward = a.lerp_linear(b, 0.3);
+        let reverse = b.lerp_linear(a, 0.7);
+        assert!(
+            (forward.r - reverse.r).abs() < 1e-10,
+            "forward r={}, reverse r={}",
+            forward.r,
+            reverse.r
+        );
+        assert!(
+            (forward.g - reverse.g).abs() < 1e-10,
+            "forward g={}, reverse g={}",
+            forward.g,
+            reverse.g
+        );
+        assert!(
+            (forward.b - reverse.b).abs() < 1e-10,
+            "forward b={}, reverse b={}",
+            forward.b,
+            reverse.b
+        );
+        assert!(
+            (forward.a - reverse.a).abs() < 1e-10,
+            "forward a={}, reverse a={}",
+            forward.a,
+            reverse.a
+        );
     }
 
     // --- Key ---
