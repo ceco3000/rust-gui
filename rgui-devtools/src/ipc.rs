@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_ipc_message_roundtrip_shutdown() {
         let msg = IpcMessage::Shutdown;
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         assert!(matches!(recovered, IpcMessage::Shutdown));
     }
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_ipc_message_roundtrip_ready() {
         let msg = IpcMessage::Ready { widget_count: 42 };
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         match recovered {
             IpcMessage::Ready { widget_count } => assert_eq!(widget_count, 42),
@@ -166,7 +166,7 @@ mod tests {
             message: "样式解析失败".into(),
             recoverable: true,
         };
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         match recovered {
             IpcMessage::Error {
@@ -175,7 +175,7 @@ mod tests {
             } => {
                 assert_eq!(message, "样式解析失败");
                 assert!(recoverable);
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -192,17 +192,14 @@ mod tests {
             snapshot: vec![10, 20, 30],
             metadata,
         };
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         match recovered {
-            IpcMessage::RestoreState {
-                snapshot,
-                metadata,
-            } => {
+            IpcMessage::RestoreState { snapshot, metadata } => {
                 assert_eq!(snapshot, vec![10, 20, 30]);
                 assert_eq!(metadata.focus_path, vec![1, 2, 3]);
                 assert_eq!(metadata.current_route, "/home");
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -213,7 +210,7 @@ mod tests {
             scene_data: vec![0, 1, 2],
             incremental: true,
         };
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         match recovered {
             IpcMessage::SceneUpdate {
@@ -222,7 +219,7 @@ mod tests {
             } => {
                 assert_eq!(scene_data, vec![0, 1, 2]);
                 assert!(incremental);
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -232,12 +229,12 @@ mod tests {
         let msg = IpcMessage::InputEvent {
             event_data: vec![5, 6, 7],
         };
-        let data = postcard::to_vec(&msg).expect("序列化失败");
+        let data = postcard::to_vec::<_, 256>(&msg).expect("序列化失败");
         let recovered: IpcMessage = postcard::from_bytes(&data).expect("反序列化失败");
         match recovered {
             IpcMessage::InputEvent { event_data } => {
                 assert_eq!(event_data, vec![5, 6, 7]);
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -272,13 +269,22 @@ mod tests {
         let messages = vec![
             IpcMessage::Shutdown,
             IpcMessage::Ready { widget_count: 0 },
-            IpcMessage::Error { message: String::new(), recoverable: false },
-            IpcMessage::SceneUpdate { scene_data: vec![], incremental: false },
+            IpcMessage::Error {
+                message: String::new(),
+                recoverable: false,
+            },
+            IpcMessage::SceneUpdate {
+                scene_data: vec![],
+                incremental: false,
+            },
             IpcMessage::InputEvent { event_data: vec![] },
-            IpcMessage::RestoreState { snapshot: vec![], metadata: RestoreMetadata::default() },
+            IpcMessage::RestoreState {
+                snapshot: vec![],
+                metadata: RestoreMetadata::default(),
+            },
         ];
         for msg in &messages {
-            let data = postcard::to_vec(msg).expect("序列化失败");
+            let data = postcard::to_vec::<_, 256>(msg).expect("序列化失败");
             assert!(!data.is_empty(), "序列化输出不应为空");
         }
     }
