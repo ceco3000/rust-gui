@@ -77,7 +77,10 @@ impl Color {
     #[must_use]
     pub fn to_linear(self) -> Self {
         fn srgb_channel(c: f64) -> f64 {
-            debug_assert!((0.0..=1.0).contains(&c), "sRGB channel value out of range: {c}");
+            debug_assert!(
+                (0.0..=1.0).contains(&c),
+                "sRGB channel value out of range: {c}"
+            );
             if c <= 0.04045 {
                 c / 12.92
             } else {

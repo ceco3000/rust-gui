@@ -6,7 +6,10 @@ use rgui_core::registry::WidgetRegistry;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
-use rgui_render::{RenderBackend, RenderParams, SceneGraph, VelloBackend};
+use rgui_render::{
+    PaintLayerData, RenderBackend, RenderParams, SceneGraph, TextRenderer, VelloBackend,
+    build_scene_from_paint_data,
+};
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -22,9 +25,11 @@ pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 
 /// 场景构建回调类型。
 ///
-/// 回调接收帧计数、窗口宽度、窗口高度（像素），返回要渲染的 SceneGraph。
+/// 回调接收帧计数、窗口宽度、窗口高度（像素），返回 `PaintLayerData` 列表。
+/// 框架自动调用 `build_scene_from_paint_data` 将其转换为 SceneGraph，
+/// 并传入 `TextRenderer` 以启用真正的字形渲染。
 /// 在每帧 `RedrawRequested` 时调用。如果未设置，渲染循环使用空场景图。
-pub type SceneBuilder = Box<dyn FnMut(u64, u32, u32) -> SceneGraph + Send>;
+pub type SceneBuilder = Box<dyn FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send>;
 
 #[allow(clippy::type_complexity)]
 /// tick() 布局回调。
@@ -168,10 +173,11 @@ impl App {
     /// 设置场景构建回调。
     ///
     /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
-    /// 返回要渲染的 SceneGraph。用于将组件 paint() 输出桥接到渲染管线。
+    /// 返回 `Vec<PaintLayerData>`。框架自动将其转换为 SceneGraph
+    /// 并传入 `TextRenderer` 以启用字形渲染。
     pub fn set_scene_builder(
         &mut self,
-        builder: impl FnMut(u64, u32, u32) -> SceneGraph + Send + 'static,
+        builder: impl FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send + 'static,
     ) {
         self.scene_builder = Some(Box::new(builder));
     }
@@ -234,6 +240,9 @@ struct AppHandler {
     /// Vello GPU 渲染后端（直接持有，非 facade 封装）。
     /// 符合 D8 R06 架构约束：facade 仅通过 RenderBackend trait 接口委托渲染。
     render_ctx: Option<VelloBackend>,
+    /// 文本渲染器（字形塑形 + atlas 管理）。
+    /// 在每帧渲染时传递给 scene_builder，启用真正的字形渲染。
+    text_renderer: TextRenderer,
     frame_count: u64,
     mouse_pos: Point,
     /// 当前窗口宽度（像素单位），用于构造 RenderParams。
@@ -251,6 +260,7 @@ impl AppHandler {
             app,
             window: None,
             render_ctx: None,
+            text_renderer: TextRenderer::new(rgui_render::TextureId(0)),
             frame_count: 0,
             mouse_pos: Point::ZERO,
             width: 0,
@@ -489,7 +499,8 @@ impl ApplicationHandler for AppHandler {
                     let frame = self.frame_count;
                     // 优先使用用户提供的场景构建回调，否则回退到空场景图
                     let scene = if let Some(ref mut builder) = self.scene_builder {
-                        builder(frame, self.width, self.height)
+                        let layers = builder(frame, self.width, self.height);
+                        build_scene_from_paint_data(&layers, frame, Some(&self.text_renderer))
                     } else {
                         SceneGraph::new(frame)
                     };

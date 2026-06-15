@@ -9,7 +9,6 @@ use rgui::WidgetSpec;
 use rgui::app::{App, AppConfig};
 use rgui::{
     Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData, Rect, WidgetId,
-    build_scene_from_paint_data,
 };
 use std::sync::{Arc, Mutex};
 
@@ -56,7 +55,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    // 场景构建回调：每帧调用组件 paint() 生成 SceneGraph
+    // 场景构建回调：每帧调用组件 paint() 生成 PaintLayerData，
+    // 框架自动通过 build_scene_from_paint_data + TextRenderer 转换为 SceneGraph
     app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             btn2_ctx.into_operations(),
         ));
 
-        build_scene_from_paint_data(&layers, _frame)
+        layers
     });
 
     println!("=== rgui 组件 paint() + SceneGraph 桥接演示 ===\n");

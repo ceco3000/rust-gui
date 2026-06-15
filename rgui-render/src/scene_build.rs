@@ -15,11 +15,32 @@ use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
 // PaintOp → DrawCommand 转换
 // ============================================================================
 
-/// 将单个 `PaintOp` 转换为 `DrawCommand`。
+/// 将单个 `PaintOp` 转换为 `DrawCommand`（无文本渲染器时的回退路径）。
 ///
-/// `PaintOp` 内的坐标应为 widget 的全局坐标（窗口坐标系），
-/// 坐标转换由调用方在调用本函数前完成。
+/// `PaintOp::DrawText` 会被转换为填充矩形占位符。
+/// 如需真正的字形渲染，请使用
+/// [`paint_op_to_draw_command_with_text`] 并传入 `TextRenderer`。
 pub fn paint_op_to_draw_command(op: &PaintOp) -> DrawCommand {
+    paint_op_to_draw_command_inner(op, None)
+}
+
+/// 将单个 `PaintOp` 转换为 `DrawCommand`，支持文本渲染。
+///
+/// 当 `text_renderer` 为 `Some` 且遇到 `PaintOp::DrawText` 时，
+/// 会通过 `TextRenderer` 进行字形塑形和光栅化，生成真正的
+/// `DrawCommand::DrawGlyphs` 指令。
+pub fn paint_op_to_draw_command_with_text(
+    op: &PaintOp,
+    text_renderer: &crate::text_renderer::TextRenderer,
+) -> DrawCommand {
+    paint_op_to_draw_command_inner(op, Some(text_renderer))
+}
+
+/// 内部实现：根据可选的 TextRenderer 决定文本渲染策略。
+fn paint_op_to_draw_command_inner(
+    op: &PaintOp,
+    text_renderer: Option<&crate::text_renderer::TextRenderer>,
+) -> DrawCommand {
     match *op {
         PaintOp::FillRect {
             rect,
@@ -31,26 +52,26 @@ pub fn paint_op_to_draw_command(op: &PaintOp) -> DrawCommand {
             radius,
         },
         PaintOp::DrawText {
-            text: _,
+            ref text,
             bounds,
             color,
-            font_size: _,
+            font_size,
         } => {
-            // 文本渲染：使用 DrawCommand::DrawGlyphs 占位。
-            // 实际的字形光栅化由 TextEngine + GlyphAtlas 完成，
-            // 当前阶段将文本转换为带位置信息的占位矩形。
+            if let Some(tr) = text_renderer {
+                // 使用 TextRenderer 进行真正的字形渲染
+                let baseline_x = bounds.origin.x as f32;
+                let baseline_y = bounds.origin.y as f32 + font_size;
+                let mut commands = tr.render_text(text, baseline_x, baseline_y, color, font_size);
+                if !commands.is_empty() {
+                    return commands.remove(0);
+                }
+            }
+            // 回退：占位矩形（无 TextRenderer 或文本渲染失败时）
             DrawCommand::FillRect {
                 rect: bounds,
                 color,
                 radius: 0.0,
             }
-            // 未来替换为：
-            // DrawCommand::DrawGlyphs {
-            //     texture_id: TextureId::default(),
-            //     glyphs: vec![],
-            //     font_size,
-            //     color,
-            // }
         },
     }
 }
@@ -98,19 +119,27 @@ impl PaintLayerData {
 /// 函数将 PaintOp 转换为 DrawCommand，按 z_index 排序，
 /// 并生成最终的 SceneGraph。
 ///
+/// `text_renderer` 可选——传入 `Some(&mut TextRenderer)` 可启用真正的
+/// 字形渲染；传入 `None` 则 DrawText 会回退为填充矩形。
+///
 /// # 参数
 ///
 /// - `layers`: 图层数据列表。
 /// - `version`: 场景图版本号（通常为帧计数）。
-pub fn build_scene_from_paint_data(layers: &[PaintLayerData], version: u64) -> SceneGraph {
+/// - `text_renderer`: 可选的文本渲染器引用。
+pub fn build_scene_from_paint_data(
+    layers: &[PaintLayerData],
+    version: u64,
+    text_renderer: Option<&crate::text_renderer::TextRenderer>,
+) -> SceneGraph {
     let mut builder = SceneGraphBuilder::new(version);
 
     for layer in layers {
-        let commands: Vec<DrawCommand> = layer
-            .operations
-            .iter()
-            .map(paint_op_to_draw_command)
-            .collect();
+        let mut commands = Vec::with_capacity(layer.operations.len());
+        for op in &layer.operations {
+            let cmd = paint_op_to_draw_command_inner(op, text_renderer);
+            commands.push(cmd);
+        }
 
         builder.build_layer(
             layer.widget_id,
@@ -134,7 +163,7 @@ pub fn build_single_layer_scene(
     version: u64,
 ) -> SceneGraph {
     let layer = PaintLayerData::new(widget_id, 0, bounds, operations.to_vec());
-    build_scene_from_paint_data(&[layer], version)
+    build_scene_from_paint_data(&[layer], version, None)
 }
 
 // ============================================================================
@@ -157,16 +186,25 @@ pub type PaintFn = Box<dyn Fn(&str, WidgetId, Rect) -> Vec<PaintOp> + Send + Syn
 /// - `root_bounds`: 根 widget 的窗口边界矩形（通常为窗口尺寸）。
 /// - `paint_fn`: 为每个 widget 生成 PaintOp 的回调。
 /// - `version`: 场景图版本号。
+/// - `text_renderer`: 可选的文本渲染器。
 pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
     root: &rgui_core::view::WidgetView<M>,
     root_bounds: Rect,
     paint_fn: &PaintFn,
     version: u64,
+    text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) -> SceneGraph {
     let mut builder = SceneGraphBuilder::new(version);
     let mut z_index: i32 = 0;
 
-    walk_view_tree(root, root_bounds, paint_fn, &mut builder, &mut z_index);
+    walk_view_tree(
+        root,
+        root_bounds,
+        paint_fn,
+        &mut builder,
+        &mut z_index,
+        text_renderer,
+    );
 
     builder.finish()
 }
@@ -178,23 +216,23 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     paint_fn: &PaintFn,
     builder: &mut SceneGraphBuilder,
     z_index: &mut i32,
+    text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) {
     let widget_id = view.id.unwrap_or_default();
 
     let ops = paint_fn(view.widget_type, widget_id, bounds);
 
-    builder.build_layer(
-        widget_id,
-        *z_index,
-        bounds,
-        ops.iter().map(paint_op_to_draw_command).collect(),
-        true,
-    );
+    let mut commands = Vec::with_capacity(ops.len());
+    for op in &ops {
+        commands.push(paint_op_to_draw_command_inner(op, text_renderer));
+    }
+
+    builder.build_layer(widget_id, *z_index, bounds, commands, true);
     *z_index += 1;
 
     // 递归处理子节点——子节点 bounds 继承父节点 bounds
     for child in &view.children {
-        walk_view_tree(child, bounds, paint_fn, builder, z_index);
+        walk_view_tree(child, bounds, paint_fn, builder, z_index, text_renderer);
     }
 }
 
@@ -246,7 +284,7 @@ mod tests {
 
     #[test]
     fn build_scene_empty_layers() {
-        let scene = build_scene_from_paint_data(&[], 0);
+        let scene = build_scene_from_paint_data(&[], 0, None);
         assert!(scene.is_empty());
     }
 
@@ -263,7 +301,7 @@ mod tests {
             }],
         )];
 
-        let scene = build_scene_from_paint_data(&layers, 42);
+        let scene = build_scene_from_paint_data(&layers, 42, None);
         assert_eq!(scene.layer_count(), 1);
         assert_eq!(scene.version, 42);
     }
@@ -283,7 +321,7 @@ mod tests {
             vec![],
         );
 
-        let scene = build_scene_from_paint_data(&[layer_front, layer_back], 0);
+        let scene = build_scene_from_paint_data(&[layer_front, layer_back], 0, None);
         assert_eq!(scene.layer_count(), 2);
         // SceneGraphBuilder::finish() 按 z_index 排序
         assert_eq!(scene.layers[0].z_index, 0);

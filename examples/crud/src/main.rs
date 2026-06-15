@@ -20,6 +20,9 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::prelude::*;
+use rgui::{
+    Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData, Rect, WidgetId,
+};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -300,7 +303,161 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // 4.11 运行应用——进入 winit 事件循环
+    // 4.11 设置场景构建回调——每帧调用组件 paint() 生成 SceneGraph
+    let scene_state = Arc::clone(&state);
+    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
+        let w = width as f64;
+        let h = height as f64;
+        let guard = scene_state.lock().unwrap();
+        let mut layers: Vec<PaintLayerData> = Vec::new();
+
+        // --- 背景 ---
+        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
+        bg_ctx.fill_rect(
+            Rect::new(0.0, 0.0, w, h),
+            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
+            0.0,
+        );
+        layers.push(PaintLayerData::new(
+            WidgetId::from_u64(0),
+            -1,
+            Rect::new(0.0, 0.0, w, h),
+            bg_ctx.into_operations(),
+        ));
+
+        // --- 标题 ---
+        let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
+        let mut title_ctx = PaintContext::new(title_bounds);
+        Label.paint(
+            &LabelState {
+                text: "联系人管理".into(),
+            },
+            title_bounds,
+            &mut title_ctx,
+        );
+        layers.push(PaintLayerData::new(
+            WidgetId::from_u64(900),
+            0,
+            title_bounds,
+            title_ctx.into_operations(),
+        ));
+
+        // --- 输入区域标签 ---
+        let input_labels = ["姓名:", "邮箱:", "电话:"];
+        let input_values = [&guard.edit_name, &guard.edit_email, &guard.edit_phone];
+        for (i, lbl) in input_labels.iter().enumerate() {
+            let y = INPUT_Y + i as f64 * 32.0;
+            let lb = Rect::new(LEFT, y, LABEL_W, 24.0);
+            let mut lc = PaintContext::new(lb);
+            Label.paint(
+                &LabelState {
+                    text: lbl.to_string(),
+                },
+                lb,
+                &mut lc,
+            );
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(910 + i as u64),
+                0,
+                lb,
+                lc.into_operations(),
+            ));
+
+            let vb = Rect::new(LEFT + LABEL_W, y, INPUT_W, 24.0);
+            let mut vc = PaintContext::new(vb);
+            let val = input_values[i];
+            let display = if val.is_empty() {
+                "(点击输入)"
+            } else {
+                val
+            };
+            Label.paint(
+                &LabelState {
+                    text: display.to_string(),
+                },
+                vb,
+                &mut vc,
+            );
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(920 + i as u64),
+                0,
+                vb,
+                vc.into_operations(),
+            ));
+        }
+
+        // --- 按钮行 ---
+        let buttons = [
+            (201_u64, "添加", 20.0),
+            (202_u64, "编辑", 110.0),
+            (203_u64, "删除", 200.0),
+            (204_u64, "全清除", 290.0),
+        ];
+        for (id, label, x) in &buttons {
+            let bb = Rect::new(*x, BUTTON_Y, 80.0, 32.0);
+            let mut bc = PaintContext::new(bb);
+            Button.paint(&ButtonState::new(label.to_string()), bb, &mut bc);
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(*id),
+                1,
+                bb,
+                bc.into_operations(),
+            ));
+        }
+
+        // --- 联系人列表（最多 12 行）---
+        for i in 0..12_usize {
+            let y = LIST_TOP + i as f64 * LIST_ROW_H;
+            let row_bounds = Rect::new(LEFT, y, 780.0, LIST_ROW_H);
+
+            if i < guard.contacts.len() {
+                let c = &guard.contacts[i];
+                let is_selected = guard.selected_index == Some(i);
+                let mut row_ctx = PaintContext::new(row_bounds);
+
+                // 选中行高亮背景
+                if is_selected {
+                    row_ctx.fill_rect(row_bounds, Color::new(0.15, 0.20, 0.35, 0.6), 4.0);
+                }
+
+                // 联系人信息
+                let info = format!("{}. {} | {} | {}", i + 1, c.name, c.email, c.phone);
+                row_ctx.draw_text(
+                    &info,
+                    Rect::new(4.0, 2.0, 760.0, 24.0),
+                    Color::WHITE.with_alpha(0.9),
+                    14.0,
+                );
+                layers.push(PaintLayerData::new(
+                    WidgetId::from_u64(300 + i as u64),
+                    if is_selected { 2 } else { 0 },
+                    row_bounds,
+                    row_ctx.into_operations(),
+                ));
+            }
+        }
+
+        // --- 状态消息 ---
+        let msg_bounds = Rect::new(20.0, h - 40.0, w - 40.0, 24.0);
+        let mut msg_ctx = PaintContext::new(msg_bounds);
+        msg_ctx.draw_text(
+            &guard.message,
+            msg_bounds,
+            Color::WHITE.with_alpha(0.6),
+            12.0,
+        );
+        layers.push(PaintLayerData::new(
+            WidgetId::from_u64(999),
+            5,
+            msg_bounds,
+            msg_ctx.into_operations(),
+        ));
+
+        drop(guard);
+        layers
+    });
+
+    // 4.12 运行应用——进入 winit 事件循环
     println!("\n=== rgui CRUD 示例 ===");
     println!("联系人管理应用已启动。");
     println!();

@@ -15,6 +15,8 @@ pub mod scene_build;
 pub mod skyline;
 #[cfg(feature = "vello-backend")]
 pub mod text;
+#[cfg(feature = "vello-backend")]
+pub mod text_renderer;
 pub mod texture;
 
 #[cfg(feature = "vello-backend")]
@@ -38,9 +40,11 @@ pub use primitives::{
 pub use scene::{ClipRegion, DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer, TextureRef};
 pub use scene_build::{
     PaintFn, PaintLayerData, build_scene_from_paint_data, build_scene_from_view,
-    build_single_layer_scene, paint_op_to_draw_command,
+    build_single_layer_scene, paint_op_to_draw_command, paint_op_to_draw_command_with_text,
 };
 pub use skyline::{Allocation, SkylineAllocator};
+#[cfg(feature = "vello-backend")]
+pub use text_renderer::TextRenderer;
 pub use texture::{TextureData, TextureFormat, TextureId};
 
 #[cfg(feature = "skia-backend")]

@@ -17,9 +17,6 @@ rgui-a11y.workspace = true
 rgui-macros.workspace = true
 rgui-components.workspace = true
 winit.workspace = true
-wgpu.workspace = true
-vello.workspace = true
-pollster = "0.4"
 [features]
 default = ["vello-backend"]
 vello-backend = ["rgui-render/vello-backend"]

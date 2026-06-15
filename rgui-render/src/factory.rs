@@ -13,6 +13,10 @@ use crate::backend::{RenderBackend, RenderError, RenderParams};
 
 #[cfg(feature = "skia-backend")]
 use crate::SkiaBackend;
+#[cfg(feature = "vello-backend")]
+use crate::VelloBackend;
+#[cfg(feature = "vello-backend")]
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
 /// 渲染后端类型枚举。
 ///
@@ -66,39 +70,53 @@ impl BackendType {
 pub struct RenderBackendFactory;
 
 impl RenderBackendFactory {
-    /// 创建首选可用的渲染后端。
+    /// 创建首选可用的渲染后端（headless 模式，选 Skia）。
     ///
-    /// 按优先级（Vello > Skia）自动选择。
-    /// 当前 VelloBackend 尚未实现（R05），实际仅返回 SkiaBackend。
+    /// 自动选择策略：
+    /// 1. SkiaBackend（headless 可用，无需窗口）
+    /// 2. 如果 Skia 不可用，返回错误。
+    ///
+    /// 注意：VelloBackend 需要窗口句柄，仅在 headless 模式下不可用。
+    /// 如需 GPU 渲染，使用 [`create_vello`](Self::create_vello)。
     ///
     /// # 错误
     ///
     /// - [`RenderError::NoAvailableBackend`] — 所有后端均不可用。
     #[cfg_attr(not(feature = "skia-backend"), allow(unused_variables))]
     pub fn create(params: &RenderParams) -> Result<Box<dyn RenderBackend>, RenderError> {
-        // VelloBackend 将在 R05 任务中实现。
-        // 当前 VelloBackend 尚未创建，直接回退到 SkiaBackend。
-        // 待 R05 完成后，在此处插入：
-        //
-        // ```rust
-        // #[cfg(feature = "vello-backend")]
-        // return Ok(Box::new(VelloBackend::new(...)?));
-        // ```
-
-        // 回退到 SkiaBackend
         #[cfg(feature = "skia-backend")]
         {
             let backend = SkiaBackend::new();
-            // params 在此处不参与 SkiaBackend 构造，仅在 render() 时使用。
-            // 保留引用以防未来需要传递初始化参数。
             let _ = params;
             Ok(Box::new(backend))
         }
         #[cfg(not(feature = "skia-backend"))]
         {
-            // 无可用后端
+            let _ = params;
             Err(RenderError::NoAvailableBackend)
         }
+    }
+
+    /// 创建 Vello GPU 渲染后端（需要窗口句柄）。
+    ///
+    /// # 参数
+    ///
+    /// * `window` — 窗口句柄，实现 `HasWindowHandle + HasDisplayHandle`。
+    /// * `width` — 初始表面宽度（像素单位）。
+    /// * `height` — 初始表面高度（像素单位）。
+    ///
+    /// # 错误
+    ///
+    /// - [`RenderError::SurfaceCreationFailed`] — 无法创建 wgpu surface。
+    /// - [`RenderError::RenderFailed`] — 无法创建 Vello 渲染器。
+    /// - [`RenderError::UnsupportedBackend`] — `vello-backend` feature 未启用。
+    #[cfg(feature = "vello-backend")]
+    pub fn create_vello(
+        window: impl HasWindowHandle + HasDisplayHandle + Send + Sync + 'static,
+        width: u32,
+        height: u32,
+    ) -> Result<VelloBackend, RenderError> {
+        VelloBackend::new(window, width, height)
     }
 
     /// 创建指定类型的渲染后端。
@@ -117,9 +135,9 @@ impl RenderBackendFactory {
     ) -> Result<Box<dyn RenderBackend>, RenderError> {
         match backend_type {
             BackendType::Vello => {
-                // VelloBackend 将在 R05 中实现
+                // VelloBackend 需要窗口句柄，请使用 create_vello()
                 Err(RenderError::UnsupportedBackend(
-                    "VelloBackend not yet implemented (see R05)",
+                    "VelloBackend requires a window; use RenderBackendFactory::create_vello()",
                 ))
             },
             BackendType::Skia => {
@@ -141,18 +159,19 @@ impl RenderBackendFactory {
     /// 返回值按优先级排序（Vello > Skia）。
     #[must_use]
     pub fn available_backends() -> Vec<BackendType> {
-        // VelloBackend 将在 R05 中实现后在此处添加至列表首位
-        // #[cfg(feature = "vello-backend")]
-        // backends.push(BackendType::Vello);
+        let mut backends = Vec::new();
+
+        #[cfg(feature = "vello-backend")]
+        {
+            backends.push(BackendType::Vello);
+        }
 
         #[cfg(feature = "skia-backend")]
         {
-            vec![BackendType::Skia]
+            backends.push(BackendType::Skia);
         }
-        #[cfg(not(feature = "skia-backend"))]
-        {
-            Vec::new()
-        }
+
+        backends
     }
 }
 
@@ -185,12 +204,15 @@ mod tests {
     }
 
     #[test]
-    fn available_backends_returns_at_least_one_with_features() {
+    fn available_backends_returns_with_vello_first() {
         let available = RenderBackendFactory::available_backends();
-        // 至少应该有一个后端可用（因为 feature 会启用至少一个）
-        // 如果无 feature 测试运行，可能返回空列表，这是预期的
-        if cfg!(feature = "skia-backend") {
-            assert!(available.contains(&BackendType::Skia));
+        // 启用 vello-backend feature 时，Vello 应排在首位
+        if cfg!(feature = "vello-backend") {
+            assert!(
+                available.contains(&BackendType::Vello),
+                "Vello 应在可用后端列表中"
+            );
+            assert_eq!(available[0], BackendType::Vello);
         }
     }
 
@@ -198,7 +220,8 @@ mod tests {
     fn available_backends_priority_order() {
         let available = RenderBackendFactory::available_backends();
         // 验证优先级顺序：Vello 优先于 Skia
-        if available.len() >= 2 {
+        if cfg!(feature = "vello-backend") && cfg!(feature = "skia-backend") {
+            assert_eq!(available.len(), 2);
             assert_eq!(available[0], BackendType::Vello);
             assert_eq!(available[1], BackendType::Skia);
         }
@@ -272,12 +295,11 @@ mod tests {
         let result = RenderBackendFactory::create_backend(BackendType::Vello, &params);
         assert!(result.is_err());
 
-        // 使用 match 或 is_err() 检查，避免 unwrap_err() 要求 Box<dyn RenderBackend>: Debug
         match &result {
             Err(RenderError::UnsupportedBackend(msg)) => {
                 assert!(
-                    msg.contains("R05"),
-                    "error message should reference R05: {msg}"
+                    msg.contains("create_vello"),
+                    "error message should mention create_vello: {msg}"
                 );
             },
             Err(other) => panic!("expected UnsupportedBackend, got: {other:?}"),

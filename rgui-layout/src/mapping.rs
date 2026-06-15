@@ -141,8 +141,12 @@ pub fn to_taffy_style_from_layout(layout: &LayoutStyle) -> Style {
     }
 
     style.size = taffy::geometry::Size {
-        width: layout.width.map_or(Dimension::Auto, |w| Dimension::Length(w as f32)),
-        height: layout.height.map_or(Dimension::Auto, |h| Dimension::Length(h as f32)),
+        width: layout
+            .width
+            .map_or(Dimension::Auto, |w| Dimension::Length(w as f32)),
+        height: layout
+            .height
+            .map_or(Dimension::Auto, |h| Dimension::Length(h as f32)),
     };
 
     style.min_size = taffy::geometry::Size {
@@ -334,10 +338,7 @@ mod tests {
         let style = to_taffy_style_from_layout(&layout);
         assert_eq!(style.display, Display::Flex);
         // gap 被设置
-        assert_eq!(
-            style.gap.width,
-            LengthPercentage::Length(12.0_f32)
-        );
+        assert_eq!(style.gap.width, LengthPercentage::Length(12.0_f32));
         // flex_direction 未设置，应保持默认值
         assert_eq!(style.flex_direction, FlexDirection::default());
     }

@@ -81,6 +81,12 @@ impl GlyphAtlas {
         }
     }
 
+    /// 返回 atlas 纹理的当前尺寸（宽, 高）。
+    #[must_use]
+    pub fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
     /// 请求字形缓存。命中则直接返回；未命中则调用 rasterizer
     /// 光栅化并分配 Atlas 空间。
     pub fn get_or_rasterize(
@@ -144,11 +150,11 @@ impl GlyphAtlas {
         self.height
     }
 
-    fn allocate_space(&mut self, w: u32, h: u32) -> Option<Allocation> {
+    pub(crate) fn allocate_space(&mut self, w: u32, h: u32) -> Option<Allocation> {
         self.skyline.allocate(w, h)
     }
 
-    fn grow(&mut self, needed_w: u32, needed_h: u32) {
+    pub(crate) fn grow(&mut self, needed_w: u32, needed_h: u32) {
         if self.width < self.max_width {
             self.width = (self.width * 2).min(self.max_width).max(needed_w);
         }
@@ -158,7 +164,7 @@ impl GlyphAtlas {
         self.skyline.resize(self.width, self.height);
     }
 
-    fn evict_lru(&mut self) {
+    pub(crate) fn evict_lru(&mut self) {
         let oldest = self
             .lru_counter
             .iter()
