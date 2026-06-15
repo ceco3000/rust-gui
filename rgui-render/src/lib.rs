@@ -12,7 +12,12 @@ pub mod glyph;
 pub mod primitives;
 pub mod scene;
 pub mod skyline;
+#[cfg(feature = "vello-backend")]
+pub mod text;
 pub mod texture;
+
+#[cfg(feature = "vello-backend")]
+pub mod vello;
 
 #[cfg(feature = "skia-backend")]
 pub mod offscreen;
@@ -40,3 +45,5 @@ pub use screenshot::{ScreenshotTolerance, delta_e, pixel_diff_ratio};
 pub use screenshot::{assert_screenshot_matches, assert_screenshot_matches_with_tolerance};
 #[cfg(feature = "skia-backend")]
 pub use skia::SkiaBackend;
+#[cfg(feature = "vello-backend")]
+pub use vello::{VelloBackend, encode_scene_to_vello};

@@ -116,6 +116,7 @@ pub enum DrawCommand {
         paint: Paint,
     },
     DrawGlyphs {
+        texture_id: TextureId,
         glyphs: Vec<GlyphData>,
         font_size: f32,
         color: Color,

@@ -166,6 +166,7 @@ impl SkiaBackend {
                         draw_stroke_path(canvas, path, stroke, paint, current_opacity);
                     },
                     DrawCommand::DrawGlyphs {
+                        texture_id,
                         glyphs,
                         font_size,
                         color,
@@ -173,6 +174,7 @@ impl SkiaBackend {
                         draw_glyphs_placeholder(
                             canvas,
                             glyphs,
+                            *texture_id,
                             *font_size,
                             *color,
                             current_opacity,
@@ -580,12 +582,13 @@ fn draw_stroke_path(
 
 /// 绘制字形占位矩形。
 ///
-/// 当前实现绘制彩色矩形作为字形位置的占位标记。完整的字形渲染
-/// 需要将字形 Atlas 纹理中的子区域正确映射到目标位置，而当前
-/// DrawGlyphs 命令不包含 Atlas 纹理 ID，因此无法实现完整渲染。
+/// 当前实现绘制彩色矩形作为字形位置的占位标记。`texture_id` 已添加到
+/// `DrawGlyphs` 命令（D3 §3.1），完整渲染将使用该 ID 从 atlas 纹理中
+/// 采样字形子区域。
 fn draw_glyphs_placeholder(
     canvas: &skia_safe::Canvas,
     glyphs: &[GlyphData],
+    _texture_id: TextureId,
     _font_size: f32,
     color: Color,
     opacity: f32,

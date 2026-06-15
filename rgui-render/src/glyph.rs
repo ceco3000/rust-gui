@@ -86,7 +86,7 @@ impl GlyphAtlas {
     pub fn get_or_rasterize(
         &mut self,
         key: GlyphKey,
-        rasterizer: &dyn Fn(&GlyphKey) -> Option<RasterizedGlyph>,
+        rasterizer: &mut dyn FnMut(&GlyphKey) -> Option<RasterizedGlyph>,
     ) -> Option<GlyphCacheEntry> {
         if let Some(entry) = self.glyphs.get(&key) {
             self.lru_counter.insert(key.clone(), self.frame_index);
@@ -205,9 +205,9 @@ mod tests {
             subpx_offset: 0,
         };
         let e1 = atlas
-            .get_or_rasterize(key.clone(), &dummy_rasterizer)
+            .get_or_rasterize(key.clone(), &mut dummy_rasterizer)
             .unwrap();
-        let e2 = atlas.get_or_rasterize(key, &dummy_rasterizer).unwrap();
+        let e2 = atlas.get_or_rasterize(key, &mut dummy_rasterizer).unwrap();
         assert!((e1.atlas_u - e2.atlas_u).abs() < f32::EPSILON);
     }
 
@@ -221,7 +221,7 @@ mod tests {
                 font_size: 24,
                 subpx_offset: 0,
             };
-            assert!(atlas.get_or_rasterize(key, &dummy_rasterizer).is_some());
+            assert!(atlas.get_or_rasterize(key, &mut dummy_rasterizer).is_some());
         }
     }
 
@@ -237,7 +237,7 @@ mod tests {
                     font_size: 32,
                     subpx_offset: 0,
                 },
-                &dummy_rasterizer,
+                &mut dummy_rasterizer,
             )
             .unwrap();
         assert!(atlas.dirty);
@@ -254,6 +254,6 @@ mod tests {
             font_size: 16,
             subpx_offset: 0,
         };
-        assert!(atlas.get_or_rasterize(key, &dummy_rasterizer).is_some());
+        assert!(atlas.get_or_rasterize(key, &mut dummy_rasterizer).is_some());
     }
 }

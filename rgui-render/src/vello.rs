@@ -394,12 +394,32 @@ fn encode_draw_command(scene: &mut vello::Scene, cmd: &DrawCommand) {
             }
         },
         DrawCommand::DrawGlyphs {
+            texture_id,
             glyphs,
             font_size: _,
             color,
         } => {
-            // 字形渲染占位：为每个字形绘制填充矩形
+            // 使用 atlas 纹理渲染字形（若无纹理则回退到占位矩形）
             for glyph in glyphs {
+                // 构建字形四边形的变换矩阵：
+                // 1. 平移到字形基线位置 (glyph.offset_x + glyph.atlas_w/2, glyph.offset_y)
+                // 2. 缩放为 atlas 子区域的宽高
+                // Vello draw_image 使用图像坐标 → 世界坐标的仿射变换
+                let xform =
+                    vello::kurbo::Affine::translate((glyph.offset_x.into(), glyph.offset_y.into()))
+                        * vello::kurbo::Affine::scale_non_uniform(
+                            glyph.atlas_w.into(),
+                            glyph.atlas_h.into(),
+                        );
+
+                // TODO(R08+R15): 将 atlas 纹理注册到 Vello 渲染器，
+                // 使用 scene.draw_image(&atlas_image, xform) 渲染纹理
+                // 四边形替代当前占位矩形。需要 backend 提供
+                // renderer.register_texture() 集成。
+                let _ = texture_id;
+                let _ = xform;
+
+                // 占位：填充矩形（后续替换为 draw_image）
                 let glyph_rect = vello::kurbo::Rect::new(
                     glyph.offset_x.into(),
                     glyph.offset_y.into(),
@@ -974,6 +994,7 @@ mod tests {
         let widget_id = WidgetId::new();
         let mut layer = SceneLayer::new(widget_id, 0, Rect::new(0.0, 0.0, 200.0, 50.0));
         layer.push(DrawCommand::DrawGlyphs {
+            texture_id: TextureId::new(1),
             glyphs: vec![
                 GlyphData {
                     atlas_x: 0,
