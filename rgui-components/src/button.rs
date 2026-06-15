@@ -7,7 +7,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage, PersistState, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage as AppMsg, PersistState as Persist};
 
 /// Button 业务状态。
@@ -84,7 +84,30 @@ impl WidgetSpec for Button {
             32_f64.clamp(c.min_height, c.max_height),
         )
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let bg_color = if s.disabled {
+            Color::new(0.55, 0.55, 0.55, 1.0)
+        } else if s.pressed {
+            Color::new(0.15, 0.40, 0.75, 1.0)
+        } else {
+            Color::new(0.20, 0.50, 0.90, 1.0)
+        };
+        ctx.fill_rect(bounds, bg_color, 6.0);
+
+        let text_color = if s.disabled {
+            Color::new(0.7, 0.7, 0.7, 1.0)
+        } else {
+            Color::WHITE
+        };
+        let pad = 4.0;
+        let text_bounds = Rect::new(
+            bounds.origin.x + pad,
+            bounds.origin.y,
+            bounds.size.width - pad * 2.0,
+            bounds.size.height,
+        );
+        ctx.draw_text(&s.label, text_bounds, text_color, 14.0);
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(s.label.as_str())
     }
@@ -132,5 +155,33 @@ mod tests {
     #[test]
     fn derive_state() {
         assert_eq!(ButtonState::schema_name(), "ButtonState");
+    }
+
+    #[test]
+    fn paint_normal_button() {
+        let state = ButtonState::new("OK");
+        let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
+        let mut ctx = PaintContext::new(bounds);
+        Button.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2, "按钮应绘制背景 + 文本");
+    }
+
+    #[test]
+    fn paint_disabled_button() {
+        let state = ButtonState::new("OK").disabled(true);
+        let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
+        let mut ctx = PaintContext::new(bounds);
+        Button.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2);
+    }
+
+    #[test]
+    fn paint_pressed_button() {
+        let mut state = ButtonState::new("OK");
+        state.pressed = true;
+        let bounds = Rect::new(0.0, 0.0, 100.0, 40.0);
+        let mut ctx = PaintContext::new(bounds);
+        Button.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2);
     }
 }

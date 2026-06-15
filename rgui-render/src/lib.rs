@@ -11,6 +11,7 @@ pub mod font;
 pub mod glyph;
 pub mod primitives;
 pub mod scene;
+pub mod scene_build;
 pub mod skyline;
 #[cfg(feature = "vello-backend")]
 pub mod text;
@@ -35,6 +36,10 @@ pub use primitives::{
     PathCommand, PathData, Stroke, Transform,
 };
 pub use scene::{ClipRegion, DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer, TextureRef};
+pub use scene_build::{
+    PaintFn, PaintLayerData, build_scene_from_paint_data, build_scene_from_view,
+    build_single_layer_scene, paint_op_to_draw_command,
+};
 pub use skyline::{Allocation, SkylineAllocator};
 pub use texture::{TextureData, TextureFormat, TextureId};
 

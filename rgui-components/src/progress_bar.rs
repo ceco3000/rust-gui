@@ -7,7 +7,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 
 /// ProgressBar 业务状态。
@@ -64,7 +64,25 @@ impl WidgetSpec for ProgressBar {
             20_f64.clamp(c.min_height, c.max_height),
         )
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        // 轨道背景
+        ctx.fill_rect(bounds, Color::new(0.25, 0.25, 0.30, 1.0), 4.0);
+
+        // 填充进度
+        let fill_w = (bounds.size.width * s.value.clamp(0.0, 1.0)).max(0.0);
+        if fill_w > 0.0 {
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x, bounds.origin.y, fill_w, bounds.size.height),
+                Color::new(0.20, 0.55, 0.95, 1.0),
+                4.0,
+            );
+        }
+
+        // 百分比文本
+        if !s.label.is_empty() {
+            ctx.draw_text(&s.label, bounds, Color::new(0.9, 0.9, 0.95, 1.0), 12.0);
+        }
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(format!("{:.0}%", s.value * 100.0))
     }
@@ -85,5 +103,24 @@ mod tests {
             &ViewContext::new(Size::new(800.0, 600.0)),
         );
         assert!(v.props.contains_key("percent"));
+    }
+
+    #[test]
+    fn paint_progress() {
+        let mut s = ProgressBarState::new(0.5);
+        s.label = "50%".into();
+        let bounds = Rect::new(0.0, 0.0, 200.0, 20.0);
+        let mut ctx = PaintContext::new(bounds);
+        ProgressBar.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2, "应绘制轨道 + 填充");
+    }
+
+    #[test]
+    fn paint_empty_progress() {
+        let s = ProgressBarState::new(0.0);
+        let bounds = Rect::new(0.0, 0.0, 200.0, 20.0);
+        let mut ctx = PaintContext::new(bounds);
+        ProgressBar.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1, "至少绘制轨道");
     }
 }

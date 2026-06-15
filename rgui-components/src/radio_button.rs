@@ -7,7 +7,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 
 /// RadioButton 业务状态。
@@ -75,7 +75,44 @@ impl WidgetSpec for RadioButton {
             24_f64.clamp(c.min_height, c.max_height),
         )
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let radius = 9.0_f64.min(bounds.size.height * 0.5);
+        let cx = bounds.origin.x + radius + 4.0;
+        let cy = bounds.origin.y + bounds.size.height * 0.5;
+        // 外圈
+        let ring_rect = Rect::new(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
+        let ring_color = if s.disabled {
+            Color::new(0.4, 0.4, 0.4, 1.0)
+        } else {
+            Color::new(0.7, 0.7, 0.8, 1.0)
+        };
+        ctx.fill_rect(ring_rect, ring_color, radius as f32);
+
+        // 内圈（选中时）
+        if s.selected && !s.disabled {
+            let inner_r = radius * 0.5;
+            ctx.fill_rect(
+                Rect::new(cx - inner_r, cy - inner_r, inner_r * 2.0, inner_r * 2.0),
+                Color::new(0.20, 0.55, 0.95, 1.0),
+                inner_r as f32,
+            );
+        }
+
+        // 标签文本
+        let text_x = cx + radius + 8.0;
+        let text_bounds = Rect::new(
+            text_x,
+            bounds.origin.y,
+            bounds.size.width - (text_x - bounds.origin.x) - 4.0,
+            bounds.size.height,
+        );
+        let text_color = if s.disabled {
+            Color::new(0.5, 0.5, 0.5, 1.0)
+        } else {
+            Color::new(0.9, 0.9, 0.95, 1.0)
+        };
+        ctx.draw_text(&s.label, text_bounds, text_color, 14.0);
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(s.label.as_str())
     }
@@ -108,5 +145,25 @@ mod tests {
     #[test]
     fn group() {
         assert_eq!(RadioButtonState::new("A", "theme").group, "theme");
+    }
+
+    #[test]
+    fn paint_selected() {
+        let state = RadioButtonState::new("Option A", "group1");
+        let mut s = state;
+        s.selected = true;
+        let bounds = Rect::new(0.0, 0.0, 150.0, 24.0);
+        let mut ctx = PaintContext::new(bounds);
+        RadioButton.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 3, "选中应绘制外圈 + 内圆 + 文本");
+    }
+
+    #[test]
+    fn paint_not_selected() {
+        let state = RadioButtonState::new("Option B", "group1");
+        let bounds = Rect::new(0.0, 0.0, 150.0, 24.0);
+        let mut ctx = PaintContext::new(bounds);
+        RadioButton.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2);
     }
 }

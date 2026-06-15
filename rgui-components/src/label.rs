@@ -7,7 +7,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 
 /// Label 业务状态。
@@ -44,7 +44,9 @@ impl WidgetSpec for Label {
     fn measure(&self, s: &Self::State, _: BoxConstraints, _: &MeasureContext) -> Size {
         Size::new(8_f64 * s.text.len() as f64 + 8.0, 20.0)
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        ctx.draw_text(&s.text, bounds, Color::new(0.9, 0.9, 0.95, 1.0), 14.0);
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(s.text.as_str())
     }
@@ -68,5 +70,16 @@ mod tests {
     #[test]
     fn schema() {
         assert_eq!(LabelState::schema_name(), "LabelState");
+    }
+
+    #[test]
+    fn paint_draws_text() {
+        let state = LabelState {
+            text: "Hello".into(),
+        };
+        let bounds = Rect::new(0.0, 0.0, 200.0, 30.0);
+        let mut ctx = PaintContext::new(bounds);
+        Label.paint(&state, bounds, &mut ctx);
+        assert_eq!(ctx.op_count(), 1);
     }
 }

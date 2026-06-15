@@ -7,7 +7,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 
 /// TextField 业务状态。
@@ -87,7 +87,61 @@ impl WidgetSpec for TextField {
             32_f64.clamp(c.min_height, c.max_height),
         )
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        // 背景
+        let bg_color = if s.disabled {
+            Color::new(0.25, 0.25, 0.25, 1.0)
+        } else if s.focused {
+            Color::new(0.15, 0.18, 0.25, 1.0)
+        } else {
+            Color::new(0.18, 0.20, 0.28, 1.0)
+        };
+        ctx.fill_rect(bounds, bg_color, 4.0);
+
+        // 文本或占位符
+        let pad = 8.0;
+        let text_bounds = Rect::new(
+            bounds.origin.x + pad,
+            bounds.origin.y,
+            bounds.size.width - pad * 2.0,
+            bounds.size.height,
+        );
+        if s.text.is_empty() && !s.placeholder.is_empty() {
+            // 显示占位符
+            ctx.draw_text(
+                &s.placeholder,
+                text_bounds,
+                Color::new(0.45, 0.45, 0.50, 1.0),
+                14.0,
+            );
+        } else if !s.text.is_empty() {
+            ctx.draw_text(
+                &s.text,
+                text_bounds,
+                if s.disabled {
+                    Color::new(0.5, 0.5, 0.5, 1.0)
+                } else {
+                    Color::new(0.9, 0.9, 0.95, 1.0)
+                },
+                14.0,
+            );
+        }
+
+        // 焦点指示器（底部边框）
+        if s.focused && !s.disabled {
+            let indicator_h = 2.0;
+            ctx.fill_rect(
+                Rect::new(
+                    bounds.origin.x + 4.0,
+                    bounds.origin.y + bounds.size.height - indicator_h,
+                    bounds.size.width - 8.0,
+                    indicator_h,
+                ),
+                Color::new(0.20, 0.55, 0.95, 1.0),
+                0.0,
+            );
+        }
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(s.text.as_str())
     }
@@ -138,5 +192,46 @@ mod tests {
             &ViewContext::new(Size::new(800.0, 600.0)),
         );
         assert!(v.props.contains_key("placeholder"));
+    }
+
+    #[test]
+    fn paint_empty_shows_placeholder() {
+        let s = TextFieldState::new("搜索...");
+        let bounds = Rect::new(0.0, 0.0, 200.0, 32.0);
+        let mut ctx = PaintContext::new(bounds);
+        TextField.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2, "应绘制背景 + 占位符文本");
+    }
+
+    #[test]
+    fn paint_with_text() {
+        let mut s = TextFieldState::new("...");
+        s.text = "Hello".into();
+        let bounds = Rect::new(0.0, 0.0, 200.0, 32.0);
+        let mut ctx = PaintContext::new(bounds);
+        TextField.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2);
+    }
+
+    #[test]
+    fn paint_focused() {
+        let mut s = TextFieldState::new("...");
+        s.text = "input".into();
+        s.focused = true;
+        let bounds = Rect::new(0.0, 0.0, 200.0, 32.0);
+        let mut ctx = PaintContext::new(bounds);
+        TextField.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 3, "焦点状态应额外绘制底部指示条");
+    }
+
+    #[test]
+    fn paint_disabled() {
+        let mut s = TextFieldState::new("...");
+        s.text = "disabled".into();
+        s.disabled = true;
+        let bounds = Rect::new(0.0, 0.0, 200.0, 32.0);
+        let mut ctx = PaintContext::new(bounds);
+        TextField.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2);
     }
 }

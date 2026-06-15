@@ -20,6 +20,12 @@ use winit::window::WindowAttributes;
 /// 交互回调类型。
 pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 
+/// 场景构建回调类型。
+///
+/// 回调接收帧计数、窗口宽度、窗口高度（像素），返回要渲染的 SceneGraph。
+/// 在每帧 `RedrawRequested` 时调用。如果未设置，渲染循环使用空场景图。
+pub type SceneBuilder = Box<dyn FnMut(u64, u32, u32) -> SceneGraph + Send>;
+
 #[allow(clippy::type_complexity)]
 /// tick() 布局回调。
 pub type LayoutCallback<'a> = Box<dyn FnOnce(&mut App) + 'a>;
@@ -90,6 +96,8 @@ pub struct App {
     focus: FocusManager,
     /// 交互区域：widget_id → (Rect, 消息名, 回调)
     interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
+    /// 可选的场景构建回调（每帧调用生成 SceneGraph）。
+    scene_builder: Option<SceneBuilder>,
 }
 
 impl App {
@@ -104,6 +112,7 @@ impl App {
             hit_tester: HitTester::new(),
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
+            scene_builder: None,
         }
     }
 
@@ -154,6 +163,17 @@ impl App {
         self.hit_tester.register(id, bounds);
         self.interactions
             .insert(id, (bounds, action.into(), Box::new(cb)));
+    }
+
+    /// 设置场景构建回调。
+    ///
+    /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
+    /// 返回要渲染的 SceneGraph。用于将组件 paint() 输出桥接到渲染管线。
+    pub fn set_scene_builder(
+        &mut self,
+        builder: impl FnMut(u64, u32, u32) -> SceneGraph + Send + 'static,
+    ) {
+        self.scene_builder = Some(Box::new(builder));
     }
 
     /// 运行应用。
@@ -220,10 +240,13 @@ struct AppHandler {
     width: u32,
     /// 当前窗口高度（像素单位），用于构造 RenderParams。
     height: u32,
+    /// 场景构建回调（从 App 移入）。
+    scene_builder: Option<SceneBuilder>,
 }
 
 impl AppHandler {
-    fn new(app: App) -> Self {
+    fn new(mut app: App) -> Self {
+        let scene_builder = app.scene_builder.take();
         Self {
             app,
             window: None,
@@ -232,6 +255,7 @@ impl AppHandler {
             mouse_pos: Point::ZERO,
             width: 0,
             height: 0,
+            scene_builder,
         }
     }
 
@@ -462,7 +486,13 @@ impl ApplicationHandler for AppHandler {
 
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut ctx) = self.render_ctx {
-                    let scene = SceneGraph::new(ctx.frame_count());
+                    let frame = self.frame_count;
+                    // 优先使用用户提供的场景构建回调，否则回退到空场景图
+                    let scene = if let Some(ref mut builder) = self.scene_builder {
+                        builder(frame, self.width, self.height)
+                    } else {
+                        SceneGraph::new(frame)
+                    };
                     let params = RenderParams {
                         width: self.width,
                         height: self.height,

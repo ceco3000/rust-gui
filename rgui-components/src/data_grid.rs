@@ -4,7 +4,7 @@ use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 use std::sync::Arc;
 
@@ -206,7 +206,86 @@ impl WidgetSpec for DataGrid {
         )
     }
 
-    fn paint(&self, _state: &Self::State, _bounds: Rect, _ctx: &mut PaintContext) {}
+    fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let header_h = 28.0;
+        let row_h = 24.0;
+
+        // 表头背景
+        if header_h <= bounds.size.height {
+            ctx.fill_rect(
+                Rect::new(
+                    bounds.origin.x,
+                    bounds.origin.y,
+                    bounds.size.width,
+                    header_h,
+                ),
+                Color::new(0.15, 0.18, 0.25, 1.0),
+                0.0,
+            );
+        }
+
+        // 表头列标题
+        let mut x = bounds.origin.x + 4.0;
+        for col in &state.columns {
+            let col_w = col.width.min(bounds.size.width - (x - bounds.origin.x));
+            if col_w <= 0.0 {
+                break;
+            }
+            ctx.draw_text(
+                &col.title,
+                Rect::new(x, bounds.origin.y, col_w, header_h),
+                Color::new(0.8, 0.8, 0.85, 1.0),
+                13.0,
+            );
+            x += col_w;
+        }
+
+        // 数据行
+        let start_y = bounds.origin.y + header_h;
+        let row_count = state
+            .rows
+            .len()
+            .min(((bounds.size.height - header_h) / row_h) as usize);
+        for (row_idx, row) in state.rows.iter().take(row_count).enumerate() {
+            let y = start_y + row_idx as f64 * row_h;
+            let row_bg = if Some(row_idx) == state.selected_row {
+                Color::new(0.12, 0.30, 0.55, 0.5)
+            } else if row_idx % 2 == 0 {
+                Color::new(0.12, 0.14, 0.20, 0.5)
+            } else {
+                Color::new(0.10, 0.12, 0.18, 0.5)
+            };
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x, y, bounds.size.width, row_h),
+                row_bg,
+                0.0,
+            );
+
+            let mut cx = bounds.origin.x + 4.0;
+            for (col_idx, cell) in row.iter().enumerate() {
+                let col_w = state
+                    .columns
+                    .get(col_idx)
+                    .map(|c| c.width)
+                    .unwrap_or(80.0)
+                    .min(bounds.size.width - (cx - bounds.origin.x));
+                if col_w <= 0.0 {
+                    break;
+                }
+                ctx.draw_text(
+                    cell,
+                    Rect::new(cx, y, col_w, row_h),
+                    if Some(row_idx) == state.selected_row {
+                        Color::WHITE
+                    } else {
+                        Color::new(0.85, 0.85, 0.9, 1.0)
+                    },
+                    13.0,
+                );
+                cx += col_w;
+            }
+        }
+    }
 
     fn accessibility(&self, state: &Self::State, _ctx: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(format!(
@@ -326,5 +405,23 @@ mod tests {
         let v = DataGrid.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert!(v.props.contains_key("row_count"));
         assert!(v.props.contains_key("col_count"));
+    }
+
+    #[test]
+    fn paint_grid() {
+        let state = make_state();
+        let bounds = Rect::new(0.0, 0.0, 400.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        DataGrid.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 3, "应绘制表头 + 行背景 + 单元格文本");
+    }
+
+    #[test]
+    fn paint_empty_grid() {
+        let state = DataGridState::new(vec![ColumnDef::new("id", "ID")]);
+        let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
+        let mut ctx = PaintContext::new(bounds);
+        DataGrid.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 2, "至少绘制表头背景 + 列标题");
     }
 }

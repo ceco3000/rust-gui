@@ -5,6 +5,7 @@
 
 use crate::geometry::{Rect, Size};
 use crate::id::WidgetId;
+use crate::view::Color;
 
 // ============================================================================
 // ViewContext
@@ -79,22 +80,109 @@ impl Default for MeasureContext {
 }
 
 // ============================================================================
+// PaintOp
+// ============================================================================
+
+/// 绘制操作——`paint()` 期间向 PaintContext 发出的绘制指令。
+///
+/// 定义源自 D3 §5（绘制阶段）。`PaintOp` 是 `paint()` 的输出单位，
+/// 由渲染后端转换为具体 DrawCommand。
+#[derive(Debug, Clone, PartialEq)]
+pub enum PaintOp {
+    /// 填充矩形。
+    FillRect {
+        /// 矩形区域。
+        rect: Rect,
+        /// 填充颜色。
+        color: Color,
+        /// 圆角半径（0.0 表示直角）。
+        radius: f32,
+    },
+    /// 绘制文本。
+    DrawText {
+        /// 文本内容。
+        text: String,
+        /// 文本边界矩形（左上角对齐基线起始位置）。
+        bounds: Rect,
+        /// 文本颜色。
+        color: Color,
+        /// 字体逻辑大小（像素单位，未乘 DPI 缩放因子）。
+        font_size: f32,
+    },
+}
+
+// ============================================================================
 // PaintContext
 // ============================================================================
 
-/// `paint()` 的上下文：提供当前裁剪区域。
+/// `paint()` 的上下文：提供裁剪区域，收集绘制操作。
+///
+/// 组件在 `paint()` 中通过方法（`fill_rect`、`draw_text`）向上下文
+/// 提交绘制操作。渲染后端在 `paint()` 返回后消费这些操作，
+/// 并转换为 GPU 可执行的 DrawCommand。
 ///
 /// 完整定义见 D3 渲染管线（绘制阶段）。
 #[derive(Debug)]
 pub struct PaintContext {
     /// 当前裁剪区域。
     pub clip_rect: Rect,
+    /// 收集的绘制操作。
+    operations: Vec<PaintOp>,
 }
 
 impl PaintContext {
+    /// 创建新的绘制上下文。
+    ///
+    /// 预分配 4 个操作的容量——典型 widget（如 Button）
+    /// 的 `paint()` 生成 2-5 个操作，避免热路径上多次重新分配。
     #[must_use]
     pub fn new(clip_rect: Rect) -> Self {
-        Self { clip_rect }
+        Self {
+            clip_rect,
+            operations: Vec::with_capacity(4),
+        }
+    }
+
+    /// 提交填充矩形操作。
+    ///
+    /// 矩形坐标相对于当前 widget 的本地坐标系（原点为左上角）。
+    pub fn fill_rect(&mut self, rect: Rect, color: Color, radius: f32) {
+        self.operations.push(PaintOp::FillRect {
+            rect,
+            color,
+            radius,
+        });
+    }
+
+    /// 提交文本绘制操作。
+    ///
+    /// `bounds` 定义了文本的布局区域，实际渲染位置由渲染引擎
+    /// 根据文本对齐和字体度量计算。
+    pub fn draw_text(&mut self, text: &str, bounds: Rect, color: Color, font_size: f32) {
+        self.operations.push(PaintOp::DrawText {
+            text: text.to_string(),
+            bounds,
+            color,
+            font_size,
+        });
+    }
+
+    /// 返回已收集的绘制操作（只读）。
+    #[must_use]
+    pub fn operations(&self) -> &[PaintOp] {
+        &self.operations
+    }
+
+    /// 消费上下文，返回收集的绘制操作。
+    #[must_use]
+    pub fn into_operations(self) -> Vec<PaintOp> {
+        self.operations
+    }
+
+    /// 返回当前已收集的操作数量。
+    #[must_use]
+    pub fn op_count(&self) -> usize {
+        self.operations.len()
     }
 }
 
@@ -154,6 +242,90 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 100.0, 200.0);
         let ctx = PaintContext::new(rect);
         assert_eq!(ctx.clip_rect, rect);
+    }
+
+    #[test]
+    fn paint_context_starts_empty() {
+        let ctx = PaintContext::new(Rect::new(0.0, 0.0, 100.0, 100.0));
+        assert_eq!(ctx.op_count(), 0);
+        assert!(ctx.operations().is_empty());
+    }
+
+    #[test]
+    fn paint_context_fill_rect() {
+        let mut ctx = PaintContext::new(Rect::new(0.0, 0.0, 100.0, 100.0));
+        let rect = Rect::new(10.0, 10.0, 80.0, 40.0);
+        ctx.fill_rect(rect, Color::RED, 4.0);
+        assert_eq!(ctx.op_count(), 1);
+        let ops = ctx.into_operations();
+        assert_eq!(
+            ops[0],
+            PaintOp::FillRect {
+                rect,
+                color: Color::RED,
+                radius: 4.0,
+            }
+        );
+    }
+
+    #[test]
+    fn paint_context_draw_text() {
+        let mut ctx = PaintContext::new(Rect::new(0.0, 0.0, 200.0, 50.0));
+        let bounds = Rect::new(0.0, 0.0, 200.0, 50.0);
+        ctx.draw_text("Hello", bounds, Color::BLACK, 14.0);
+        assert_eq!(ctx.op_count(), 1);
+        let ops = ctx.into_operations();
+        assert_eq!(
+            ops[0],
+            PaintOp::DrawText {
+                text: "Hello".to_string(),
+                bounds,
+                color: Color::BLACK,
+                font_size: 14.0,
+            }
+        );
+    }
+
+    #[test]
+    fn paint_context_multiple_ops() {
+        let mut ctx = PaintContext::new(Rect::new(0.0, 0.0, 300.0, 100.0));
+        ctx.fill_rect(Rect::new(0.0, 0.0, 300.0, 100.0), Color::WHITE, 8.0);
+        ctx.draw_text(
+            "Click me",
+            Rect::new(4.0, 4.0, 292.0, 92.0),
+            Color::BLACK,
+            16.0,
+        );
+        assert_eq!(ctx.op_count(), 2);
+        let ops = ctx.into_operations();
+        assert_eq!(ops.len(), 2);
+    }
+
+    #[test]
+    fn paint_op_partial_eq() {
+        let op1 = PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::RED,
+            radius: 0.0,
+        };
+        let op2 = PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 10.0, 10.0),
+            color: Color::RED,
+            radius: 0.0,
+        };
+        assert_eq!(op1, op2);
+    }
+
+    #[test]
+    fn paint_op_clone() {
+        let op = PaintOp::DrawText {
+            text: "test".into(),
+            bounds: Rect::ZERO,
+            color: Color::BLUE,
+            font_size: 12.0,
+        };
+        let cloned = op.clone();
+        assert_eq!(op, cloned);
     }
 
     #[test]

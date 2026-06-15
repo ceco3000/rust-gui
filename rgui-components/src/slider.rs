@@ -7,7 +7,7 @@ use rgui_core::a11y::{AccessibilityAction, AccessibilityNode};
 use rgui_core::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage as Am, PersistState as Ps, WidgetSpec};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage, PersistState};
 use std::sync::Arc;
 
@@ -101,7 +101,69 @@ impl WidgetSpec for Slider {
             24_f64.clamp(c.min_height, c.max_height),
         )
     }
-    fn paint(&self, _: &Self::State, _: Rect, _: &mut PaintContext) {}
+    fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let track_h = 6.0_f64;
+        let track_y = bounds.origin.y + (bounds.size.height - track_h) * 0.5;
+        let pad = 12.0;
+
+        // 计算进度比例（一次计算，多次使用）
+        let ratio = if s.max > s.min {
+            ((s.value - s.min) / (s.max - s.min)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        // 轨道背景
+        ctx.fill_rect(
+            Rect::new(
+                bounds.origin.x + pad,
+                track_y,
+                bounds.size.width - pad * 2.0,
+                track_h,
+            ),
+            if s.disabled {
+                Color::new(0.35, 0.35, 0.35, 1.0)
+            } else {
+                Color::new(0.3, 0.3, 0.35, 1.0)
+            },
+            track_h as f32 * 0.5,
+        );
+
+        // 已填充部分
+        let fill_w = (bounds.size.width - pad * 2.0) * ratio;
+        if fill_w > 0.0 {
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x + pad, track_y, fill_w, track_h),
+                if s.disabled {
+                    Color::new(0.5, 0.5, 0.5, 1.0)
+                } else {
+                    Color::new(0.20, 0.55, 0.95, 1.0)
+                },
+                track_h as f32 * 0.5,
+            );
+        }
+
+        // 滑块手柄
+        let thumb_r = 8.0_f64;
+        let thumb_cx = bounds.origin.x + pad + (bounds.size.width - pad * 2.0) * ratio;
+        let thumb_cy = bounds.origin.y + bounds.size.height * 0.5;
+        ctx.fill_rect(
+            Rect::new(
+                thumb_cx - thumb_r,
+                thumb_cy - thumb_r,
+                thumb_r * 2.0,
+                thumb_r * 2.0,
+            ),
+            if s.disabled {
+                Color::new(0.5, 0.5, 0.5, 1.0)
+            } else if s.dragging {
+                Color::new(0.15, 0.45, 0.85, 1.0)
+            } else {
+                Color::new(0.7, 0.7, 0.8, 1.0)
+            },
+            thumb_r as f32,
+        );
+    }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none()
             .label(format!("{}", s.value))
@@ -169,5 +231,24 @@ mod tests {
             &ViewContext::new(Size::new(800.0, 600.0)),
         );
         assert!(v.props.contains_key("percent"));
+    }
+
+    #[test]
+    fn paint_slider() {
+        let s = SliderState::new(50.0, 0.0, 100.0);
+        let bounds = Rect::new(0.0, 0.0, 200.0, 24.0);
+        let mut ctx = PaintContext::new(bounds);
+        Slider.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 3, "应绘制轨道 + 填充 + 手柄");
+    }
+
+    #[test]
+    fn paint_slider_disabled() {
+        let mut s = SliderState::new(50.0, 0.0, 100.0);
+        s.disabled = true;
+        let bounds = Rect::new(0.0, 0.0, 200.0, 24.0);
+        let mut ctx = PaintContext::new(bounds);
+        Slider.paint(&s, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 3);
     }
 }

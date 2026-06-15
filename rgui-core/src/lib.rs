@@ -42,7 +42,9 @@ pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, 
 pub use traits::{AppMessage, PersistState, WidgetSpec};
 
 // Context 类型
-pub use context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
+pub use context::{
+    AccessContext, MeasureContext, PaintContext, PaintOp, UpdateContext, ViewContext,
+};
 
 // 无障碍类型
 pub use a11y::{AccessibilityAction, AccessibilityNode, AccessibilityRole, AccessibilityState};
@@ -59,7 +61,7 @@ pub mod prelude {
         AccessibilityAction, AccessibilityNode, AccessibilityRole, AccessibilityState,
     };
     pub use crate::context::{
-        AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext,
+        AccessContext, MeasureContext, PaintContext, PaintOp, UpdateContext, ViewContext,
     };
     pub use crate::geometry::{
         AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
