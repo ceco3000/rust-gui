@@ -1,4 +1,26 @@
 //! 开发工具错误类型。
+//!
+//! 本模块定义 [`DevToolsError`] 枚举，覆盖文件监控、热重载、配置、IPC 及运行时等
+//! 全部错误场景。使用 [`thiserror`] 派生 `Display` 和 `Error` trait。
+//!
+//! ## 错误分类
+//!
+//! | 变体 | 触发场景 |
+//! |------|---------|
+//! | [`WatchFailed`](DevToolsError::WatchFailed) | 文件系统监控启动失败或运行时异常 |
+//! | [`ReloadFailed`](DevToolsError::ReloadFailed) | 热重载处理过程中出错（携带路径和原因） |
+//! | [`ConfigError`](DevToolsError::ConfigError) | 配置校验失败（无效路径、冲突参数等） |
+//! | [`IpcError`](DevToolsError::IpcError) | 双进程 IPC 通信错误（阶段 2 激活） |
+//! | [`FileNotFound`](DevToolsError::FileNotFound) | 结构热重载中引用的文件不存在（阶段 2 激活） |
+//! | [`RuntimeError`](DevToolsError::RuntimeError) | 快速重启过程中发生的通用运行时错误（阶段 2 激活） |
+//!
+//! `DevToolsError` 标记了 `#[non_exhaustive]`，外部 match 时需处理通配分支
+//! 以兼容未来新增的变体。
+//!
+//! ## 与其他错误的转换
+//!
+//! - `From<notify::Error>` ➜ [`DevToolsError::WatchFailed`]
+//! - `From<DevToolsError>` ➜ [`IpcError`](super::ipc::IpcError)（阶段 2）
 
 use std::path::PathBuf;
 

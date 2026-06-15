@@ -1,7 +1,31 @@
-//! 文件变更监控——notify 封装 + debounce 合并。
+//! 文件变更监控——`notify` 封装 + debounce 合并 + 按扩展名路由。
 //!
-//! 设计源自 D7 §2.1：使用 `notify` crate 递归监控项目目录，
-//! 合并 300ms 内的多次保存为一次重载，按文件扩展名路由到对应热重载处理器。
+//! ## 核心类型
+//!
+//! | 类型 | 职责 |
+//! |------|------|
+//! | [`FileWatcher`] | 文件系统监控器——创建、轮询、刷新 |
+//! | [`FileChangeEvent`] | 一次 debounce 后的变更事件（路径 + 分类） |
+//! | [`FileChangeKind`] | 变更分类——样式、结构、Rust、其他 |
+//!
+//! ## 工作流程
+//!
+//! 1. **创建**：[`FileWatcher::new()`] 根据 [`HotReloadConfig`] 中配置的
+//!    `watch_paths` 递归监控目录
+//! 2. **轮询**：在主循环中调用 [`check_changes()`](FileWatcher::check_changes)
+//!    获取 debounce 合并后的变更列表
+//! 3. **分类**：按文件扩展名分类为 [`FileChangeKind`]，路由到对应热重载处理器
+//! 4. **去重**：同一文件的多次变更只保留最后一次
+//! 5. **强制刷新**：`flush()` 忽略 debounce 窗口，立即返回当前累积的变更
+//!
+//! ## 配置
+//!
+//! 通过 [`HotReloadConfig`] 控制：
+//! - `debounce_duration`：变更合并窗口时长（默认 300ms）
+//! - `watch_paths`：监控目录列表（默认当前目录）
+//! - `layers`：控制各类文件变更是否触发对应层级的热重载
+//!
+//! 设计源自 D7 §2.1。
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};

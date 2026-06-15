@@ -1,4 +1,26 @@
-//! 热重载配置——监控目录、debounce、启用的反馈层级。
+//! 热重载配置——监控目录、debounce 窗口时长、启用的反馈层级。
+//!
+//! ## 核心类型
+//!
+//! | 类型 | 职责 |
+//! |------|------|
+//! | [`HotReloadLayers`] | 按层级开关热重载（样式/结构/Rust/脚本） |
+//! | [`HotReloadConfig`] | 聚合配置——监控路径、debounce 时长、层级开关、文件大小上限 |
+//!
+//! ## 使用示例
+//!
+//! ```ignore
+//! use rgui_devtools::config::HotReloadConfig;
+//! use std::path::PathBuf;
+//!
+//! // 默认配置：监控当前目录，300ms debounce，样式+Rust 层启用
+//! let config = HotReloadConfig::default();
+//!
+//! // 自定义：仅样式热重载
+//! let style_only = HotReloadConfig::default()
+//!     .with_watch_paths(vec![PathBuf::from("styles/")])
+//!     .style_only();
+//! ```
 
 use std::path::PathBuf;
 use std::time::Duration;

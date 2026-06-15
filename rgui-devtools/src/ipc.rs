@@ -1,7 +1,37 @@
 //! IPC 协议——DisplayProcess 与 AppProcess 之间的消息协议。
 //!
-//! 阶段 1（MVP）不启用双进程，IPC 类型仅为阶段 2 预留。
-//! 消息使用 postcard 二进制序列化，传输层使用 Unix Domain Socket / Named Pipe。
+//! 阶段 1（MVP）不启用双进程，本模块所有类型仅为阶段 2 预留。
+//! 消息使用 [`postcard`] 二进制序列化，传输层使用 Unix Domain Socket（Unix）
+//! 或 Named Pipe（Windows）。
+//!
+//! ## 核心类型
+//!
+//! | 类型 | 职责 |
+//! |------|------|
+//! | [`IpcMessage`] | 6 种消息变体——恢复、就绪、场景更新、输入、关闭、错误 |
+//! | [`IpcChannel`] | 传输层——长度前缀帧协议（4 字节小端 `u32` + postcard 负载） |
+//! | [`RestoreMetadata`] | 快照恢复元数据（焦点、滚动、路由、窗口几何） |
+//! | [`IpcError`] | IPC 通信错误（连接、发送、接收、序列化、断连、超时） |
+//!
+//! ## 消息流
+//!
+//! ```text
+//! DisplayProcess                           AppProcess
+//!       │                                      │
+//!       │── RestoreState(snapshot, meta) ──────→│  启动恢复
+//!       │←─ Ready(widget_count) ───────────────│  就绪通知
+//!       │←─ SceneUpdate(data, incremental) ────│  场景推送
+//!       │── InputEvent(data) ──────────────────→│  用户输入
+//!       │←─ Error(msg, recoverable) ───────────│  错误通知
+//!       │── Shutdown ──────────────────────────→│  终止
+//! ```
+//!
+//! ## 传输协议
+//!
+//! - **帧格式**：4 字节小端长度前缀 + postcard 序列化负载
+//! - **最大消息**：`MAX_MESSAGE_SIZE`（64 MiB）
+//! - **Unix 平台**：已完整实现 `send()` / `recv()`，使用 [`UnixStream`]
+//! - **非 Unix 平台**：提供存根实现（始终返回错误）
 //!
 //! 定义源自 D7 §7。
 
@@ -171,9 +201,7 @@ impl IpcChannel {
         self.stream
             .write_all(&len.to_le_bytes())
             .map_err(map_write_error)?;
-        self.stream
-            .write_all(&payload)
-            .map_err(map_write_error)?;
+        self.stream.write_all(&payload).map_err(map_write_error)?;
 
         Ok(())
     }
@@ -686,7 +714,7 @@ mod tests {
             match result.unwrap_err() {
                 IpcError::ReceiveFailed(msg) => {
                     assert!(msg.contains("超过最大允许值"));
-                }
+                },
                 other => panic!("期望 ReceiveFailed，得到 {other:?}"),
             }
         }

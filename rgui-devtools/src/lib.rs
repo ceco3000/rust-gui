@@ -6,7 +6,7 @@
 //!（详见 [D7 §1]）：
 //!
 //! - **第 1 层**：样式热重载（`.rgss` 文件，< 200ms）——通过
-//!   [`StyleHotReload`][rgui_style::hot_reload::StyleHotReload] 实现
+//!   `rgui_style::StyleHotReload` 实现（需启用 `hot-reload` feature）
 //! - **第 2 层**：结构热重载（`.rgui` 文件，< 1s）——阶段 2 完善
 //! - **第 3 层**：Rust 逻辑反馈（快速重启，2-5s）——阶段 2 完善
 //! - **第 4 层**：脚本热重载（`.rhai` 文件，< 500ms）——阶段 2 预留
