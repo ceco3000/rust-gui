@@ -68,7 +68,7 @@ accesskit = "0.17"
 
 # 外部依赖——序列化与工具
 serde = { version = "1", features = ["derive"] }
-postcard = "1"
+postcard = { version = "1", features = ["alloc"] }
 erased-serde = "0.4"
 log = "0.4"
 thiserror = "2"
