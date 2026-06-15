@@ -150,12 +150,21 @@ impl StateStore {
         self.dirty.insert(id);
     }
 
-    /// 传播 dirty 标记到所有订阅者（递归）。
+    /// 传播 dirty 标记到所有订阅者。
+    ///
+    /// 使用迭代 DFS + dirty 去重，天然防御订阅图中的循环——
+    /// 当节点已被标记 dirty 时，不会重复推入栈中，避免无限传播。
     pub(crate) fn propagate_dirty(&mut self, id: WidgetId) {
-        if let Some(subscribers) = self.subscriptions.get(&id).cloned() {
-            for sub in &subscribers {
-                self.dirty.insert(sub.subscriber);
-                self.propagate_dirty(sub.subscriber);
+        let mut stack = vec![id];
+        while let Some(current) = stack.pop() {
+            if let Some(subscribers) = self.subscriptions.get(&current) {
+                for sub in subscribers {
+                    // 仅在首次成功标记 dirty 时继续传播，
+                    // 这同时避免了循环图中的无限递归和重复访问
+                    if self.dirty.insert(sub.subscriber) {
+                        stack.push(sub.subscriber);
+                    }
+                }
             }
         }
     }
@@ -657,5 +666,348 @@ mod tests {
 
         let cycles = store.detect_cycles();
         assert!(cycles.is_empty());
+    }
+
+    // --- apply_subscriptions 替换旧订阅 ---
+
+    #[test]
+    fn apply_subscriptions_replaces_old_subs() {
+        let mut store = StateStore::new();
+        let self_id = store.allocate_id();
+        let target_a = store.allocate_id();
+        let target_b = store.allocate_id();
+
+        // 第一帧：B 订阅 A
+        let subs_old = vec![(
+            target_a,
+            Subscription {
+                subscriber: self_id,
+                lifetime: SubscriptionLifetime::Persistent,
+            },
+        )];
+        store.apply_subscriptions(self_id, subs_old);
+
+        // 第二帧：B 改为订阅 C（不再订阅 A）
+        let subs_new = vec![(
+            target_b,
+            Subscription {
+                subscriber: self_id,
+                lifetime: SubscriptionLifetime::Persistent,
+            },
+        )];
+        store.apply_subscriptions(self_id, subs_new);
+
+        // 修改 A 不应触发 B 的 dirty
+        store.mark_dirty(target_a);
+        store.propagate_dirty(target_a);
+        assert!(
+            !store.dirty_widgets().contains(&self_id),
+            "旧订阅应被清除，A 的变更不应传播到 B"
+        );
+
+        // 修改 C 应触发 B 的 dirty
+        store.clear_dirty();
+        store.mark_dirty(target_b);
+        store.propagate_dirty(target_b);
+        assert!(
+            store.dirty_widgets().contains(&self_id),
+            "新订阅应生效，C 的变更应传播到 B"
+        );
+    }
+
+    // --- cleanup_subscriptions ---
+
+    #[test]
+    fn cleanup_subscriptions_removes_stale_targets() {
+        let mut store = StateStore::new();
+        let subscriber_id = store.allocate_id();
+        let target_id = store.allocate_id();
+
+        // 建立订阅
+        store.insert_persistent(subscriber_id, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(target_id, Box::new(TestLabel { text: "x".into() }));
+
+        let subs = vec![(
+            target_id,
+            Subscription {
+                subscriber: subscriber_id,
+                lifetime: SubscriptionLifetime::Persistent,
+            },
+        )];
+        store.apply_subscriptions(subscriber_id, subs);
+
+        // 移除被订阅的 target
+        store.remove(target_id);
+
+        // 清理
+        store.cleanup_subscriptions();
+
+        // 验证 target 的订阅链被清理
+        assert!(!store.subscriptions.contains_key(&target_id));
+    }
+
+    #[test]
+    fn cleanup_subscriptions_removes_stale_subscribers() {
+        let mut store = StateStore::new();
+        let subscriber_id = store.allocate_id();
+        let target_id = store.allocate_id();
+
+        // 建立订阅
+        store.insert_persistent(subscriber_id, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(target_id, Box::new(TestLabel { text: "x".into() }));
+
+        let subs = vec![(
+            target_id,
+            Subscription {
+                subscriber: subscriber_id,
+                lifetime: SubscriptionLifetime::Persistent,
+            },
+        )];
+        store.apply_subscriptions(subscriber_id, subs);
+
+        // 移除订阅者（通过 remove 已清理订阅，但再调用 cleanup 也不应 panic）
+        store.remove(subscriber_id);
+        store.cleanup_subscriptions();
+
+        // 验证 target 不再有订阅者
+        if let Some(subs) = store.subscriptions.get(&target_id) {
+            assert!(subs.is_empty(), "cleanup 应移除已卸载订阅者的订阅记录");
+        }
+    }
+
+    // --- remove 同步清理订阅关系 ---
+
+    #[test]
+    fn remove_widget_cleans_subscription_graph() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        let id_b = store.allocate_id();
+        let id_c = store.allocate_id();
+
+        store.insert_persistent(id_a, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(id_b, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(id_c, Box::new(TestCounter { count: 0 }));
+
+        // C 读取 A 和 B 的状态
+        let subs_c = vec![
+            (
+                id_a,
+                Subscription {
+                    subscriber: id_c,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            ),
+            (
+                id_b,
+                Subscription {
+                    subscriber: id_c,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            ),
+        ];
+        store.apply_subscriptions(id_c, subs_c);
+
+        // B 读取 A 的状态
+        let subs_b = vec![(
+            id_a,
+            Subscription {
+                subscriber: id_b,
+                lifetime: SubscriptionLifetime::Persistent,
+            },
+        )];
+        store.apply_subscriptions(id_b, subs_b);
+
+        // 移除 C
+        store.remove(id_c);
+
+        // A 的订阅链中不应再包含 C（但 B 还在）
+        if let Some(subs) = store.subscriptions.get(&id_a) {
+            let has_b = subs.iter().any(|s| s.subscriber == id_b);
+            let has_c = subs.iter().any(|s| s.subscriber == id_c);
+            assert!(has_b, "B 的订阅应保留");
+            assert!(!has_c, "C 的订阅应被移除");
+        }
+    }
+
+    // --- StoreAccess（只读）订阅建立 ---
+
+    #[test]
+    fn store_access_read_establishes_subscription() {
+        let mut store = StateStore::new();
+        let reader_id = store.allocate_id();
+        let target_id = store.allocate_id();
+
+        store.insert_persistent(reader_id, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(
+            target_id,
+            Box::new(TestLabel {
+                text: "hello".into(),
+            }),
+        );
+
+        let mut new_subs: Vec<(WidgetId, Subscription)> = Vec::new();
+
+        {
+            let mut access =
+                StoreAccess::new(&store.persistent, &store.instance, reader_id, &mut new_subs);
+            let label: &TestLabel = access.read(target_id).unwrap();
+            assert_eq!(label.text, "hello");
+        }
+
+        assert_eq!(new_subs.len(), 1);
+        assert_eq!(new_subs[0].0, target_id);
+        assert_eq!(new_subs[0].1.subscriber, reader_id);
+    }
+
+    // --- Ephemeral 订阅 ---
+
+    #[test]
+    fn ephemeral_subscription_propagates_in_current_frame() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        let id_b = store.allocate_id();
+
+        store.insert_persistent(id_a, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(id_b, Box::new(TestCounter { count: 0 }));
+
+        // 建立临时订阅（模拟 view() 上下文）
+        let subs = vec![(
+            id_a,
+            Subscription {
+                subscriber: id_b,
+                lifetime: SubscriptionLifetime::Ephemeral,
+            },
+        )];
+        store.apply_subscriptions(id_b, subs);
+
+        // 即使 Ephemeral，传播机制照常工作
+        store.mark_dirty(id_a);
+        store.propagate_dirty(id_a);
+        assert!(store.dirty_widgets().contains(&id_b));
+    }
+
+    // --- 多订阅者传播 ---
+
+    #[test]
+    fn propagate_dirty_to_multiple_subscribers() {
+        let mut store = StateStore::new();
+        let source = store.allocate_id();
+        let sub1 = store.allocate_id();
+        let sub2 = store.allocate_id();
+        let sub3 = store.allocate_id();
+
+        let subs = vec![
+            (
+                source,
+                Subscription {
+                    subscriber: sub1,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            ),
+            (
+                source,
+                Subscription {
+                    subscriber: sub2,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            ),
+            (
+                source,
+                Subscription {
+                    subscriber: sub3,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            ),
+        ];
+        // 所有订阅者共享同一来源
+        store.apply_subscriptions(sub1, vec![subs[0].clone()]);
+        store.apply_subscriptions(sub2, vec![subs[1].clone()]);
+        store.apply_subscriptions(sub3, vec![subs[2].clone()]);
+
+        store.mark_dirty(source);
+        store.propagate_dirty(source);
+
+        assert!(store.dirty_widgets().contains(&sub1));
+        assert!(store.dirty_widgets().contains(&sub2));
+        assert!(store.dirty_widgets().contains(&sub3));
+    }
+
+    // --- 链式传播 ---
+
+    #[test]
+    fn propagate_dirty_through_chain() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        let id_b = store.allocate_id();
+        let id_c = store.allocate_id();
+
+        // B → A（B 订阅 A）
+        // C → B（C 订阅 B）
+        store.apply_subscriptions(
+            id_b,
+            vec![(
+                id_a,
+                Subscription {
+                    subscriber: id_b,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+        store.apply_subscriptions(
+            id_c,
+            vec![(
+                id_b,
+                Subscription {
+                    subscriber: id_c,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+
+        // A dirty → B dirty → C dirty（链式传播）
+        store.mark_dirty(id_a);
+        store.propagate_dirty(id_a);
+
+        assert!(store.dirty_widgets().contains(&id_b));
+        assert!(store.dirty_widgets().contains(&id_c));
+    }
+
+    // --- 循环防护 ---
+
+    #[test]
+    fn propagate_dirty_with_cycle_does_not_overflow() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        let id_b = store.allocate_id();
+
+        // 构造 A → B → A 循环
+        store.apply_subscriptions(
+            id_b,
+            vec![(
+                id_a,
+                Subscription {
+                    subscriber: id_b,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+        store.apply_subscriptions(
+            id_a,
+            vec![(
+                id_b,
+                Subscription {
+                    subscriber: id_a,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+
+        // 即使存在循环，传播也应正常终止（不栈溢出）
+        store.mark_dirty(id_a);
+        store.propagate_dirty(id_a);
+
+        // 循环中的所有节点均应标记 dirty
+        assert!(store.dirty_widgets().contains(&id_a));
+        assert!(store.dirty_widgets().contains(&id_b));
     }
 }
