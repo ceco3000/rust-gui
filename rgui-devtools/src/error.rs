@@ -3,7 +3,10 @@
 use std::path::PathBuf;
 
 /// 开发工具错误枚举。
+///
+/// 使用 `#[non_exhaustive]` 以兼容未来新增错误变体。
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum DevToolsError {
     /// 文件监控错误。
     #[error("文件监控失败：{0}")]
@@ -23,16 +26,19 @@ pub enum DevToolsError {
     ConfigError(String),
 
     /// IPC 通信错误。
+    /// 阶段 2：双进程通信激活时启用。
     #[error("IPC 通信错误：{0}")]
     #[allow(dead_code)]
     IpcError(String),
 
     /// 文件未找到。
+    /// 阶段 2：结构热重载激活时启用。
     #[error("文件未找到：{0}")]
     #[allow(dead_code)]
     FileNotFound(PathBuf),
 
     /// 运行时错误。
+    /// 阶段 2：快速重启机制激活时启用。
     #[error("开发工具运行时错误：{0}")]
     #[allow(dead_code)]
     RuntimeError(String),
