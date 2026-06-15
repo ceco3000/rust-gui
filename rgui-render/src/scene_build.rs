@@ -8,6 +8,7 @@
 use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
 use rgui_core::id::WidgetId;
+use rgui_core::Color;
 
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
 
@@ -58,7 +59,7 @@ fn paint_op_to_draw_command_inner(
             font_size,
         } => {
             if let Some(tr) = text_renderer {
-                // 使用 TextRenderer 进行真正的字形渲染
+                // 字形渲染：将文本塑形并光栅化到 atlas，生成 DrawGlyphs
                 let baseline_x = bounds.origin.x as f32;
                 let baseline_y = bounds.origin.y as f32 + font_size;
                 let mut commands = tr.render_text(text, baseline_x, baseline_y, color, font_size);
@@ -66,10 +67,11 @@ fn paint_op_to_draw_command_inner(
                     return commands.remove(0);
                 }
             }
-            // 回退：占位矩形（无 TextRenderer 或文本渲染失败时）
+            // 文本渲染失败时（如 CJK 无字体），产生不可见占位指令，
+            // 避免 FillRect 遮盖同层其他元素
             DrawCommand::FillRect {
-                rect: bounds,
-                color,
+                rect: Rect::ZERO,
+                color: Color::TRANSPARENT,
                 radius: 0.0,
             }
         },
