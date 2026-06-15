@@ -1,12 +1,12 @@
 //! App 启动器——winit 窗口 + 事件循环 + wgpu 渲染 + 交互。
 
-use crate::render::RenderContext;
 use rgui_core::geometry::{Point, Rect, Size};
 use rgui_core::id::{WidgetId, WindowId};
 use rgui_core::registry::WidgetRegistry;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
+use rgui_render::{RenderBackend, RenderParams, SceneGraph, VelloBackend};
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -211,9 +211,15 @@ impl fmt::Debug for App {
 struct AppHandler {
     app: App,
     window: Option<Arc<winit::window::Window>>,
-    render_ctx: Option<RenderContext>,
+    /// Vello GPU 渲染后端（直接持有，非 facade 封装）。
+    /// 符合 D8 R06 架构约束：facade 仅通过 RenderBackend trait 接口委托渲染。
+    render_ctx: Option<VelloBackend>,
     frame_count: u64,
     mouse_pos: Point,
+    /// 当前窗口宽度（像素单位），用于构造 RenderParams。
+    width: u32,
+    /// 当前窗口高度（像素单位），用于构造 RenderParams。
+    height: u32,
 }
 
 impl AppHandler {
@@ -224,6 +230,8 @@ impl AppHandler {
             render_ctx: None,
             frame_count: 0,
             mouse_pos: Point::ZERO,
+            width: 0,
+            height: 0,
         }
     }
 
@@ -406,12 +414,17 @@ impl ApplicationHandler for AppHandler {
             }
 
             let window = Arc::new(event_loop.create_window(attr).unwrap());
+            let size = window.inner_size();
+            let w = size.width;
+            let h = size.height;
             self.window = Some(Arc::clone(&window));
 
-            match RenderContext::new(Arc::clone(&window)) {
+            match VelloBackend::new(Arc::clone(&window), w, h) {
                 Ok(ctx) => {
-                    println!("GPU: {:?}", ctx);
+                    println!("GPU: Vello (GPU) {w}x{h}");
                     self.render_ctx = Some(ctx);
+                    self.width = w;
+                    self.height = h;
                 },
                 Err(e) => eprintln!("渲染初始化失败: {e}"),
             }
@@ -443,14 +456,25 @@ impl ApplicationHandler for AppHandler {
             },
 
             WindowEvent::Resized(size) => {
-                if let Some(ref mut ctx) = self.render_ctx {
-                    ctx.resize(size.width, size.height);
-                }
+                self.width = size.width;
+                self.height = size.height;
             },
 
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut ctx) = self.render_ctx {
-                    match ctx.render() {
+                    let scene = SceneGraph::new(ctx.frame_count());
+                    let params = RenderParams {
+                        width: self.width,
+                        height: self.height,
+                        clear_color: Some(rgui_core::Color::new(
+                            14.0 / 255.0,
+                            18.0 / 255.0,
+                            28.0 / 255.0,
+                            1.0,
+                        )),
+                        ..Default::default()
+                    };
+                    match ctx.render(&scene, &params) {
                         Ok(()) => self.frame_count += 1,
                         Err(e) => eprintln!("渲染: {e}"),
                     }

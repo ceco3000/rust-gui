@@ -7,7 +7,6 @@ pub mod render;
 pub mod widget_node;
 
 pub use app::{App, AppConfig};
-pub use render::RenderContext;
 pub use rgui_a11y::*;
 pub use rgui_components::*;
 pub use rgui_core::*;
