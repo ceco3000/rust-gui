@@ -405,6 +405,87 @@ pub enum AlignContent {
 }
 
 // ============================================================================
+// FlexWrap
+// ============================================================================
+
+/// Flex 换行模式。
+///
+/// 对应 CSS `flex-wrap` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum FlexWrap {
+    /// 不换行（默认）。
+    #[default]
+    NoWrap,
+    /// 换行，第一行在上方。
+    Wrap,
+    /// 换行，第一行在下方。
+    WrapReverse,
+}
+
+// ============================================================================
+// AlignSelf
+// ============================================================================
+
+/// 单个子元素的交叉轴对齐方式（覆盖父元素 `align-items`）。
+///
+/// 对应 CSS `align-self` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum AlignSelf {
+    /// 继承父元素 `align-items`。
+    #[default]
+    Auto,
+    /// 起点对齐。
+    Start,
+    /// 终点对齐。
+    End,
+    /// 居中对齐。
+    Center,
+    /// 基线对齐。
+    Baseline,
+    /// 拉伸填充。
+    Stretch,
+}
+
+// ============================================================================
+// FlexBasis
+// ============================================================================
+
+/// Flex 子元素的初始主轴尺寸。
+///
+/// 对应 CSS `flex-basis` 属性。
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
+pub enum FlexBasis {
+    /// 自动确定（基于内容或 width/height）。
+    #[default]
+    Auto,
+    /// 固定长度（逻辑像素）。
+    Length(f64),
+    /// 百分比（相对于父元素主轴尺寸）。
+    Percent(f64),
+}
+
+// ============================================================================
+// GridTrack
+// ============================================================================
+
+/// CSS Grid 轨道定义（列或行）。
+///
+/// 对应 CSS `grid-template-columns` / `grid-template-rows` 属性中的单个轨道值。
+#[derive(Clone, PartialEq, Debug)]
+pub enum GridTrack {
+    /// 固定像素宽度/高度。
+    Px(f64),
+    /// 弹性分数（`fr` 单位）。
+    Fr(f64),
+    /// 内容自适应。
+    Auto,
+    /// 百分比。
+    Percent(f64),
+    /// 最小值-最大值范围（`minmax()` 函数）。
+    MinMax(Box<GridTrack>, Box<GridTrack>),
+}
+
+// ============================================================================
 // LayoutStyle
 // ============================================================================
 
@@ -445,6 +526,22 @@ pub struct LayoutStyle {
     pub padding: Option<f64>,
     /// 外边距（四边相同，逻辑像素）。
     pub margin: Option<f64>,
+    /// 换行模式。
+    pub flex_wrap: Option<FlexWrap>,
+    /// 单个子元素交叉轴对齐。
+    pub align_self: Option<AlignSelf>,
+    /// Flex 增长因子。
+    pub flex_grow: Option<f32>,
+    /// Flex 收缩因子。
+    pub flex_shrink: Option<f32>,
+    /// Flex 基础尺寸。
+    pub flex_basis: Option<FlexBasis>,
+    /// 宽高比（宽/高，如 16.0/9.0）。
+    pub aspect_ratio: Option<f64>,
+    /// Grid 模板列（每个元素对应一列）。
+    pub grid_template_columns: Option<Vec<GridTrack>>,
+    /// Grid 模板行（每个元素对应一行）。
+    pub grid_template_rows: Option<Vec<GridTrack>>,
 }
 
 impl LayoutStyle {
@@ -471,6 +568,14 @@ impl LayoutStyle {
             && self.gap.is_none()
             && self.padding.is_none()
             && self.margin.is_none()
+            && self.flex_wrap.is_none()
+            && self.align_self.is_none()
+            && self.flex_grow.is_none()
+            && self.flex_shrink.is_none()
+            && self.flex_basis.is_none()
+            && self.aspect_ratio.is_none()
+            && self.grid_template_columns.is_none()
+            && self.grid_template_rows.is_none()
     }
 
     /// 合并另一个 `LayoutStyle`，`other` 中的非 `None` 属性覆盖 `self` 中对应属性。
@@ -493,6 +598,22 @@ impl LayoutStyle {
             gap: other.gap.or(self.gap),
             padding: other.padding.or(self.padding),
             margin: other.margin.or(self.margin),
+            flex_wrap: other.flex_wrap.or(self.flex_wrap),
+            align_self: other.align_self.or(self.align_self),
+            flex_grow: other.flex_grow.or(self.flex_grow),
+            flex_shrink: other.flex_shrink.or(self.flex_shrink),
+            flex_basis: other.flex_basis.or(self.flex_basis),
+            aspect_ratio: other.aspect_ratio.or(self.aspect_ratio),
+            grid_template_columns: other
+                .grid_template_columns
+                .as_ref()
+                .cloned()
+                .or(self.grid_template_columns),
+            grid_template_rows: other
+                .grid_template_rows
+                .as_ref()
+                .cloned()
+                .or(self.grid_template_rows),
         }
     }
 }
@@ -530,6 +651,30 @@ impl fmt::Display for LayoutStyle {
         }
         if let Some(m) = self.margin {
             prop("margin", &m)?;
+        }
+        if let Some(fw) = &self.flex_wrap {
+            prop("flex-wrap", fw)?;
+        }
+        if let Some(al) = &self.align_self {
+            prop("align-self", al)?;
+        }
+        if let Some(fg) = self.flex_grow {
+            prop("flex-grow", &fg)?;
+        }
+        if let Some(fs) = self.flex_shrink {
+            prop("flex-shrink", &fs)?;
+        }
+        if let Some(mw) = self.min_width {
+            prop("min-width", &mw)?;
+        }
+        if let Some(mh) = self.min_height {
+            prop("min-height", &mh)?;
+        }
+        if let Some(mxw) = self.max_width {
+            prop("max-width", &mxw)?;
+        }
+        if let Some(mxh) = self.max_height {
+            prop("max-height", &mxh)?;
         }
 
         if first {
@@ -598,6 +743,321 @@ impl fmt::Display for AlignContent {
             Self::SpaceEvenly => write!(f, "space-evenly"),
             Self::Stretch => write!(f, "stretch"),
         }
+    }
+}
+
+impl fmt::Display for FlexWrap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoWrap => write!(f, "nowrap"),
+            Self::Wrap => write!(f, "wrap"),
+            Self::WrapReverse => write!(f, "wrap-reverse"),
+        }
+    }
+}
+
+impl fmt::Display for AlignSelf {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Auto => write!(f, "auto"),
+            Self::Start => write!(f, "start"),
+            Self::End => write!(f, "end"),
+            Self::Center => write!(f, "center"),
+            Self::Baseline => write!(f, "baseline"),
+            Self::Stretch => write!(f, "stretch"),
+        }
+    }
+}
+
+// ============================================================================
+// VisualStyle
+// ============================================================================
+
+/// 视觉样式——控制 widget 的颜色、边框、阴影和可见性。
+///
+/// 对应 CSS 视觉相关属性（background-color, color, opacity,
+/// border-radius, border-width, border-color, box-shadow, visibility）。
+///
+/// 所有属性均为 `Option`——`None` 表示该属性未被设置，渲染时将使用默认值。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VisualStyle {
+    /// 背景颜色。
+    pub background_color: Option<crate::view::Color>,
+    /// 前景色（文本颜色）。
+    pub color: Option<crate::view::Color>,
+    /// 不透明度（0.0-1.0）。
+    pub opacity: Option<f64>,
+    /// 圆角半径（逻辑像素）。
+    pub border_radius: Option<f64>,
+    /// 边框宽度（逻辑像素）。
+    pub border_width: Option<f64>,
+    /// 边框颜色。
+    pub border_color: Option<crate::view::Color>,
+    /// 盒子阴影：`(x, y, blur, color)`。
+    pub box_shadow: Option<(f64, f64, f64, crate::view::Color)>,
+    /// 可见性（visible / hidden）。
+    pub visibility: Option<Visibility>,
+}
+
+/// 可见性状态。
+///
+/// 对应 CSS `visibility` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum Visibility {
+    /// 可见（默认）。
+    #[default]
+    Visible,
+    /// 隐藏但仍占位。
+    Hidden,
+}
+
+impl VisualStyle {
+    /// 创建空视觉样式（所有属性均为 `None`）。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 判断是否所有属性均为 `None`。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.background_color.is_none()
+            && self.color.is_none()
+            && self.opacity.is_none()
+            && self.border_radius.is_none()
+            && self.border_width.is_none()
+            && self.border_color.is_none()
+            && self.box_shadow.is_none()
+            && self.visibility.is_none()
+    }
+
+    /// 合并另一个 `VisualStyle`，`other` 中的非 `None` 属性覆盖 `self` 中对应属性。
+    #[must_use]
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            background_color: other.background_color.or(self.background_color),
+            color: other.color.or(self.color),
+            opacity: other.opacity.or(self.opacity),
+            border_radius: other.border_radius.or(self.border_radius),
+            border_width: other.border_width.or(self.border_width),
+            border_color: other.border_color.or(self.border_color),
+            box_shadow: other.box_shadow.or(self.box_shadow),
+            visibility: other.visibility.or(self.visibility),
+        }
+    }
+}
+
+impl fmt::Display for VisualStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "VisualStyle(")?;
+
+        let mut first = true;
+        let mut prop = |name: &str, val: &dyn fmt::Display| {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{name}: {val}")
+        };
+
+        if let Some(c) = &self.background_color {
+            prop("background-color", c)?;
+        }
+        if let Some(c) = &self.color {
+            prop("color", c)?;
+        }
+        if let Some(o) = self.opacity {
+            prop("opacity", &o)?;
+        }
+
+        if first {
+            write!(f, "empty")?;
+        }
+
+        write!(f, ")")
+    }
+}
+
+// ============================================================================
+// TextStyle
+// ============================================================================
+
+/// 文本样式——控制字体、字号、字重、行高、对齐等排版属性。
+///
+/// 对应 CSS 文本相关属性（font-family, font-size, font-weight,
+/// font-style, line-height, letter-spacing, text-align,
+/// text-overflow, white-space）。
+///
+/// 所有属性均为 `Option`——`None` 表示该属性未被设置，文本渲染时将使用默认值。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct TextStyle {
+    /// 字体族（如 `"Inter", sans-serif`）。
+    pub font_family: Option<String>,
+    /// 字体大小（逻辑像素）。
+    pub font_size: Option<f64>,
+    /// 字重：`400`（normal）、`700`（bold）等。
+    pub font_weight: Option<FontWeight>,
+    /// 字体样式。
+    pub font_style: Option<FontStyle>,
+    /// 行高（倍数或逻辑像素）。
+    pub line_height: Option<f64>,
+    /// 字间距（逻辑像素）。
+    pub letter_spacing: Option<f64>,
+    /// 文本水平对齐方式。
+    pub text_align: Option<TextAlign>,
+    /// 文本溢出处理方式。
+    pub text_overflow: Option<TextOverflow>,
+    /// 空白字符处理方式。
+    pub white_space: Option<WhiteSpace>,
+}
+
+/// 字重。
+///
+/// 对应 CSS `font-weight` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum FontWeight {
+    /// 100
+    Thin,
+    /// 200
+    ExtraLight,
+    /// 300
+    Light,
+    /// 400（默认）
+    #[default]
+    Normal,
+    /// 500
+    Medium,
+    /// 600
+    SemiBold,
+    /// 700
+    Bold,
+    /// 800
+    ExtraBold,
+    /// 900
+    Black,
+    /// 数值字重（1-1000）。
+    Number(u16),
+}
+
+/// 字体样式。
+///
+/// 对应 CSS `font-style` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum FontStyle {
+    /// 正常（默认）。
+    #[default]
+    Normal,
+    /// 斜体。
+    Italic,
+    /// 倾斜体。
+    Oblique,
+}
+
+/// 文本水平对齐方式。
+///
+/// 对应 CSS `text-align` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum TextAlign {
+    /// 起始对齐（左对齐 for LTR）。
+    #[default]
+    Start,
+    /// 居中。
+    Center,
+    /// 结束对齐（右对齐 for LTR）。
+    End,
+    /// 两端对齐。
+    Justify,
+}
+
+/// 文本溢出处理方式。
+///
+/// 对应 CSS `text-overflow` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum TextOverflow {
+    /// 直接裁剪（默认）。
+    #[default]
+    Clip,
+    /// 显示省略号 `…`。
+    Ellipsis,
+}
+
+/// 空白字符处理方式。
+///
+/// 对应 CSS `white-space` 属性。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+pub enum WhiteSpace {
+    /// 正常换行（默认）。
+    #[default]
+    Normal,
+    /// 不换行。
+    NoWrap,
+    /// 保留空白和换行。
+    Pre,
+}
+
+impl TextStyle {
+    /// 创建空文本样式（所有属性均为 `None`）。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 判断是否所有属性均为 `None`。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.font_family.is_none()
+            && self.font_size.is_none()
+            && self.font_weight.is_none()
+            && self.font_style.is_none()
+            && self.line_height.is_none()
+            && self.letter_spacing.is_none()
+            && self.text_align.is_none()
+            && self.text_overflow.is_none()
+            && self.white_space.is_none()
+    }
+
+    /// 合并另一个 `TextStyle`，`other` 中的非 `None` 属性覆盖 `self` 中对应属性。
+    #[must_use]
+    pub fn merge(self, other: &Self) -> Self {
+        Self {
+            font_family: other.font_family.as_ref().cloned().or(self.font_family),
+            font_size: other.font_size.or(self.font_size),
+            font_weight: other.font_weight.or(self.font_weight),
+            font_style: other.font_style.or(self.font_style),
+            line_height: other.line_height.or(self.line_height),
+            letter_spacing: other.letter_spacing.or(self.letter_spacing),
+            text_align: other.text_align.or(self.text_align),
+            text_overflow: other.text_overflow.or(self.text_overflow),
+            white_space: other.white_space.or(self.white_space),
+        }
+    }
+}
+
+impl fmt::Display for TextStyle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TextStyle(")?;
+
+        let mut first = true;
+        let mut prop = |name: &str, val: &dyn fmt::Display| {
+            if !first {
+                write!(f, ", ")?;
+            }
+            first = false;
+            write!(f, "{name}: {val}")
+        };
+
+        if let Some(ff) = &self.font_family {
+            prop("font-family", &ff)?;
+        }
+        if let Some(fs) = self.font_size {
+            prop("font-size", &fs)?;
+        }
+
+        if first {
+            write!(f, "empty")?;
+        }
+
+        write!(f, ")")
     }
 }
 

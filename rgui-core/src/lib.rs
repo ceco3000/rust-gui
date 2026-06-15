@@ -6,7 +6,8 @@
 //! - 组件模型 trait（[`WidgetSpec`]）
 //! - 状态管理 trait（[`PersistState`]、[`AppMessage`]）
 //! - 声明式视图类型（[`WidgetView`]、[`PropValue`]）
-//! - 基础几何类型（[`Rect`]、[`Size`]、[`Point`]）
+//! - 基础几何类型（[`Rect`]、[`Size`]、[`Point`]、[`LayoutStyle`]、
+//!   [`VisualStyle`]、[`TextStyle`]）
 //! - Context 类型（[`ViewContext`]、[`UpdateContext`] 等）
 //! - 无障碍基础类型（[`AccessibilityNode`]、[`AccessibilityRole`] 等）
 //!
@@ -28,7 +29,11 @@ pub mod view;
 pub use id::{WidgetId, WindowId};
 
 // 几何类型
-pub use geometry::{BoxConstraints, Point, Rect, Size};
+pub use geometry::{
+    AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
+    FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle, Point, Rect,
+    Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
+};
 
 // 视图类型
 pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView};
@@ -56,7 +61,11 @@ pub mod prelude {
     pub use crate::context::{
         AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext,
     };
-    pub use crate::geometry::{BoxConstraints, Point, Rect, Size};
+    pub use crate::geometry::{
+        AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
+        FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle, Point, Rect,
+        Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
+    };
     pub use crate::id::{WidgetId, WindowId};
     pub use crate::registry::{RegistryError, WidgetRegistry};
     pub use crate::traits::{AppMessage, PersistState, WidgetSpec};
