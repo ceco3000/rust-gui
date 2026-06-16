@@ -515,6 +515,13 @@ impl ApplicationHandler for AppHandler {
                         )),
                         ..Default::default()
                     };
+                    // 将字形 Atlas 像素数据传入 Vello 后端，启用真实纹理渲染
+                    if self.text_renderer.is_dirty() {
+                        let (aw, ah) = self.text_renderer.atlas_dimensions();
+                        let pixels = self.text_renderer.atlas_pixels();
+                        ctx.set_atlas_data(aw, ah, &pixels);
+                        self.text_renderer.clear_dirty();
+                    }
                     match ctx.render(&scene, &params) {
                         Ok(()) => self.frame_count += 1,
                         Err(e) => eprintln!("渲染: {e}"),

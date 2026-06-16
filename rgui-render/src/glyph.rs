@@ -62,10 +62,14 @@ pub struct GlyphAtlas {
     frame_index: u64,
     pub dirty: bool,
     pub upload_queue: Vec<UploadRect>,
+    /// CPU-side pixel buffer: RGBA8 (width × height × 4 bytes).
+    /// Used to create peniko::Image for Vello draw_image() rendering.
+    pixels: Vec<u8>,
 }
 
 impl GlyphAtlas {
     pub fn new(texture_id: TextureId, initial_w: u32, initial_h: u32) -> Self {
+        let pixel_count = (initial_w * initial_h) as usize * 4;
         Self {
             texture_id,
             width: initial_w,
@@ -78,6 +82,7 @@ impl GlyphAtlas {
             frame_index: 0,
             dirty: false,
             upload_queue: Vec::new(),
+            pixels: vec![0u8; pixel_count],
         }
     }
 
@@ -85,6 +90,12 @@ impl GlyphAtlas {
     #[must_use]
     pub fn dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// 返回 CPU-side 像素缓冲区引用（RGBA8, width × height × 4 bytes）。
+    #[must_use]
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
     }
 
     /// 请求字形缓存。命中则直接返回；未命中则调用 rasterizer
@@ -117,9 +128,20 @@ impl GlyphAtlas {
             y: alloc.y,
             width: rasterized.width,
             height: rasterized.height,
-            data: rasterized.bitmap,
+            data: rasterized.bitmap.clone(),
         });
         self.dirty = true;
+
+        // Copy glyph bitmap into CPU-side pixel buffer for Vello draw_image()
+        let src_w = rasterized.width as usize;
+        let src_h = rasterized.height as usize;
+        for row in 0..src_h {
+            let src_start = row * src_w * 4;
+            let dst_start = ((alloc.y as usize + row) * self.width as usize + alloc.x as usize) * 4;
+            let len = src_w * 4;
+            self.pixels[dst_start..dst_start + len]
+                .copy_from_slice(&rasterized.bitmap[src_start..src_start + len]);
+        }
 
         let entry = GlyphCacheEntry {
             atlas_u: alloc.x as f32 / self.width as f32,
@@ -155,12 +177,25 @@ impl GlyphAtlas {
     }
 
     pub(crate) fn grow(&mut self, needed_w: u32, needed_h: u32) {
+        let old_w = self.width;
+        let old_h = self.height;
         if self.width < self.max_width {
             self.width = (self.width * 2).min(self.max_width).max(needed_w);
         }
         if self.height < self.max_height {
             self.height = (self.height * 2).min(self.max_height).max(needed_h);
         }
+        // Resize CPU-side pixel buffer, preserving existing glyph data
+        let new_size = (self.width * self.height) as usize * 4;
+        let mut new_pixels = vec![0u8; new_size];
+        for row in 0..old_h as usize {
+            let src_start = row * old_w as usize * 4;
+            let dst_start = row * self.width as usize * 4;
+            let len = old_w as usize * 4;
+            new_pixels[dst_start..dst_start + len]
+                .copy_from_slice(&self.pixels[src_start..src_start + len]);
+        }
+        self.pixels = new_pixels;
         self.skyline.resize(self.width, self.height);
     }
 
@@ -192,9 +227,9 @@ mod tests {
 
     fn dummy_rasterizer(key: &GlyphKey) -> Option<RasterizedGlyph> {
         let size = key.font_size.max(1);
-        let len = (size * size) as usize;
+        let len = (size * size) as usize * 4; // RGBA8
         Some(RasterizedGlyph {
-            bitmap: vec![0u8; len],
+            bitmap: vec![128u8; len],
             width: size,
             height: size,
             advance: size as f32 * 0.6,

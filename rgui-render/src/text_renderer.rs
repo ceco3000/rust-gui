@@ -79,8 +79,8 @@ impl TextRenderer {
             glyphs.push(crate::primitives::GlyphData {
                 atlas_x: (entry.atlas_u * atlas_w as f32) as u32,
                 atlas_y: (entry.atlas_v * atlas_h as f32) as u32,
-                atlas_w: (entry.width * atlas_w as f32) as u32,
-                atlas_h: (entry.height * atlas_h as f32) as u32,
+                atlas_w: entry.width as u32,
+                atlas_h: entry.height as u32,
                 offset_x: baseline_x + g.x,
                 offset_y: baseline_y + g.y,
                 advance: g.advance,
@@ -122,6 +122,18 @@ impl TextRenderer {
     #[must_use]
     pub fn atlas_texture_id(&self) -> TextureId {
         self.atlas.borrow().texture_id
+    }
+
+    /// 返回 atlas 纹理尺寸（宽, 高）。
+    #[must_use]
+    pub fn atlas_dimensions(&self) -> (u32, u32) {
+        self.atlas.borrow().dimensions()
+    }
+
+    /// 返回 CPU-side atlas 像素缓冲区引用（RGBA8, w × h × 4 bytes）。
+    #[must_use]
+    pub fn atlas_pixels(&self) -> Vec<u8> {
+        self.atlas.borrow().pixels().to_vec()
     }
 }
 

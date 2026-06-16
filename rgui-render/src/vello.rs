@@ -60,6 +60,8 @@ pub struct VelloBackend {
     width: u32,
     /// 当前表面高度
     height: u32,
+    /// 缓存的字形 atlas 数据（当帧有效）(width, height, RGBA8 pixels)
+    atlas_cache: Option<(u32, u32, Vec<u8>)>,
 }
 
 impl VelloBackend {
@@ -105,6 +107,7 @@ impl VelloBackend {
             frame_count: 0,
             width,
             height,
+            atlas_cache: None,
         })
     }
 
@@ -129,9 +132,18 @@ impl VelloBackend {
         (self.width, self.height)
     }
 
+    /// 设置当帧的字形 atlas 数据，用于 DrawGlyphs 真实纹理渲染。
+    ///
+    /// 在 `render()` 之前调用；数据在当帧渲染后被清除。
+    pub fn set_atlas_data(&mut self, width: u32, height: u32, pixels: &[u8]) {
+        if width > 0 && height > 0 && !pixels.is_empty() {
+            self.atlas_cache = Some((width, height, pixels.to_vec()));
+        }
+    }
+
     /// 将 SceneGraph 编码为 vello::Scene（委托给独立函数）。
     fn encode_scene(&self, scene: &SceneGraph, params: &RenderParams) -> vello::Scene {
-        encode_scene_to_vello(scene, params)
+        encode_scene_to_vello(scene, params, self.atlas_cache.as_ref())
     }
 
     /// 执行 Vello 渲染管线。
@@ -200,6 +212,8 @@ impl RenderBackend for VelloBackend {
         let vello_scene = self.encode_scene(scene, params);
         self.render_vello_scene(&vello_scene)?;
 
+        // 清除当帧 atlas 数据（每帧数据由外部设置）
+        self.atlas_cache = None;
         self.frame_count += 1;
         Ok(())
     }
@@ -235,7 +249,14 @@ impl RenderBackend for VelloBackend {
 /// 将 SceneGraph 编码为 vello::Scene。
 ///
 /// 此函数为纯数据转换，不依赖 GPU 设备，可在无 GPU 环境下测试。
-pub fn encode_scene_to_vello(scene: &SceneGraph, params: &RenderParams) -> vello::Scene {
+///
+/// `atlas_data` 为可选的 atlas 像素数据 `(width, height, RGBA8 pixels)`，
+/// 传入时使用真实字形纹理渲染 `DrawGlyphs`；`None` 时回退到占位色块。
+pub fn encode_scene_to_vello(
+    scene: &SceneGraph,
+    params: &RenderParams,
+    atlas_data: Option<&(u32, u32, Vec<u8>)>,
+) -> vello::Scene {
     let mut vello_scene = vello::Scene::new();
 
     // 填充背景色
@@ -274,7 +295,7 @@ pub fn encode_scene_to_vello(scene: &SceneGraph, params: &RenderParams) -> vello
         }
 
         for cmd in &layer.commands {
-            encode_draw_command(&mut vello_scene, cmd);
+            encode_draw_command(&mut vello_scene, cmd, atlas_data);
         }
 
         if needs_layer {
@@ -286,7 +307,14 @@ pub fn encode_scene_to_vello(scene: &SceneGraph, params: &RenderParams) -> vello
 }
 
 /// 将单个 DrawCommand 编码到 vello::Scene 中。
-fn encode_draw_command(scene: &mut vello::Scene, cmd: &DrawCommand) {
+///
+/// `atlas_data` 为可选的字形 Atlas 纹理数据 `(width, height, RGBA8 pixels)`，
+/// 传入时使用真实字形纹理渲染 `DrawGlyphs`。
+fn encode_draw_command(
+    scene: &mut vello::Scene,
+    cmd: &DrawCommand,
+    atlas_data: Option<&(u32, u32, Vec<u8>)>,
+) {
     match cmd {
         DrawCommand::FillRect {
             rect,
@@ -394,46 +422,102 @@ fn encode_draw_command(scene: &mut vello::Scene, cmd: &DrawCommand) {
             }
         },
         DrawCommand::DrawGlyphs {
-            texture_id,
+            texture_id: _,
             glyphs,
-            font_size: _,
+            font_size,
             color,
         } => {
-            // 使用 atlas 纹理渲染字形（若无纹理则回退到占位矩形）
-            for glyph in glyphs {
-                // 构建字形四边形的变换矩阵：
-                // 1. 平移到字形基线位置 (glyph.offset_x + glyph.atlas_w/2, glyph.offset_y)
-                // 2. 缩放为 atlas 子区域的宽高
-                // Vello draw_image 使用图像坐标 → 世界坐标的仿射变换
-                let xform =
-                    vello::kurbo::Affine::translate((glyph.offset_x.into(), glyph.offset_y.into()))
-                        * vello::kurbo::Affine::scale_non_uniform(
-                            glyph.atlas_w.into(),
-                            glyph.atlas_h.into(),
-                        );
-
-                // TODO(R08+R15): 将 atlas 纹理注册到 Vello 渲染器，
-                // 使用 scene.draw_image(&atlas_image, xform) 渲染纹理
-                // 四边形替代当前占位矩形。需要 backend 提供
-                // renderer.register_texture() 集成。
-                let _ = texture_id;
-                let _ = xform;
-
-                // 占位：填充矩形（后续替换为 draw_image）
-                let glyph_rect = vello::kurbo::Rect::new(
-                    glyph.offset_x.into(),
-                    glyph.offset_y.into(),
-                    (glyph.offset_x + glyph.atlas_w as f32).into(),
-                    (glyph.offset_y + glyph.atlas_h as f32).into(),
-                );
-                scene.fill(
-                    vello::peniko::Fill::NonZero,
-                    vello::kurbo::Affine::IDENTITY,
-                    to_peniko_color(*color),
-                    None,
-                    &glyph_rect,
-                );
+            if glyphs.is_empty() {
+                return;
             }
+
+            // 有 atlas 纹理数据时，渲染真实字形
+            if let Some((atlas_w, atlas_h, atlas_pixels)) = atlas_data {
+                let pixels: std::sync::Arc<dyn AsRef<[u8]> + Send + Sync> =
+                    std::sync::Arc::new(atlas_pixels.clone());
+                let image = vello::peniko::ImageData {
+                    data: vello::peniko::Blob::new(pixels),
+                    format: vello::peniko::ImageFormat::Rgba8,
+                    alpha_type: vello::peniko::ImageAlphaType::Alpha,
+                    width: *atlas_w,
+                    height: *atlas_h,
+                };
+
+                for glyph in glyphs {
+                    let gx = glyph.offset_x as f64;
+                    let gy = glyph.offset_y as f64;
+                    let gw = glyph.atlas_w as f64;
+                    let gh = glyph.atlas_h as f64;
+                    let au = glyph.atlas_x as f64;
+                    let av = glyph.atlas_y as f64;
+
+                    let glyph_xform = vello::kurbo::Affine::translate((gx, gy));
+                    let brush_xform = vello::kurbo::Affine::translate((au, av));
+                    let glyph_rect = vello::kurbo::Rect::new(0.0, 0.0, gw, gh);
+
+                    let brush_ref: vello::peniko::ImageBrushRef =
+                        vello::peniko::ImageBrushRef::from(&image);
+                    let brush = vello::peniko::Brush::Image(brush_ref);
+
+                    scene.fill(
+                        vello::peniko::Fill::NonZero,
+                        glyph_xform,
+                        brush,
+                        Some(brush_xform),
+                        &glyph_rect,
+                    );
+                }
+                return;
+            }
+
+            // 无 atlas 数据时回退到占位色块
+            let mut min_x = f32::MAX;
+            let mut min_y = f32::MAX;
+            let mut max_x = f32::MIN;
+            let mut max_y = f32::MIN;
+
+            for glyph in glyphs {
+                let gx = glyph.offset_x;
+                let gy = glyph.offset_y;
+                let gw = glyph.atlas_w as f32;
+                let gh = glyph.atlas_h as f32;
+                min_x = min_x.min(gx);
+                min_y = min_y.min(gy);
+                max_x = max_x.max(gx + gw);
+                max_y = max_y.max(gy + gh);
+            }
+
+            let padding = *font_size * 0.1;
+            let text_rect = vello::kurbo::Rect::new(
+                (min_x - padding).into(),
+                (min_y - padding).into(),
+                (max_x + padding).into(),
+                (max_y + padding).into(),
+            );
+
+            let mut fill_color = to_peniko_color(*color);
+            fill_color.components[3] = (fill_color.components[3] * 0.85).min(1.0);
+
+            scene.fill(
+                vello::peniko::Fill::NonZero,
+                vello::kurbo::Affine::IDENTITY,
+                fill_color,
+                None,
+                &text_rect,
+            );
+
+            let baseline_y = min_y + *font_size;
+            let baseline_start = vello::kurbo::Point::new(f64::from(min_x), f64::from(baseline_y));
+            let baseline_end = vello::kurbo::Point::new(f64::from(max_x), f64::from(baseline_y));
+            let baseline = vello::kurbo::Line::new(baseline_start, baseline_end);
+            let stroke = vello::kurbo::Stroke::new(1.0);
+            scene.stroke(
+                &stroke,
+                vello::kurbo::Affine::IDENTITY,
+                to_peniko_color(Color::new(1.0, 1.0, 1.0, 0.6)),
+                None,
+                &baseline,
+            );
         },
         DrawCommand::DrawImage {
             texture_id: _,
@@ -741,7 +825,7 @@ mod tests {
     fn encode_empty_scene() {
         let scene = SceneGraph::new(1);
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -762,7 +846,7 @@ mod tests {
             version: 1,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -787,7 +871,7 @@ mod tests {
             version: 1,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -812,7 +896,7 @@ mod tests {
             version: 1,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -835,7 +919,7 @@ mod tests {
             version: 2,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -857,7 +941,7 @@ mod tests {
             version: 3,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -878,7 +962,7 @@ mod tests {
             version: 4,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -907,7 +991,7 @@ mod tests {
             version: 5,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -942,7 +1026,7 @@ mod tests {
             version: 6,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -985,7 +1069,7 @@ mod tests {
             version: 7,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -1026,7 +1110,7 @@ mod tests {
             version: 8,
         };
         let params = test_params(200, 50);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -1058,7 +1142,7 @@ mod tests {
             version: 9,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -1080,7 +1164,7 @@ mod tests {
             version: 10,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 
@@ -1102,7 +1186,7 @@ mod tests {
             version: 11,
         };
         let params = test_params(100, 100);
-        let vello_scene = encode_scene_to_vello(&scene, &params);
+        let vello_scene = encode_scene_to_vello(&scene, &params, None);
         let _ = vello_scene;
     }
 }

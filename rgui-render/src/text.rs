@@ -58,24 +58,25 @@ pub struct TextEngine {
 }
 
 impl TextEngine {
-    /// 创建 TextEngine，使用嵌入字体初始化 FontSystem。
+    /// 创建 TextEngine，使用系统字体 + 嵌入字体初始化 FontSystem。
     ///
     /// # 实现说明
     ///
-    /// 从 `EMBEDDED_FONTS` 构造 `fontdb::Source` 列表，通过
-    /// `FontSystem::new_with_fonts()` 创建 FontSystem。这确保在
-    /// 无系统字体的环境（如 CI）中也能正常工作。
+    /// 先通过 `FontSystem::new()` 加载系统字体（提供 CJK 支持），
+    /// 再将 `EMBEDDED_FONTS` 作为额外字体源注册到数据库。
+    /// 这确保在有系统字体的平台（macOS/Windows/Linux）上能回退到
+    /// 系统 CJK 字体，同时保证 Inter 等嵌入字体优先可用。
     #[must_use]
     pub fn new() -> Self {
-        let sources: Vec<fontdb::Source> = EMBEDDED_FONTS
-            .iter()
-            .map(|f| {
-                let data: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(f.data.to_vec());
-                fontdb::Source::Binary(data)
-            })
-            .collect();
+        let mut font_system = FontSystem::new();
 
-        let font_system = FontSystem::new_with_fonts(sources);
+        // 将嵌入字体作为额外字体源注册
+        for font in EMBEDDED_FONTS {
+            let data: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(font.data.to_vec());
+            font_system
+                .db_mut()
+                .load_font_source(fontdb::Source::Binary(data));
+        }
 
         Self {
             font_system,

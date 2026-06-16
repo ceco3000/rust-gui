@@ -5,10 +5,10 @@
 //!
 //! 定义源自 D3 §5（绘制阶段）和 D8 R19。
 
+use rgui_core::Color;
 use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
 use rgui_core::id::WidgetId;
-use rgui_core::Color;
 
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
 
