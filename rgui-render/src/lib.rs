@@ -28,7 +28,7 @@ pub mod screenshot;
 #[cfg(feature = "skia-backend")]
 pub mod skia;
 
-pub use backend::{RenderBackend, RenderError, RenderParams};
+pub use backend::{BackendCapabilities, RenderBackend, RenderError, RenderParams};
 pub use dirty::DirtyRegionTracker;
 pub use factory::{BackendType, RenderBackendFactory};
 pub use focus_indicator::FocusIndicator;

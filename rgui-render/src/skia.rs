@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use log;
 
-use crate::backend::{RenderBackend, RenderError, RenderParams};
+use crate::backend::{BackendCapabilities, RenderBackend, RenderError, RenderParams};
 use crate::primitives::{
     BlendMode, FillRule, GlyphData, LineCap, LineJoin, Paint, PathCommand, PathData, Stroke,
     Transform,
@@ -319,6 +319,44 @@ impl RenderBackend for SkiaBackend {
 
     fn backend_name(&self) -> &'static str {
         "Skia (CPU)"
+    }
+
+    fn update_texture(
+        &mut self,
+        id: TextureId,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) {
+        // CPU 纹理更新：在存储的纹理数据中替换子区域。
+        if let Some(tex) = self.textures.get_mut(&id) {
+            let stride = tex.width as u32 * 4;
+            for row in 0..height {
+                let src_start = (row * width * 4) as usize;
+                let src_end = src_start + (width * 4) as usize;
+                let dst_start = ((y + row) * stride + x * 4) as usize;
+                let dst_end = dst_start + (width * 4) as usize;
+                if src_end <= data.len() && dst_end <= tex.pixels.len() {
+                    tex.pixels[dst_start..dst_end].copy_from_slice(&data[src_start..src_end]);
+                }
+            }
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        true // CPU 后端始终可用
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            msaa: false,
+            max_texture_size: 4096,
+            gpu_tessellation: false,
+            hdr: false,
+            offscreen_rendering: true,
+        }
     }
 }
 

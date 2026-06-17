@@ -21,7 +21,7 @@ use std::sync::Mutex;
 
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 
-use crate::backend::{RenderBackend, RenderError, RenderParams};
+use crate::backend::{BackendCapabilities, RenderBackend, RenderError, RenderParams};
 use crate::primitives::{
     FillRule, LineCap, LineJoin, Paint, PathCommand, PathData, Stroke, Transform,
 };
@@ -259,6 +259,34 @@ impl RenderBackend for VelloBackend {
 
     fn backend_name(&self) -> &'static str {
         "Vello (GPU)"
+    }
+
+    fn update_texture(
+        &mut self,
+        id: TextureId,
+        _x: u32,
+        _y: u32,
+        _width: u32,
+        _height: u32,
+        _data: &[u8],
+    ) {
+        // GPU 纹理更新：在阶段 1 通过 wgpu queue.write_texture() 实现。
+        // 当前占位——字形 Atlas 使用完整重新注册作为 workaround。
+        let _ = id;
+    }
+
+    fn is_available(&self) -> bool {
+        true // Vello 后端在构造时已绑定有效 GPU 上下文
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        BackendCapabilities {
+            msaa: true,
+            max_texture_size: 16384,
+            gpu_tessellation: true,
+            hdr: false,
+            offscreen_rendering: false,
+        }
     }
 }
 
