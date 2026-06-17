@@ -2301,6 +2301,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-label"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
+name = "one-progress-bar"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
 name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

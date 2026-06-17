@@ -72,9 +72,9 @@ fn paint_op_to_draw_command_inner(
                 // 水平居中
                 let baseline_x = bounds.origin.x as f32
                     + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
-                // 垂直：screen = [baseline - ascent, baseline + descent]，中心对齐
+                // 垂直：按 ascent 居中（视觉内容居中，忽略 descent 空白区）
                 let baseline_y = bounds.origin.y as f32
-                    + (bounds.size.height as f32 + metrics.ascent - metrics.descent) / 2.0;
+                    + (bounds.size.height as f32 + metrics.ascent) / 2.0;
                 // 将预先计算的基线偏移应用到 glyph 位置
                 let dx = baseline_x;
                 let dy = baseline_y;

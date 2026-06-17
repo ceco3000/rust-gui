@@ -78,9 +78,17 @@ impl WidgetSpec for ProgressBar {
             );
         }
 
-        // 百分比文本
+        // 百分比文本（对齐 Button：水平内边距 + 字号按高度比例）
         if !s.label.is_empty() {
-            ctx.draw_text(&s.label, bounds, Color::new(0.9, 0.9, 0.95, 1.0), 12.0);
+            let pad = 4.0;
+            let text_bounds = Rect::new(
+                bounds.origin.x + pad,
+                bounds.origin.y,
+                bounds.size.width - pad * 2.0,
+                bounds.size.height,
+            );
+            let font_size = bounds.size.height as f32 * 0.8;
+            ctx.draw_text(&s.label, text_bounds, Color::new(0.9, 0.9, 0.95, 1.0), font_size);
         }
     }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
