@@ -5,6 +5,7 @@
 
 use crate::geometry::{Rect, Size};
 use crate::id::WidgetId;
+use crate::locale::Locale;
 use crate::view::Color;
 
 // ============================================================================
@@ -18,12 +19,28 @@ use crate::view::Color;
 pub struct ViewContext {
     /// 窗口逻辑尺寸。
     pub window_size: Size,
+    /// 区域设置，包含语言、数字格式、日期格式等本地化信息。
+    /// 默认值为 `Locale::EN_US`。
+    pub locale: &'static Locale,
 }
 
 impl ViewContext {
+    /// 创建 ViewContext，locale 默认为 `Locale::EN_US`。
     #[must_use]
     pub const fn new(window_size: Size) -> Self {
-        Self { window_size }
+        Self {
+            window_size,
+            locale: Locale::EN_US,
+        }
+    }
+
+    /// 使用指定 locale 创建 ViewContext。
+    #[must_use]
+    pub const fn with_locale(window_size: Size, locale: &'static Locale) -> Self {
+        Self {
+            window_size,
+            locale,
+        }
     }
 }
 
@@ -322,6 +339,30 @@ mod tests {
     fn view_context_creation() {
         let ctx = ViewContext::new(Size::new(800.0, 600.0));
         assert_eq!(ctx.window_size, Size::new(800.0, 600.0));
+    }
+
+    #[test]
+    fn view_context_default_locale_is_en_us() {
+        let ctx = ViewContext::new(Size::new(800.0, 600.0));
+        assert_eq!(ctx.locale.id, "en-US");
+        assert_eq!(ctx.locale.decimal_separator, '.');
+        assert_eq!(ctx.locale.currency_symbol, "$");
+    }
+
+    #[test]
+    fn view_context_with_locale() {
+        let ctx = ViewContext::with_locale(Size::new(800.0, 600.0), Locale::ZH_CN);
+        assert_eq!(ctx.locale.id, "zh-CN");
+        assert_eq!(ctx.locale.currency_symbol, "¥");
+        assert_eq!(ctx.window_size, Size::new(800.0, 600.0));
+    }
+
+    #[test]
+    fn view_context_clone() {
+        let ctx = ViewContext::new(Size::new(100.0, 200.0));
+        let cloned = ctx.clone();
+        assert_eq!(ctx.window_size, cloned.window_size);
+        assert_eq!(ctx.locale.id, cloned.locale.id);
     }
 
     #[test]

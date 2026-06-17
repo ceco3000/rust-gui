@@ -21,6 +21,7 @@ pub mod a11y;
 pub mod context;
 pub mod geometry;
 pub mod id;
+pub mod locale;
 pub mod registry;
 pub mod traits;
 pub mod view;
@@ -47,6 +48,9 @@ pub use context::{
     UpdateContext, ViewContext,
 };
 
+// 本地化类型
+pub use locale::Locale;
+
 // 无障碍类型
 pub use a11y::{AccessibilityAction, AccessibilityNode, AccessibilityRole, AccessibilityState};
 
@@ -71,6 +75,7 @@ pub mod prelude {
         Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
     };
     pub use crate::id::{WidgetId, WindowId};
+    pub use crate::locale::Locale;
     pub use crate::registry::{RegistryError, WidgetRegistry};
     pub use crate::traits::{AppMessage, PersistState, WidgetSpec};
     pub use crate::view::{
