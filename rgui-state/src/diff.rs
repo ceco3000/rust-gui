@@ -3,10 +3,12 @@
 //! 定义源自 D2 §5。
 
 use rgui_core::id::WidgetId;
-use rgui_core::traits::AppMessage;
+use rgui_core::traits::{AppMessage, PersistState};
 use rgui_core::view::{Key, MessageBinding, PropValue, WidgetView};
 use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
+
+use crate::store::StateStore;
 
 // ============================================================================
 // Patch
@@ -550,5 +552,257 @@ mod tests {
         map.insert_path(parent, 0, id);
         assert_eq!(map.get_by_path(parent, 0), Some(id));
         assert_eq!(map.get_by_path(parent, 1), None);
+    }
+}
+
+// ============================================================================
+// apply_patch
+// ============================================================================
+
+/// Patch 应用到 StateStore 的结果：需要应用到 WidgetTree 的变更。
+#[derive(Debug, Default)]
+pub struct ApplyResult {
+    /// 被创建的 widget（widget_id, parent_id, index）。
+    pub created: Vec<(WidgetId, WidgetId, usize)>,
+    /// 被移除的 widget ID 列表。
+    pub removed: Vec<WidgetId>,
+    /// 被移动的 widget（widget_id, new_parent, new_index）。
+    pub moved: Vec<(WidgetId, WidgetId, usize)>,
+}
+
+/// 将 diff 产生的 Patch 列表应用到 StateStore（D2 §5.3）。
+///
+/// `create_state` 回调根据 `widget_type` 创建对应的 `PersistState` 实例。
+/// 返回 `ApplyResult` 描述需要应用到 WidgetTree（EventRouter）的变更。
+///
+/// # Panics
+///
+/// 当 `CreateWidget` 的 `create_state` 返回 `None` 时 panic（未知 widget 类型）。
+pub fn apply_patch<M: AppMessage>(
+    store: &mut StateStore,
+    patches: &[Patch<M>],
+    create_state: &mut dyn FnMut(&str) -> Option<Box<dyn PersistState>>,
+) -> ApplyResult {
+    let mut result = ApplyResult::default();
+
+    for patch in patches {
+        match patch {
+            Patch::CreateWidget {
+                parent,
+                index,
+                widget_type,
+                widget_id,
+                ..
+            } => {
+                let state = create_state(widget_type)
+                    .unwrap_or_else(|| panic!("apply_patch: unknown widget type '{widget_type}'"));
+                store.insert_persistent(*widget_id, state);
+                result.created.push((*widget_id, *parent, *index));
+            },
+            Patch::UpdateProps { widget_id, .. } => {
+                store.mark_dirty(*widget_id);
+                store.propagate_dirty(*widget_id);
+            },
+            Patch::UpdateBindings { widget_id, .. } => {
+                // 消息绑定变更不影响状态，仅标记需要重新 diff
+                store.mark_dirty(*widget_id);
+            },
+            Patch::MoveWidget {
+                widget_id,
+                new_parent,
+                new_index,
+            } => {
+                store.mark_dirty(*widget_id);
+                result.moved.push((*widget_id, *new_parent, *new_index));
+            },
+            Patch::RemoveWidget { widget_id } => {
+                store.remove(*widget_id);
+                result.removed.push(*widget_id);
+            },
+            Patch::ReplaceWidget {
+                widget_id,
+                new_widget_type,
+                ..
+            } => {
+                store.remove(*widget_id);
+                let state = create_state(new_widget_type).unwrap_or_else(|| {
+                    panic!("apply_patch: unknown widget type '{new_widget_type}'")
+                });
+                store.insert_persistent(*widget_id, state);
+                store.mark_dirty(*widget_id);
+                store.propagate_dirty(*widget_id);
+            },
+            Patch::Batch(sub_patches) => {
+                let sub_result = apply_patch(store, sub_patches, create_state);
+                result.created.extend(sub_result.created);
+                result.removed.extend(sub_result.removed);
+                result.moved.extend(sub_result.moved);
+            },
+        }
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod apply_patch_tests {
+    use super::*;
+
+    /// 测试用消息类型
+    #[derive(Debug, Clone, PartialEq)]
+    enum TestMsg {}
+    impl rgui_core::AppMessage for TestMsg {
+        fn message_name(&self) -> &'static str {
+            match *self {}
+        }
+    }
+
+    type TPatch = Patch<TestMsg>;
+
+    #[derive(serde::Serialize)]
+    struct TestWidgetState {
+        label: String,
+    }
+
+    impl PersistState for TestWidgetState {
+        fn schema_name() -> &'static str {
+            "test_widget"
+        }
+        fn schema_version() -> u32 {
+            1
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    fn test_create_state(widget_type: &str) -> Option<Box<dyn PersistState>> {
+        match widget_type {
+            "TestWidget" => Some(Box::new(TestWidgetState {
+                label: String::new(),
+            })),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn apply_patch_create_widget() {
+        let mut store = StateStore::new();
+        let parent = WidgetId::from_u64(1);
+        let widget_id = WidgetId::from_u64(2);
+        let patches: Vec<TPatch> = vec![TPatch::CreateWidget {
+            parent,
+            index: 0,
+            widget_type: "TestWidget",
+            widget_id,
+            props: BTreeMap::new(),
+            message_bindings: vec![],
+        }];
+
+        let result = apply_patch(&mut store, &patches, &mut test_create_state);
+        assert!(store.contains(widget_id));
+        assert_eq!(result.created.len(), 1);
+        assert_eq!(result.created[0], (widget_id, parent, 0));
+    }
+
+    #[test]
+    fn apply_patch_remove_widget() {
+        let mut store = StateStore::new();
+        let widget_id = WidgetId::from_u64(2);
+
+        // 先创建
+        store.insert_persistent(
+            widget_id,
+            Box::new(TestWidgetState {
+                label: String::new(),
+            }),
+        );
+        assert!(store.contains(widget_id));
+
+        let patches: Vec<TPatch> = vec![TPatch::RemoveWidget { widget_id }];
+        let result = apply_patch(&mut store, &patches, &mut test_create_state);
+        assert!(!store.contains(widget_id));
+        assert_eq!(result.removed, vec![widget_id]);
+    }
+
+    #[test]
+    fn apply_patch_update_props_marks_dirty() {
+        let mut store = StateStore::new();
+        let widget_id = WidgetId::from_u64(2);
+        store.insert_persistent(
+            widget_id,
+            Box::new(TestWidgetState {
+                label: String::new(),
+            }),
+        );
+
+        let mut changed = BTreeMap::new();
+        changed.insert("label", PropValue::str("updated"));
+        let patches: Vec<TPatch> = vec![TPatch::UpdateProps {
+            widget_id,
+            changed,
+            removed: vec![],
+        }];
+
+        apply_patch(&mut store, &patches, &mut test_create_state);
+        assert!(store.dirty_widgets().contains(&widget_id));
+    }
+
+    #[test]
+    fn apply_patch_move_widget() {
+        let mut store = StateStore::new();
+        let widget_id = WidgetId::from_u64(2);
+        let new_parent = WidgetId::from_u64(3);
+        store.insert_persistent(
+            widget_id,
+            Box::new(TestWidgetState {
+                label: String::new(),
+            }),
+        );
+
+        let patches: Vec<TPatch> = vec![TPatch::MoveWidget {
+            widget_id,
+            new_parent,
+            new_index: 1,
+        }];
+
+        let result = apply_patch(&mut store, &patches, &mut test_create_state);
+        assert_eq!(result.moved.len(), 1);
+        assert_eq!(result.moved[0], (widget_id, new_parent, 1));
+    }
+
+    #[test]
+    fn apply_patch_batch() {
+        let mut store = StateStore::new();
+        let parent = WidgetId::from_u64(1);
+        let id_a = WidgetId::from_u64(2);
+        let id_b = WidgetId::from_u64(3);
+
+        let patches: Vec<TPatch> = vec![TPatch::Batch(vec![
+            TPatch::CreateWidget {
+                parent,
+                index: 0,
+                widget_type: "TestWidget",
+                widget_id: id_a,
+                props: BTreeMap::new(),
+                message_bindings: vec![],
+            },
+            TPatch::CreateWidget {
+                parent,
+                index: 1,
+                widget_type: "TestWidget",
+                widget_id: id_b,
+                props: BTreeMap::new(),
+                message_bindings: vec![],
+            },
+        ])];
+
+        let result = apply_patch(&mut store, &patches, &mut test_create_state);
+        assert!(store.contains(id_a));
+        assert!(store.contains(id_b));
+        assert_eq!(result.created.len(), 2);
     }
 }
