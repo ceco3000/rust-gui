@@ -88,7 +88,12 @@ impl WidgetSpec for ProgressBar {
                 bounds.size.height,
             );
             let font_size = bounds.size.height as f32 * 0.8;
-            ctx.draw_text(&s.label, text_bounds, Color::new(0.9, 0.9, 0.95, 1.0), font_size);
+            ctx.draw_text(
+                &s.label,
+                text_bounds,
+                Color::new(0.9, 0.9, 0.95, 1.0),
+                font_size,
+            );
         }
     }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
