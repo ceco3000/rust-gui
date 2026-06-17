@@ -49,5 +49,6 @@
 
 pub mod config;
 pub mod error;
+pub mod fast_restart;
 pub mod ipc;
 pub mod watcher;
