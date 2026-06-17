@@ -3,6 +3,32 @@
 //! 这些类型是框架各层之间的通用几何抽象。
 //! 所有坐标和尺寸使用 `f64` 以保持精度，
 //! 与渲染后端（vello、cosmic-text）的坐标系统一致。
+//!
+//! # 坐标系统
+//!
+//! **逻辑像素（device-independent pixels）** —— 本模块中所有类型
+//! （`Point`、`Size`、`Rect`、`BoxConstraints`）均以逻辑像素为单位。
+//!
+//! ## 契约
+//!
+//! | 层级 | 坐标系统 | 说明 |
+//! |------|---------|------|
+//! | 组件层（`paint()`、`measure()`、`hit_test()`） | 逻辑像素 | 组件代码无需感知物理像素 |
+//! | 平台适配层（`rgui-platform` 事件转换） | 物理→逻辑转换 | `winit` 返回的是物理像素，需除以 `scale_factor` 转为逻辑像素 |
+//! | 渲染后端边界（`RenderBackend` trait） | 物理像素 | `RenderParams.width/height` 为物理像素；`scale_factor` 字段供后端在编码时做坐标变换 |
+//!
+//! ## 物理像素 → 逻辑像素转换
+//!
+//! 在 `convert_winit_event()` 等 winit 事件转换点，`CursorMoved` 的
+//! `PhysicalPosition` 必须除以 `window.scale_factor()` 得到逻辑 `Point`，
+//! 再传入 `HitTester` 和 `EventRouter`。否则在高 DPI 显示器上命中测试
+//! 坐标会偏移。
+//!
+//! ## 逻辑像素 → 物理像素转换
+//!
+//! 布局和 paint 使用逻辑像素，渲染后端在编码时通过 `scale_factor`
+//! 将逻辑坐标放大为物理坐标。`Point::scale(scale_factor)` 和
+//! `BoxConstraints::scale(scale_factor)` 提供便捷方法。
 
 use std::fmt;
 
