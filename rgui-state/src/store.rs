@@ -3,7 +3,7 @@
 //! 定义源自 D2 §2-§4。
 
 use rgui_core::geometry::{Point, Rect};
-use rgui_core::id::WidgetId;
+use rgui_core::id::{NodeHandle, WidgetId};
 use rgui_core::traits::PersistState;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
@@ -21,6 +21,8 @@ pub struct InstanceState {
     pub hovered: bool,
     /// 命中测试矩形（窗口坐标）。
     pub hit_test_rect: Rect,
+    /// widget 在 retained tree 中的节点句柄（D2 §2.2）。
+    pub node_handle: NodeHandle,
     /// 滚动偏移。
     pub scroll_offset: Point,
 }
@@ -28,11 +30,12 @@ pub struct InstanceState {
 impl InstanceState {
     /// 创建默认的实例态。
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(widget_id: WidgetId) -> Self {
         Self {
             focused: false,
             hovered: false,
             hit_test_rect: Rect::ZERO,
+            node_handle: NodeHandle::new(widget_id),
             scroll_offset: Point::ZERO,
         }
     }
@@ -40,7 +43,7 @@ impl InstanceState {
 
 impl Default for InstanceState {
     fn default() -> Self {
-        Self::new()
+        Self::new(WidgetId::new())
     }
 }
 

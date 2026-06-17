@@ -27,7 +27,7 @@ pub mod traits;
 pub mod view;
 
 // 标识符
-pub use id::{WidgetId, WindowId};
+pub use id::{NodeHandle, WidgetId, WindowId};
 
 // 几何类型
 pub use geometry::{
@@ -74,7 +74,7 @@ pub mod prelude {
         FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle, Point, Rect,
         Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
     };
-    pub use crate::id::{WidgetId, WindowId};
+    pub use crate::id::{NodeHandle, WidgetId, WindowId};
     pub use crate::locale::Locale;
     pub use crate::registry::{RegistryError, WidgetRegistry};
     pub use crate::traits::{AppMessage, PersistState, WidgetSpec};

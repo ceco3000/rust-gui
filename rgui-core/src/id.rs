@@ -134,6 +134,76 @@ impl fmt::Display for WindowId {
     }
 }
 
+// ============================================================================
+// NodeHandle
+// ============================================================================
+
+/// Widget in retained tree node handle (D2 §2.2).
+///
+/// Links widget instance (InstanceState) to a specific node in WidgetTree,
+/// for accessing node relationships (parent/children/bounds).
+///
+/// NodeHandle is a lightweight handle wrapping WidgetId,
+/// providing type-level distinction to avoid confusion with plain WidgetId.
+///
+/// # Example
+///
+/// ```
+/// use rgui_core::id::{WidgetId, NodeHandle};
+///
+/// let id = WidgetId::new();
+/// let handle = NodeHandle::new(id);
+/// assert_eq!(handle.widget_id(), id);
+/// assert_eq!(handle, NodeHandle::new(id));
+/// ```
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NodeHandle(WidgetId);
+
+impl NodeHandle {
+    /// Create a node handle from a WidgetId.
+    #[must_use]
+    pub const fn new(widget_id: WidgetId) -> Self {
+        Self(widget_id)
+    }
+
+    /// Return the inner WidgetId.
+    #[must_use]
+    pub const fn widget_id(self) -> WidgetId {
+        self.0
+    }
+
+    /// Return the inner u64 value.
+    #[must_use]
+    pub const fn as_u64(self) -> u64 {
+        self.0.as_u64()
+    }
+}
+
+impl From<WidgetId> for NodeHandle {
+    fn from(widget_id: WidgetId) -> Self {
+        Self(widget_id)
+    }
+}
+
+impl From<NodeHandle> for WidgetId {
+    fn from(handle: NodeHandle) -> Self {
+        handle.0
+    }
+}
+
+impl fmt::Debug for NodeHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NodeHandle({})", self.0.as_u64())
+    }
+}
+
+impl fmt::Display for NodeHandle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "node#{}", self.0.as_u64())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -205,5 +275,86 @@ mod tests {
     fn widget_id_from_u64_roundtrip() {
         let id = WidgetId::from_u64(42);
         assert_eq!(id.as_u64(), 42);
+
+        // ── NodeHandle tests ─────────────────────────────────────────────
+
+        #[test]
+        fn node_handle_new_and_widget_id() {
+            let id = WidgetId::new();
+            let handle = NodeHandle::new(id);
+            assert_eq!(handle.widget_id(), id);
+        }
+
+        #[test]
+        fn node_handle_equality() {
+            let id = WidgetId::from_u64(7);
+            let h1 = NodeHandle::new(id);
+            let h2 = NodeHandle::new(id);
+            assert_eq!(h1, h2);
+        }
+
+        #[test]
+        fn node_handle_clone_is_equal() {
+            let handle = NodeHandle::new(WidgetId::new());
+            assert_eq!(handle, handle.clone());
+        }
+
+        #[test]
+        fn node_handle_copy() {
+            let h1 = NodeHandle::new(WidgetId::new());
+            let h2 = h1;
+            assert_eq!(h1, h2);
+        }
+
+        #[test]
+        fn node_handle_hash() {
+            let id = WidgetId::from_u64(42);
+            let mut set = HashSet::new();
+            set.insert(NodeHandle::new(id));
+            assert!(set.contains(&NodeHandle::new(id)));
+        }
+
+        #[test]
+        fn node_handle_ordering() {
+            let h1 = NodeHandle::new(WidgetId::from_u64(1));
+            let h2 = NodeHandle::new(WidgetId::from_u64(2));
+            assert!(h1 < h2);
+        }
+
+        #[test]
+        fn node_handle_debug_format() {
+            let handle = NodeHandle::new(WidgetId::from_u64(7));
+            assert_eq!(format!("{handle:?}"), "NodeHandle(7)");
+        }
+
+        #[test]
+        fn node_handle_display_format() {
+            let handle = NodeHandle::new(WidgetId::from_u64(7));
+            assert_eq!(format!("{handle}"), "node#7");
+        }
+
+        #[test]
+        #[test]
+        fn node_handle_from_widget_id() {
+            let id = WidgetId::from_u64(99);
+            let handle: NodeHandle = id.into();
+            assert_eq!(handle.widget_id(), id);
+        }
+
+        #[test]
+        #[test]
+        fn widget_id_from_node_handle() {
+            let id = WidgetId::from_u64(99);
+            let handle = NodeHandle::new(id);
+            let recovered: WidgetId = handle.into();
+            assert_eq!(recovered, id);
+        }
+
+        #[test]
+        #[test]
+        fn node_handle_as_u64() {
+            let handle = NodeHandle::new(WidgetId::from_u64(42));
+            assert_eq!(handle.as_u64(), 42);
+        }
     }
 }
