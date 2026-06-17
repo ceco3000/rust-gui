@@ -65,6 +65,16 @@ impl FocusManager {
             .last()
             .is_none_or(|trap| trap.contains(&widget_id))
     }
+
+    /// 判断 widget 是否可接收焦点。
+    ///
+    /// 当前实现返回 `true`（placeholder），后续将查询
+    /// `WidgetSpec` 能力或实例状态以决定 widget 是否可聚焦。
+    /// Tab 导航依赖此方法进行过滤。
+    #[must_use]
+    pub fn is_focusable(&self, _id: WidgetId) -> bool {
+        true
+    }
 }
 
 impl fmt::Debug for FocusManager {
@@ -117,5 +127,22 @@ mod tests {
         assert_eq!(fm.current(), None);
         fm.focus(a);
         assert_eq!(fm.current(), Some(a));
+    }
+
+    // ── RED: is_focusable ─────────────────────────────────────────
+
+    #[test]
+    fn all_widgets_are_focusable_by_default() {
+        let fm = FocusManager::new();
+        assert!(fm.is_focusable(WidgetId::from_u64(1)));
+        assert!(fm.is_focusable(WidgetId::from_u64(42)));
+        assert!(fm.is_focusable(WidgetId::from_u64(0)));
+    }
+
+    #[test]
+    fn is_focusable_returns_true_for_unknown_widget() {
+        let fm = FocusManager::new();
+        // 当前实现不查询 widget 能力，所有 widget 均可聚焦
+        assert!(fm.is_focusable(WidgetId::new()));
     }
 }
