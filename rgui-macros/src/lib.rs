@@ -328,11 +328,11 @@ pub fn derive_widget_spec(input: TokenStream) -> TokenStream {
 
             fn measure(
                 &self,
-                _state: &Self::State,
-                _constraints: ::rgui_core::geometry::BoxConstraints,
-                _ctx: &::rgui_core::context::MeasureContext,
+                state: &Self::State,
+                constraints: ::rgui_core::geometry::BoxConstraints,
+                ctx: &::rgui_core::context::MeasureContext,
             ) -> ::rgui_core::geometry::Size {
-                ::rgui_core::geometry::Size::ZERO
+                self.default_measure(state, constraints, ctx)
             }
 
             fn paint(

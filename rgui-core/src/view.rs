@@ -208,16 +208,40 @@ impl From<String> for Key {
 #[derive(Clone)]
 pub struct Callback(Arc<dyn Fn() + Send + Sync + 'static>);
 
-impl fmt::Debug for Callback {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("Callback").field(&"<closure>").finish()
-    }
-}
-
 impl Callback {
+    /// 创建一个无操作的回调。
     #[must_use]
     pub fn noop() -> Self {
         Self(Arc::new(|| {}))
+    }
+
+    /// 从闭包创建回调。
+    #[must_use]
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    /// 调用回调。
+    pub fn call(&self) {
+        (self.0)();
+    }
+}
+
+impl<F> From<F> for Callback
+where
+    F: Fn() + Send + Sync + 'static,
+{
+    fn from(f: F) -> Self {
+        Self::new(f)
+    }
+}
+
+impl fmt::Debug for Callback {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Callback").field(&"<closure>").finish()
     }
 }
 
@@ -315,6 +339,12 @@ impl From<Size> for PropValue {
 impl From<Rect> for PropValue {
     fn from(r: Rect) -> Self {
         Self::Rect(r)
+    }
+}
+
+impl From<Callback> for PropValue {
+    fn from(cb: Callback) -> Self {
+        Self::Callback(cb)
     }
 }
 
@@ -878,6 +908,51 @@ mod tests {
     #[test]
     fn callback_default_is_noop() {
         let _cb = Callback::default();
+    }
+
+    #[test]
+    fn callback_new_from_closure() {
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let called = StdArc::new(AtomicBool::new(false));
+        let called_clone = StdArc::clone(&called);
+        let cb = Callback::new(move || {
+            called_clone.store(true, Ordering::SeqCst);
+        });
+        cb.call();
+        assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn callback_from_closure() {
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let called = StdArc::new(AtomicBool::new(false));
+        let called_clone = StdArc::clone(&called);
+        let cb: Callback = (move || {
+            called_clone.store(true, Ordering::SeqCst);
+        })
+        .into();
+        cb.call();
+        assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn prop_value_from_callback() {
+        let cb = Callback::noop();
+        let pv = PropValue::from(cb);
+        assert!(matches!(pv, PropValue::Callback(_)));
+    }
+
+    #[test]
+    fn callback_pointer_eq() {
+        let cb_a = Callback::noop();
+        let cb_b = Callback::noop();
+        let cb_a2 = cb_a.clone();
+        // 同一个 Arc 的 clone → pointer equality
+        assert_eq!(cb_a, cb_a2);
+        // 不同的 Arc → not equal
+        assert_ne!(cb_a, cb_b);
     }
 
     #[test]

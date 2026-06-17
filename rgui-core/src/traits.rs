@@ -98,12 +98,31 @@ pub trait WidgetSpec: Send + Sync + 'static {
     fn update(&self, msg: Self::Message, state: &mut Self::State, ctx: &mut UpdateContext);
 
     /// 纯测量：根据约束计算组件期望尺寸。不写状态。
+    ///
+    /// 默认实现委托给 [`default_measure()`](Self::default_measure)。
+    /// 组件可实现此方法以自定义测量逻辑，或覆盖
+    /// `default_measure()` 让派生宏生成的 `measure()` 使用自定义逻辑。
     fn measure(
         &self,
         state: &Self::State,
         constraints: BoxConstraints,
         ctx: &MeasureContext,
-    ) -> Size;
+    ) -> Size {
+        self.default_measure(state, constraints, ctx)
+    }
+
+    /// 默认测量实现：返回 `Size::ZERO`。
+    ///
+    /// 派生宏 `#[derive(WidgetSpec)]` 生成的 `measure()` 调用此方法。
+    /// 使用派生宏的组件可覆盖此方法以提供自定义测量，无需手动实现 `measure()`。
+    fn default_measure(
+        &self,
+        _state: &Self::State,
+        _constraints: BoxConstraints,
+        _ctx: &MeasureContext,
+    ) -> Size {
+        Size::ZERO
+    }
 
     /// 绘制：将当前状态转换为绘制指令。
     fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext);
