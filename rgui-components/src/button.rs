@@ -106,7 +106,8 @@ impl WidgetSpec for Button {
             bounds.size.width - pad * 2.0,
             bounds.size.height,
         );
-        ctx.draw_text(&s.label, text_bounds, text_color, 14.0);
+        let font_size = bounds.size.height as f32 * 0.8;
+        ctx.draw_text(&s.label, text_bounds, text_color, font_size);
     }
     fn accessibility(&self, s: &Self::State, _: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none().label(s.label.as_str())

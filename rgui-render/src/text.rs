@@ -17,15 +17,12 @@
 //! Inter 提供完整覆盖。CJK 字符需要系统字体后备或未来嵌入
 //! Noto Sans CJK 字体。
 
-use std::sync::Arc;
-
 use cosmic_text::{
     Attrs, Buffer, CacheKey, CacheKeyFlags, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
     SwashImage,
 };
 use rustc_hash::FxHashMap;
 
-use crate::font::EMBEDDED_FONTS;
 use crate::glyph::{GlyphKey, RasterizedGlyph};
 
 /// cosmic-text 文本引擎（D3 §8）。
@@ -58,25 +55,23 @@ pub struct TextEngine {
 }
 
 impl TextEngine {
-    /// 创建 TextEngine，使用系统字体 + 嵌入字体初始化 FontSystem。
+    /// 创建 TextEngine，使用嵌入字体初始化 FontSystem。
     ///
     /// # 实现说明
     ///
-    /// 先通过 `FontSystem::new()` 加载系统字体（提供 CJK 支持），
-    /// 再将 `EMBEDDED_FONTS` 作为额外字体源注册到数据库。
-    /// 这确保在有系统字体的平台（macOS/Windows/Linux）上能回退到
-    /// 系统 CJK 字体，同时保证 Inter 等嵌入字体优先可用。
+    /// 使用 `create_default_database()` 构建字体数据库（仅包含嵌入字体），
+    /// 确保文本塑形与 vello 渲染使用同一字体，避免 glyph ID 错位。
+    /// 当 CJK/Emoji 字体嵌入完成后（`embed-all-fonts` feature），
+    /// `create_default_database()` 将自动包含这些字体。
     #[must_use]
     pub fn new() -> Self {
-        let mut font_system = FontSystem::new();
-
-        // 将嵌入字体作为额外字体源注册
-        for font in EMBEDDED_FONTS {
-            let data: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(font.data.to_vec());
-            font_system
-                .db_mut()
-                .load_font_source(fontdb::Source::Binary(data));
-        }
+        let db = crate::font::create_default_database();
+        // 尝试获取系统 locale，回退到 en-US
+        let locale = std::env::var("LANG")
+            .ok()
+            .and_then(|s| s.split('.').next().map(|s| s.to_string()))
+            .unwrap_or_else(|| "en-US".to_string());
+        let font_system = FontSystem::new_with_locale_and_db(locale, db);
 
         Self {
             font_system,
@@ -181,6 +176,7 @@ impl TextEngine {
 
         let width = swash_image.placement.width;
         let height = swash_image.placement.height;
+        let top = swash_image.placement.top;
 
         if width == 0 || height == 0 {
             return None;
@@ -189,15 +185,38 @@ impl TextEngine {
         // 将 SwashImage → RGBA8 像素缓冲区
         let bitmap = convert_swash_image(swash_image);
 
-        // 字形光栅化仅提供位图数据。advance 宽度由塑形阶段
-        // （ShapedGlyph.advance）提供。在 atlas 中暂存为 0.0，
-        // 下游消费时从 ShapedGlyph 获取正确的步进宽度。
         Some(RasterizedGlyph {
             bitmap,
             width,
             height,
             advance: 0.0,
+            top,
         })
+    }
+
+    /// 光栅化单个字形，仅获取 placement 度量信息（不产生位图）。
+    ///
+    /// 返回 `(left, top, width, height)` 其中：
+    /// - `left`/`top`: 相对基线的偏移（top 为负值表示字形在基线上方）
+    /// - `width`/`height`: 字形位图尺寸
+    #[must_use]
+    pub fn glyph_placement(&mut self, key: &GlyphKey) -> Option<(i32, i32, u32, u32)> {
+        let db_id = self.lookup_db_id(key.font_id)?;
+
+        let (cache_key, _, _) = CacheKey::new(
+            db_id,
+            key.glyph_id as u16,
+            key.font_size as f32,
+            (0.0, 0.0),
+            CacheKeyFlags::empty(),
+        );
+
+        let swash_image = self
+            .swash_cache
+            .get_image_uncached(&mut self.font_system, cache_key)?;
+
+        let p = swash_image.placement;
+        Some((p.left, p.top, p.width, p.height))
     }
 
     /// 创建可与 `GlyphAtlas::get_or_rasterize()` 配合使用的光栅化器闭包。

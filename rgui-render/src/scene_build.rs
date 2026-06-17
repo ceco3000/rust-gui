@@ -59,20 +59,54 @@ fn paint_op_to_draw_command_inner(
             font_size,
         } => {
             if let Some(tr) = text_renderer {
-                // 字形渲染：将文本塑形并光栅化到 atlas，生成 DrawGlyphs
-                let baseline_x = bounds.origin.x as f32;
-                let baseline_y = bounds.origin.y as f32 + font_size;
-                let mut commands = tr.render_text(text, baseline_x, baseline_y, color, font_size);
-                if !commands.is_empty() {
-                    return commands.remove(0);
+                // 一次光栅化同时拿到渲染指令和度量数据（ascent/descent）
+                let (mut commands, metrics) =
+                    tr.render_text(text, 0.0, 0.0, color, font_size);
+                if commands.is_empty() {
+                    return DrawCommand::FillRect {
+                        rect: Rect::ZERO,
+                        color: Color::TRANSPARENT,
+                        radius: 0.0,
+                    };
                 }
-            }
-            // 文本渲染失败时（如 CJK 无字体），产生不可见占位指令，
-            // 避免 FillRect 遮盖同层其他元素
-            DrawCommand::FillRect {
-                rect: Rect::ZERO,
-                color: Color::TRANSPARENT,
-                radius: 0.0,
+                // 水平居中
+                let baseline_x = bounds.origin.x as f32
+                    + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
+                // 垂直：screen = [baseline - ascent, baseline + descent]，中心对齐
+                let baseline_y = bounds.origin.y as f32
+                    + (bounds.size.height as f32 + metrics.ascent - metrics.descent) / 2.0;
+                // 将预先计算的基线偏移应用到 glyph 位置
+                let dx = baseline_x;
+                let dy = baseline_y;
+                let cmd = commands.remove(0);
+                if let DrawCommand::DrawGlyphs {
+                    texture_id,
+                    mut glyphs,
+                    font_size: fs,
+                    color: c,
+                } = cmd
+                {
+                    for g in &mut glyphs {
+                        g.offset_x += dx;
+                        g.offset_y += dy;
+                    }
+                    DrawCommand::DrawGlyphs {
+                        texture_id,
+                        glyphs,
+                        font_size: fs,
+                        color: c,
+                    }
+                } else {
+                    cmd
+                }
+            } else {
+                // 文本渲染失败时（如 CJK 无字体），产生不可见占位指令，
+                // 避免 FillRect 遮盖同层其他元素
+                DrawCommand::FillRect {
+                    rect: Rect::ZERO,
+                    color: Color::TRANSPARENT,
+                    radius: 0.0,
+                }
             }
         },
     }

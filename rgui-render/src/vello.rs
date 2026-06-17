@@ -27,6 +27,7 @@ use crate::primitives::{
 };
 use crate::scene::{DrawCommand, SceneGraph};
 use crate::texture::{TextureData, TextureFormat, TextureId};
+use linebender_resource_handle::{Blob, FontData};
 use rgui_core::Color;
 
 // ============================================================================
@@ -62,6 +63,8 @@ pub struct VelloBackend {
     height: u32,
     /// 缓存的字形 atlas 数据（当帧有效）(width, height, RGBA8 pixels)
     atlas_cache: Option<(u32, u32, Vec<u8>)>,
+    /// skrifa 字体资源，供 draw_glyphs() 使用
+    font_data: Option<FontData>,
 }
 
 impl VelloBackend {
@@ -108,6 +111,10 @@ impl VelloBackend {
             width,
             height,
             atlas_cache: None,
+            font_data: {
+                let font_bytes = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+                Some(FontData::new(Blob::new(std::sync::Arc::new(font_bytes.to_vec())), 0))
+            },
         })
     }
 
@@ -134,7 +141,7 @@ impl VelloBackend {
 
     /// 设置当帧的字形 atlas 数据，用于 DrawGlyphs 真实纹理渲染。
     ///
-    /// 在 `render()` 之前调用；数据在当帧渲染后被清除。
+    /// 在 `render()` 之前调用；数据跨帧持久化，仅在下次调用时覆盖。
     pub fn set_atlas_data(&mut self, width: u32, height: u32, pixels: &[u8]) {
         if width > 0 && height > 0 && !pixels.is_empty() {
             self.atlas_cache = Some((width, height, pixels.to_vec()));
@@ -143,7 +150,7 @@ impl VelloBackend {
 
     /// 将 SceneGraph 编码为 vello::Scene（委托给独立函数）。
     fn encode_scene(&self, scene: &SceneGraph, params: &RenderParams) -> vello::Scene {
-        encode_scene_to_vello(scene, params, self.atlas_cache.as_ref())
+        encode_scene_to_vello(scene, params, self.font_data.as_ref())
     }
 
     /// 执行 Vello 渲染管线。
@@ -176,11 +183,23 @@ impl VelloBackend {
             .map_err(|e| RenderError::RenderFailed(format!("Vello 渲染失败: {e}")))?;
 
         // 阶段 2: Blit RGBA target → BGRA surface
-        let surface_texture = self
-            .surface
-            .surface
-            .get_current_texture()
-            .map_err(|e| RenderError::RenderFailed(format!("获取 surface 纹理失败: {e}")))?;
+        let surface_texture = match self.surface.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(st)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(st) => st,
+            wgpu::CurrentSurfaceTexture::Timeout => {
+                return Err(RenderError::RenderFailed("surface 纹理获取超时".into()));
+            }
+            wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
+            wgpu::CurrentSurfaceTexture::Outdated => {
+                return Err(RenderError::RenderFailed("surface 配置已过期".into()));
+            }
+            wgpu::CurrentSurfaceTexture::Lost => {
+                return Err(RenderError::RenderFailed("surface 已丢失".into()));
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                return Err(RenderError::RenderFailed("surface 验证错误".into()));
+            }
+        };
 
         let surface_view = surface_texture
             .texture
@@ -212,8 +231,6 @@ impl RenderBackend for VelloBackend {
         let vello_scene = self.encode_scene(scene, params);
         self.render_vello_scene(&vello_scene)?;
 
-        // 清除当帧 atlas 数据（每帧数据由外部设置）
-        self.atlas_cache = None;
         self.frame_count += 1;
         Ok(())
     }
@@ -250,12 +267,12 @@ impl RenderBackend for VelloBackend {
 ///
 /// 此函数为纯数据转换，不依赖 GPU 设备，可在无 GPU 环境下测试。
 ///
-/// `atlas_data` 为可选的 atlas 像素数据 `(width, height, RGBA8 pixels)`，
-/// 传入时使用真实字形纹理渲染 `DrawGlyphs`；`None` 时回退到占位色块。
+/// `font_data` 为可选的 vello FontData，传入时使用 `draw_glyphs()` 渲染真实字形；
+/// `None` 时回退到占位色块。
 pub fn encode_scene_to_vello(
     scene: &SceneGraph,
     params: &RenderParams,
-    atlas_data: Option<&(u32, u32, Vec<u8>)>,
+    font_data: Option<&FontData>,
 ) -> vello::Scene {
     let mut vello_scene = vello::Scene::new();
 
@@ -295,7 +312,7 @@ pub fn encode_scene_to_vello(
         }
 
         for cmd in &layer.commands {
-            encode_draw_command(&mut vello_scene, cmd, atlas_data);
+            encode_draw_command(&mut vello_scene, cmd, font_data);
         }
 
         if needs_layer {
@@ -308,12 +325,11 @@ pub fn encode_scene_to_vello(
 
 /// 将单个 DrawCommand 编码到 vello::Scene 中。
 ///
-/// `atlas_data` 为可选的字形 Atlas 纹理数据 `(width, height, RGBA8 pixels)`，
-/// 传入时使用真实字形纹理渲染 `DrawGlyphs`。
+/// `font_data` 为可选的 vello FontData，传入时使用 `draw_glyphs()` 渲染真实字形。
 fn encode_draw_command(
     scene: &mut vello::Scene,
     cmd: &DrawCommand,
-    atlas_data: Option<&(u32, u32, Vec<u8>)>,
+    font_data: Option<&FontData>,
 ) {
     match cmd {
         DrawCommand::FillRect {
@@ -431,93 +447,72 @@ fn encode_draw_command(
                 return;
             }
 
-            // 有 atlas 纹理数据时，渲染真实字形
-            if let Some((atlas_w, atlas_h, atlas_pixels)) = atlas_data {
-                let pixels: std::sync::Arc<dyn AsRef<[u8]> + Send + Sync> =
-                    std::sync::Arc::new(atlas_pixels.clone());
-                let image = vello::peniko::ImageData {
-                    data: vello::peniko::Blob::new(pixels),
-                    format: vello::peniko::ImageFormat::Rgba8,
-                    alpha_type: vello::peniko::ImageAlphaType::Alpha,
-                    width: *atlas_w,
-                    height: *atlas_h,
-                };
+            // 有字体数据时使用 vello draw_glyphs() 渲染真实字形
+            if let Some(font) = font_data {
+                let draw_glyphs = scene.draw_glyphs(font);
+                draw_glyphs
+                    .font_size(*font_size)
+                    .brush(to_peniko_color(*color))
+                    .draw(
+                        vello::peniko::Fill::NonZero,
+                        glyphs.iter().map(|g| vello::Glyph {
+                            id: g.glyph_index,
+                            x: g.offset_x,
+                            y: g.offset_y,
+                        }),
+                    );
+            } else {
+                // 无字体时回退到占位色块
+                let mut min_x = f32::MAX;
+                let mut min_y = f32::MAX;
+                let mut max_x = f32::MIN;
+                let mut max_y = f32::MIN;
 
                 for glyph in glyphs {
-                    let gx = glyph.offset_x as f64;
-                    let gy = glyph.offset_y as f64;
-                    let gw = glyph.atlas_w as f64;
-                    let gh = glyph.atlas_h as f64;
-                    let au = glyph.atlas_x as f64;
-                    let av = glyph.atlas_y as f64;
-
-                    let glyph_xform = vello::kurbo::Affine::translate((gx, gy));
-                    let brush_xform = vello::kurbo::Affine::translate((au, av));
-                    let glyph_rect = vello::kurbo::Rect::new(0.0, 0.0, gw, gh);
-
-                    let brush_ref: vello::peniko::ImageBrushRef =
-                        vello::peniko::ImageBrushRef::from(&image);
-                    let brush = vello::peniko::Brush::Image(brush_ref);
-
-                    scene.fill(
-                        vello::peniko::Fill::NonZero,
-                        glyph_xform,
-                        brush,
-                        Some(brush_xform),
-                        &glyph_rect,
-                    );
+                    let gx = glyph.offset_x;
+                    let gy = glyph.offset_y;
+                    let gw = glyph.atlas_w as f32;
+                    let gh = glyph.atlas_h as f32;
+                    min_x = min_x.min(gx);
+                    min_y = min_y.min(gy);
+                    max_x = max_x.max(gx + gw);
+                    max_y = max_y.max(gy + gh);
                 }
-                return;
+
+                let padding = *font_size * 0.1;
+                let text_rect = vello::kurbo::Rect::new(
+                    (min_x - padding).into(),
+                    (min_y - padding).into(),
+                    (max_x + padding).into(),
+                    (max_y + padding).into(),
+                );
+
+                let mut fill_color = to_peniko_color(*color);
+                fill_color.components[3] = (fill_color.components[3] * 0.85).min(1.0);
+
+                scene.fill(
+                    vello::peniko::Fill::NonZero,
+                    vello::kurbo::Affine::IDENTITY,
+                    fill_color,
+                    None,
+                    &text_rect,
+                );
+
+                let baseline_y = min_y + *font_size;
+                let baseline_start =
+                    vello::kurbo::Point::new(f64::from(min_x), f64::from(baseline_y));
+                let baseline_end =
+                    vello::kurbo::Point::new(f64::from(max_x), f64::from(baseline_y));
+                let baseline = vello::kurbo::Line::new(baseline_start, baseline_end);
+                let stroke = vello::kurbo::Stroke::new(1.0);
+                scene.stroke(
+                    &stroke,
+                    vello::kurbo::Affine::IDENTITY,
+                    to_peniko_color(Color::new(1.0, 1.0, 1.0, 0.6)),
+                    None,
+                    &baseline,
+                );
             }
-
-            // 无 atlas 数据时回退到占位色块
-            let mut min_x = f32::MAX;
-            let mut min_y = f32::MAX;
-            let mut max_x = f32::MIN;
-            let mut max_y = f32::MIN;
-
-            for glyph in glyphs {
-                let gx = glyph.offset_x;
-                let gy = glyph.offset_y;
-                let gw = glyph.atlas_w as f32;
-                let gh = glyph.atlas_h as f32;
-                min_x = min_x.min(gx);
-                min_y = min_y.min(gy);
-                max_x = max_x.max(gx + gw);
-                max_y = max_y.max(gy + gh);
-            }
-
-            let padding = *font_size * 0.1;
-            let text_rect = vello::kurbo::Rect::new(
-                (min_x - padding).into(),
-                (min_y - padding).into(),
-                (max_x + padding).into(),
-                (max_y + padding).into(),
-            );
-
-            let mut fill_color = to_peniko_color(*color);
-            fill_color.components[3] = (fill_color.components[3] * 0.85).min(1.0);
-
-            scene.fill(
-                vello::peniko::Fill::NonZero,
-                vello::kurbo::Affine::IDENTITY,
-                fill_color,
-                None,
-                &text_rect,
-            );
-
-            let baseline_y = min_y + *font_size;
-            let baseline_start = vello::kurbo::Point::new(f64::from(min_x), f64::from(baseline_y));
-            let baseline_end = vello::kurbo::Point::new(f64::from(max_x), f64::from(baseline_y));
-            let baseline = vello::kurbo::Line::new(baseline_start, baseline_end);
-            let stroke = vello::kurbo::Stroke::new(1.0);
-            scene.stroke(
-                &stroke,
-                vello::kurbo::Affine::IDENTITY,
-                to_peniko_color(Color::new(1.0, 1.0, 1.0, 0.6)),
-                None,
-                &baseline,
-            );
         },
         DrawCommand::DrawImage {
             texture_id: _,
@@ -1088,6 +1083,7 @@ mod tests {
                     offset_x: 10.0,
                     offset_y: 12.0,
                     advance: 14.0,
+                    glyph_index: 0,
                 },
                 GlyphData {
                     atlas_x: 16,
@@ -1097,6 +1093,7 @@ mod tests {
                     offset_x: 24.0,
                     offset_y: 12.0,
                     advance: 14.0,
+                    glyph_index: 0,
                 },
             ],
             font_size: 20.0,

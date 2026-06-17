@@ -140,6 +140,8 @@ pub struct GlyphData {
     pub offset_x: f32,
     pub offset_y: f32,
     pub advance: f32,
+    /// skrifa glyph ID，供 vello draw_glyphs() 使用
+    pub glyph_index: u32,
 }
 
 // ============================================================================
@@ -219,6 +221,7 @@ mod tests {
             offset_x: 1.0,
             offset_y: 2.0,
             advance: 14.0,
+            glyph_index: 0,
         };
         assert_eq!(g.atlas_w, 16);
     }

@@ -54,10 +54,11 @@ rgui-macros = { path = "rgui-macros", version = "0.1.0" }
 rgui-components = { path = "rgui-components", version = "0.1.0" }
 
 # 外部依赖——渲染
-wgpu = "28"
-vello = "0.8"
+wgpu = "29"
+vello = "0.9"
 cosmic-text = "0.12"
 fontdb = "0.16"
+linebender_resource_handle = "0.1"
 
 # 外部依赖——布局
 taffy = "0.7"

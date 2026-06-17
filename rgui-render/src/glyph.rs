@@ -24,6 +24,8 @@ pub struct RasterizedGlyph {
     pub width: u32,
     pub height: u32,
     pub advance: f32,
+    /// 基线到图像顶部的像素距离（zeno::Placement.top）。
+    pub top: i32,
 }
 
 /// 缓存中的字形条目。
@@ -34,6 +36,8 @@ pub struct GlyphCacheEntry {
     pub width: f32,
     pub height: f32,
     pub advance: f32,
+    /// 基线到图像顶部的像素距离。
+    pub top: i32,
 }
 
 /// 待上传的纹理区域。
@@ -149,6 +153,7 @@ impl GlyphAtlas {
             width: rasterized.width as f32,
             height: rasterized.height as f32,
             advance: rasterized.advance,
+            top: rasterized.top,
         };
 
         self.glyphs.insert(key.clone(), entry.clone());
@@ -233,6 +238,7 @@ mod tests {
             width: size,
             height: size,
             advance: size as f32 * 0.6,
+            top: 0,
         })
     }
 

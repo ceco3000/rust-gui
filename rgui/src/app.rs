@@ -515,7 +515,7 @@ impl ApplicationHandler for AppHandler {
                         )),
                         ..Default::default()
                     };
-                    // 将字形 Atlas 像素数据传入 Vello 后端，启用真实纹理渲染
+                    // 将字形 Atlas 像素数据传入 Vello 后端
                     if self.text_renderer.is_dirty() {
                         let (aw, ah) = self.text_renderer.atlas_dimensions();
                         let pixels = self.text_renderer.atlas_pixels();
