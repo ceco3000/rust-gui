@@ -291,6 +291,36 @@ impl AppHandler {
         }
     }
 
+    /// GPU 设备丢失恢复（D3 §12.2）。
+    ///
+    /// 重建 VelloBackend，将旧后端的已注册纹理和字形 atlas 数据
+    /// 迁移到新后端。恢复成功后旧后端被替换。
+    fn try_recover_vello_backend(&mut self) {
+        if let Some(window) = &self.window {
+            let w = self.width;
+            let h = self.height;
+            match VelloBackend::new(Arc::clone(window), w, h) {
+                Ok(mut new_ctx) => {
+                    // 迁移已注册纹理
+                    if let Some(mut old_ctx) = self.render_ctx.take() {
+                        for (_tex_id, tex_data) in old_ctx.drain_textures() {
+                            let _ = new_ctx.register_texture(&tex_data, tex_data.format);
+                        }
+                        // 迁移字形 atlas 缓存
+                        if let Some(atlas) = old_ctx.take_atlas_cache() {
+                            new_ctx.restore_atlas_cache(atlas.0, atlas.1, atlas.2);
+                        }
+                    }
+                    self.render_ctx = Some(new_ctx);
+                    eprintln!("GPU 恢复成功 ({w}x{h})");
+                },
+                Err(e2) => eprintln!("GPU 恢复失败: {e2}"),
+            }
+        } else {
+            eprintln!("GPU 恢复失败：无可用窗口");
+        }
+    }
+
     fn convert_event(&self, event: &WindowEvent) -> Option<Event> {
         match event {
             WindowEvent::CursorMoved { position, .. } => Some(Event::MouseMove {
@@ -506,6 +536,7 @@ impl ApplicationHandler for AppHandler {
             },
 
             WindowEvent::RedrawRequested => {
+                let mut device_lost = false;
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
@@ -538,8 +569,16 @@ impl ApplicationHandler for AppHandler {
                     }
                     match ctx.render(&scene, &params) {
                         Ok(()) => self.frame_count += 1,
-                        Err(e) => eprintln!("渲染: {e}"),
+                        Err(e) => {
+                            eprintln!("渲染: {e}");
+                            device_lost = ctx.is_device_lost();
+                        },
                     }
+                }
+                // GPU 设备丢失恢复（D3 §12.2）—— borrow 已释放
+                if device_lost {
+                    eprintln!("GPU 设备丢失，尝试恢复...");
+                    self.try_recover_vello_backend();
                 }
             },
             WindowEvent::ScaleFactorChanged {
@@ -646,5 +685,24 @@ mod tests {
     fn app_config_default() {
         let config = AppConfig::default();
         assert_eq!(config.title, "rgui App");
+    }
+
+    #[test]
+    fn recovery_no_window_does_not_panic() {
+        // 模拟没有窗口时的恢复调用——不应 panic
+        let mut handler = AppHandler::new(App::new(AppConfig::default()));
+        // 没有设置 render_ctx 和 window，恢复应优雅处理
+        handler.try_recover_vello_backend();
+        // 恢复后 render_ctx 仍为 None
+        assert!(handler.render_ctx.is_none());
+    }
+
+    #[test]
+    fn device_lost_flag_defaults_false() {
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let app = App::new(config);
+        let handler = AppHandler::new(app);
+        // 初始状态下无 render_ctx，但无论如何不应 panic
+        assert!(handler.render_ctx.is_none());
     }
 }

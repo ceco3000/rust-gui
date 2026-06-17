@@ -57,6 +57,8 @@ pub struct VelloBackend {
     next_texture_id: u64,
     /// 累计渲染帧数
     frame_count: u64,
+    /// GPU 设备是否已丢失
+    device_lost: bool,
     /// 当前表面宽度
     width: u32,
     /// 当前表面高度
@@ -108,6 +110,7 @@ impl VelloBackend {
             textures: HashMap::new(),
             next_texture_id: 1,
             frame_count: 0,
+            device_lost: false,
             width,
             height,
             atlas_cache: None,
@@ -142,6 +145,45 @@ impl VelloBackend {
         (self.width, self.height)
     }
 
+    /// 返回 GPU 设备是否已丢失。
+    ///
+    /// 当设备丢失后，需要重建 VelloBackend 以恢复渲染。
+    /// 下一次 `render()` 调用将自动尝试标记丢失状态。
+    #[must_use]
+    pub fn is_device_lost(&self) -> bool {
+        self.device_lost
+    }
+
+    /// 标记 GPU 设备已丢失。
+    ///
+    /// 调用方（通常为 App render 循环）可将此作为触发恢复的信号。
+    /// 标记后 `is_available()` 返回 `false`。
+    pub fn set_device_lost(&mut self) {
+        self.device_lost = true;
+    }
+
+    /// 排出所有已注册的纹理数据，用于 GPU 重建后的再注册。
+    ///
+    /// 返回的 `HashMap` 包含全部 `(TextureId, TextureData)` 映射。
+    /// 调用方可在重建后端后遍历这些数据并重新调用 `register_texture()`。
+    #[must_use]
+    pub fn drain_textures(&mut self) -> HashMap<TextureId, TextureData> {
+        std::mem::take(&mut self.textures)
+    }
+
+    /// 取出当前缓存的字形 atlas 数据（像素缓冲），用于 GPU 重建后重新注入。
+    #[must_use]
+    pub fn take_atlas_cache(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        self.atlas_cache.take()
+    }
+
+    /// 重新注入字形 atlas 数据（恢复流程中使用）。
+    pub fn restore_atlas_cache(&mut self, width: u32, height: u32, pixels: Vec<u8>) {
+        if width > 0 && height > 0 && !pixels.is_empty() {
+            self.atlas_cache = Some((width, height, pixels));
+        }
+    }
+
     /// 设置当帧的字形 atlas 数据，用于 DrawGlyphs 真实纹理渲染。
     ///
     /// 在 `render()` 之前调用；数据跨帧持久化，仅在下次调用时覆盖。
@@ -159,6 +201,7 @@ impl VelloBackend {
     /// 执行 Vello 渲染管线。
     fn render_vello_scene(&mut self, vello_scene: &vello::Scene) -> Result<(), RenderError> {
         let device_handle = self.gpu.devices.get(self.surface.dev_id).ok_or_else(|| {
+            self.device_lost = true;
             RenderError::DeviceLost(format!(
                 "内部状态不一致：设备 ID {} 越界（共 {} 个设备）",
                 self.surface.dev_id,
@@ -194,9 +237,11 @@ impl VelloBackend {
             },
             wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
             wgpu::CurrentSurfaceTexture::Outdated => {
+                self.device_lost = true;
                 return Err(RenderError::RenderFailed("surface 配置已过期".into()));
             },
             wgpu::CurrentSurfaceTexture::Lost => {
+                self.device_lost = true;
                 return Err(RenderError::RenderFailed("surface 已丢失".into()));
             },
             wgpu::CurrentSurfaceTexture::Validation => {
@@ -276,7 +321,7 @@ impl RenderBackend for VelloBackend {
     }
 
     fn is_available(&self) -> bool {
-        true // Vello 后端在构造时已绑定有效 GPU 上下文
+        !self.device_lost
     }
 
     fn capabilities(&self) -> BackendCapabilities {

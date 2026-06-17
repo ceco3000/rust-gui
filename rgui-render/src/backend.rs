@@ -137,4 +137,54 @@ mod tests {
         let b = a.clone();
         assert_eq!(a, b);
     }
+
+    #[test]
+    fn render_error_device_lost_display() {
+        let err = RenderError::DeviceLost("GPU 崩溃".into());
+        let msg = err.to_string();
+        assert!(msg.contains("GPU 设备不可用"));
+    }
+
+    #[test]
+    fn render_error_surface_creation_failed_display() {
+        let err = RenderError::SurfaceCreationFailed("无法创建 surface".into());
+        let msg = err.to_string();
+        assert!(msg.contains("表面创建失败"));
+    }
+
+    #[test]
+    fn render_error_shader_compilation_failed_display() {
+        let err = RenderError::ShaderCompilationFailed("shader 语法错误".into());
+        let msg = err.to_string();
+        assert!(msg.contains("着色器编译失败"));
+    }
+
+    #[test]
+    fn render_error_render_failed_display() {
+        let err = RenderError::RenderFailed("超时".into());
+        let msg = err.to_string();
+        assert!(msg.contains("渲染失败"));
+    }
+
+    #[test]
+    fn render_error_texture_registration_failed_display() {
+        let err = RenderError::TextureRegistrationFailed("格式不支持".into());
+        let msg = err.to_string();
+        assert!(msg.contains("纹理注册失败"));
+    }
+
+    #[test]
+    fn render_error_no_available_backend_display() {
+        let err = RenderError::NoAvailableBackend;
+        let msg = err.to_string();
+        assert!(msg.contains("无可用渲染后端"));
+    }
+
+    #[test]
+    fn render_error_unsupported_backend_display() {
+        let err = RenderError::UnsupportedBackend("OpenGL");
+        let msg = err.to_string();
+        assert!(msg.contains("后端不可用"));
+        assert!(msg.contains("OpenGL"));
+    }
 }
