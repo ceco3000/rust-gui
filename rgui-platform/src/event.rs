@@ -1,4 +1,4 @@
-//! 事件类型体系——Event、Key、Modifiers、MouseButton。
+//! 事件类型体系——Event、Key、Modifiers、MouseButton、EventSender。
 //!
 //! 定义源自 D5 §2。
 
@@ -234,6 +234,44 @@ impl Key {
 }
 
 // ============================================================================
+// EventSender
+// ============================================================================
+
+/// 事件发送器——事件路由期间的事件级状态控制（D5 §3.2）。
+///
+/// 在事件路由过程中传递给每个事件处理器，允许处理器：
+/// - 标记事件已被消费（停止传播）
+/// - 阻止默认行为
+///
+/// `EventRouter::route()` 在每次路由调用时创建新的 `EventSender`，
+/// 并在每个阶段检查 `consumed` 以决定是否继续传播。
+#[derive(Debug, Clone, Default)]
+pub struct EventSender {
+    /// 事件是否已被消费（停止进一步传播）。
+    pub consumed: bool,
+    /// 是否阻止默认行为。
+    pub default_prevented: bool,
+}
+
+impl EventSender {
+    /// 创建默认（未消费、未阻止）的发送器。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 消费事件，停止进一步传播。
+    pub fn consume(&mut self) {
+        self.consumed = true;
+    }
+
+    /// 阻止默认行为。
+    pub fn prevent_default(&mut self) {
+        self.default_prevented = true;
+    }
+}
+
+// ============================================================================
 // 测试
 // ============================================================================
 
@@ -271,5 +309,37 @@ mod tests {
             repeat: false,
         };
         let _clone = evt.clone();
+    }
+
+    // --- EventSender ---
+
+    #[test]
+    fn event_sender_default_not_consumed() {
+        let sender = EventSender::default();
+        assert!(!sender.consumed);
+        assert!(!sender.default_prevented);
+    }
+
+    #[test]
+    fn event_sender_consume() {
+        let mut sender = EventSender::new();
+        sender.consume();
+        assert!(sender.consumed);
+    }
+
+    #[test]
+    fn event_sender_prevent_default() {
+        let mut sender = EventSender::new();
+        sender.prevent_default();
+        assert!(sender.default_prevented);
+        assert!(!sender.consumed);
+    }
+
+    #[test]
+    fn event_sender_clone() {
+        let mut original = EventSender::new();
+        original.consume();
+        let cloned = original.clone();
+        assert!(cloned.consumed);
     }
 }
