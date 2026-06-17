@@ -7,6 +7,7 @@ use crate::geometry::{Rect, Size};
 use crate::id::WidgetId;
 use crate::traits::AppMessage;
 use ordered_float::OrderedFloat;
+use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
@@ -412,6 +413,31 @@ impl<M: AppMessage> PartialEq for MessageHandler<M> {
             (Self::Map(a), Self::Map(b)) => Arc::ptr_eq(a, b),
             (Self::Handle(a), Self::Handle(b)) => Arc::ptr_eq(a, b),
             _ => false,
+        }
+    }
+}
+
+impl<M: AppMessage> MessageHandler<M> {
+    /// 从类型擦除的消息盒进行运行时类型检查并分发。
+    ///
+    /// 使用 `TypeId` 验证动态类型与 `M` 是否一致。
+    /// - 类型匹配时调用 handler：`Map` 返回映射后的消息，`Handle` 返回 `None`
+    /// - 类型不匹配时记录错误日志并丢弃消息，返回 `None`
+    ///
+    /// 定义源自 D1 §11.7。
+    pub fn dispatch_dynamic(&self, msg: Box<dyn Any + Send + 'static>) -> Option<M> {
+        if (*msg).type_id() == std::any::TypeId::of::<M>() {
+            let concrete = msg.downcast::<M>().unwrap_or_else(|_| unreachable!());
+            match self {
+                MessageHandler::Map(f) => Some(f(*concrete)),
+                MessageHandler::Handle(f) => {
+                    f(*concrete);
+                    None
+                },
+            }
+        } else {
+            eprintln!("[rgui] 消息类型不匹配: 预期 {}", std::any::type_name::<M>());
+            None
         }
     }
 }
@@ -959,5 +985,81 @@ mod tests {
     fn prop_value_display() {
         let v = PropValue::str("hello");
         assert!(format!("{v}").contains("hello"));
+    }
+
+    // --- MessageHandler::dispatch_dynamic ---
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum TestAppMsg {
+        Clicked,
+        TextChanged(String),
+    }
+
+    impl AppMessage for TestAppMsg {
+        fn message_name(&self) -> &'static str {
+            match self {
+                Self::Clicked => "clicked",
+                Self::TextChanged(_) => "text_changed",
+            }
+        }
+    }
+
+    #[test]
+    fn dispatch_dynamic_map_matching_type() {
+        let handler = MessageHandler::Map(Arc::new(|msg: TestAppMsg| match msg {
+            TestAppMsg::Clicked => TestAppMsg::TextChanged("mapped".into()),
+            other => other,
+        }));
+        let msg = Box::new(TestAppMsg::Clicked);
+        let result = handler.dispatch_dynamic(msg);
+        assert_eq!(result, Some(TestAppMsg::TextChanged("mapped".into())));
+    }
+
+    #[test]
+    fn dispatch_dynamic_handle_matching_type() {
+        use std::sync::Arc as StdArc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let called = StdArc::new(AtomicBool::new(false));
+        let called_clone = StdArc::clone(&called);
+        let handler = MessageHandler::Handle(Arc::new(move |_msg: TestAppMsg| {
+            called_clone.store(true, Ordering::SeqCst);
+        }));
+        let msg = Box::new(TestAppMsg::Clicked);
+        let result = handler.dispatch_dynamic(msg);
+        assert!(result.is_none());
+        assert!(called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn dispatch_dynamic_type_mismatch() {
+        // 发送 String（非 TestAppMsg 类型）→ 应安全丢弃
+        let handler = MessageHandler::Handle(Arc::new(|_msg: TestAppMsg| {
+            panic!("不应被调用");
+        }));
+        let msg: Box<dyn Any + Send + 'static> = Box::new("not_a_message");
+        let result = handler.dispatch_dynamic(msg);
+        assert!(result.is_none());
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    enum OtherMsg {
+        Something,
+    }
+
+    impl AppMessage for OtherMsg {
+        fn message_name(&self) -> &'static str {
+            "something"
+        }
+    }
+
+    #[test]
+    fn dispatch_dynamic_different_message_types() {
+        // 发送 OtherMsg 给期望 TestAppMsg 的 handler → 应安全丢弃
+        let handler = MessageHandler::Handle(Arc::new(|_msg: TestAppMsg| {
+            panic!("不应被调用");
+        }));
+        let msg: Box<dyn Any + Send + 'static> = Box::new(OtherMsg::Something);
+        let result = handler.dispatch_dynamic(msg);
+        assert!(result.is_none());
     }
 }
