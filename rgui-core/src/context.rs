@@ -55,12 +55,27 @@ impl ViewContext {
 pub struct UpdateContext {
     /// 当前焦点 widget ID。
     pub focus: Option<WidgetId>,
+    /// 当前悬停 widget ID。
+    ///
+    /// 由框架根据 `MouseEnter`/`MouseLeave` 事件维护。
+    /// 组件在 `update()` 中可查询当前悬停状态。
+    pub hover: Option<WidgetId>,
 }
 
 impl UpdateContext {
+    /// 创建空的 UpdateContext（无焦点、无悬停）。
     #[must_use]
     pub const fn new() -> Self {
-        Self { focus: None }
+        Self {
+            focus: None,
+            hover: None,
+        }
+    }
+
+    /// 创建带焦点和悬停信息的 UpdateContext。
+    #[must_use]
+    pub fn with_focus_and_hover(focus: Option<WidgetId>, hover: Option<WidgetId>) -> Self {
+        Self { focus, hover }
     }
 }
 
@@ -369,6 +384,75 @@ mod tests {
     fn update_context_default_focus_is_none() {
         let ctx = UpdateContext::default();
         assert_eq!(ctx.focus, None);
+    }
+
+    #[test]
+    fn update_context_default_hover_is_none() {
+        let ctx = UpdateContext::default();
+        assert_eq!(ctx.hover, None);
+    }
+
+    #[test]
+    fn update_context_constructs_with_no_focus_no_hover() {
+        let ctx = UpdateContext::new();
+        assert_eq!(ctx.focus, None);
+        assert_eq!(ctx.hover, None);
+    }
+
+    #[test]
+    fn update_context_constructs_with_focus_and_hover() {
+        let widget_id = WidgetId::from_u64(42);
+        let ctx = UpdateContext::with_focus_and_hover(Some(widget_id), None);
+        assert_eq!(ctx.focus, Some(widget_id));
+        assert_eq!(ctx.hover, None);
+    }
+
+    #[test]
+    fn update_context_hover_set() {
+        let widget_id = WidgetId::from_u64(7);
+        let ctx = UpdateContext::with_focus_and_hover(None, Some(widget_id));
+        assert_eq!(ctx.focus, None);
+        assert_eq!(ctx.hover, Some(widget_id));
+    }
+
+    #[test]
+    fn update_context_both_focus_and_hover() {
+        let focus_id = WidgetId::from_u64(1);
+        let hover_id = WidgetId::from_u64(2);
+        let ctx = UpdateContext::with_focus_and_hover(Some(focus_id), Some(hover_id));
+        assert_eq!(ctx.focus, Some(focus_id));
+        assert_eq!(ctx.hover, Some(hover_id));
+    }
+
+    #[test]
+    fn update_context_focus_and_hover_independent() {
+        let focus_id = WidgetId::from_u64(10);
+        let ctx = UpdateContext::with_focus_and_hover(Some(focus_id), None);
+        // 修改 hover 不应影响 focus
+        let mut ctx = ctx;
+        ctx.hover = Some(WidgetId::from_u64(20));
+        assert_eq!(ctx.focus, Some(focus_id));
+        assert_eq!(ctx.hover, Some(WidgetId::from_u64(20)));
+    }
+
+    #[test]
+    fn update_context_debug_output() {
+        let id = WidgetId::from_u64(99);
+        let ctx = UpdateContext::with_focus_and_hover(Some(id), None);
+        let debug = format!("{:?}", ctx);
+        assert!(debug.contains("99"), "debug 输出应包含 widget ID: {debug}");
+    }
+
+    #[test]
+    fn update_context_hover_cleared_on_mouse_leave() {
+        let id = WidgetId::from_u64(5);
+        let mut ctx = UpdateContext::new();
+        // MouseEnter → 设置 hover
+        ctx.hover = Some(id);
+        assert_eq!(ctx.hover, Some(id));
+        // MouseLeave → 清除 hover
+        ctx.hover = None;
+        assert_eq!(ctx.hover, None);
     }
 
     #[test]
