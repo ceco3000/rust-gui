@@ -1,8 +1,8 @@
 //! 事件路由器——捕获/目标/冒泡三阶段路由（D5 §3）。
 
-use crate::event::Event;
+use crate::event::{Event, EventSender};
+use crate::widget_tree::WidgetTree;
 use rgui_core::id::WidgetId;
-use rustc_hash::FxHashMap;
 
 /// 事件路由阶段。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,94 +26,94 @@ pub enum RouteOutcome {
     Consumed,
 }
 
-/// 事件路由回调：`(widget_id, phase, event) -> RouteOutcome`。
+/// 事件路由回调：`(widget_id, phase, event, sender) -> RouteOutcome`。
+///
+/// `sender` 提供事件传播控制：处理器可通过 `sender.consume()` 停止传播，
+/// 或通过 `sender.prevent_default()` 阻止默认行为。
 #[allow(clippy::type_complexity)]
-pub type RouteCallback<'a> = Box<dyn FnMut(WidgetId, RoutePhase, &Event) -> RouteOutcome + 'a>;
+pub type RouteCallback<'a> =
+    Box<dyn FnMut(WidgetId, RoutePhase, &Event, &mut EventSender) -> RouteOutcome + 'a>;
 
 /// 事件路由器（D5 §3.1）。
 ///
 /// 管理 widget 树结构，实现捕获→目标→冒泡三阶段事件路由。
 pub struct EventRouter {
-    /// widget → 父 widget。
-    parent: FxHashMap<WidgetId, WidgetId>,
-    /// widget → 子 widget 列表。
-    children: FxHashMap<WidgetId, Vec<WidgetId>>,
+    /// widget 层级树。
+    tree: WidgetTree,
 }
 
 impl EventRouter {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            parent: FxHashMap::default(),
-            children: FxHashMap::default(),
+            tree: WidgetTree::new(),
         }
+    }
+
+    /// 获取对内部 WidgetTree 的不可变引用。
+    #[must_use]
+    pub fn tree(&self) -> &WidgetTree {
+        &self.tree
     }
 
     /// 添加父子关系。
     pub fn add_child(&mut self, parent: WidgetId, child: WidgetId) {
-        self.parent.insert(child, parent);
-        self.children.entry(parent).or_default().push(child);
+        self.tree.add_child(parent, child);
     }
 
     /// 移除 widget 及其后代。
     pub fn remove(&mut self, widget_id: WidgetId) {
-        if let Some(children) = self.children.remove(&widget_id) {
-            for child in &children {
-                self.parent.remove(child);
-                self.remove(*child);
-            }
-        }
-        self.parent.remove(&widget_id);
+        self.tree.remove(widget_id);
     }
 
     /// 获取从根到目标的祖先链（根在前）。
     #[must_use]
     pub fn ancestors(&self, widget_id: WidgetId) -> Vec<WidgetId> {
-        let mut path = Vec::new();
-        let mut current = Some(widget_id);
-        while let Some(id) = current {
-            path.push(id);
-            current = self.parent.get(&id).copied();
-        }
-        path.reverse();
-        path
+        self.tree.path_to_root(widget_id)
     }
 
     /// 判断 widget 是否在路由器中。
     #[must_use]
     pub fn contains(&self, widget_id: WidgetId) -> bool {
-        self.parent.contains_key(&widget_id) || self.children.contains_key(&widget_id)
+        self.tree.contains(widget_id)
     }
 
     /// 三阶段事件路由：捕获 → 目标 → 冒泡。
     ///
-    /// 每个阶段调用 `handler(widget_id, phase, event)`，
-    /// 返回值控制传播：
-    /// - `Unhandled` / `Handled`：继续
-    /// - `Consumed`：立即停止
+    /// 每个阶段调用 `handler(widget_id, phase, event, sender)`，
+    /// 返回值或 `sender.consumed` 控制传播：
+    /// - 返回 `Consumed` 或 `sender.consumed` 为 `true`：立即停止
+    /// - 其他情况：继续
     pub fn route(
         &self,
         target: WidgetId,
         event: &Event,
         handler: &mut RouteCallback,
     ) -> RouteOutcome {
-        let ancestors = self.ancestors(target);
+        let ancestors = self.tree.path_to_root(target);
+        let mut sender = EventSender::new();
 
         // 阶段 1：捕获（根 → 目标之前，不含目标）
         for &id in ancestors.iter().take(ancestors.len().saturating_sub(1)) {
-            if handler(id, RoutePhase::Capture, event) == RouteOutcome::Consumed {
+            if handler(id, RoutePhase::Capture, event, &mut sender) == RouteOutcome::Consumed
+                || sender.consumed
+            {
                 return RouteOutcome::Consumed;
             }
         }
 
         // 阶段 2：目标
-        if handler(target, RoutePhase::Target, event) == RouteOutcome::Consumed {
+        if handler(target, RoutePhase::Target, event, &mut sender) == RouteOutcome::Consumed
+            || sender.consumed
+        {
             return RouteOutcome::Consumed;
         }
 
         // 阶段 3：冒泡（目标 → 根，不含目标）
         for &id in ancestors.iter().rev().skip(1) {
-            if handler(id, RoutePhase::Bubble, event) == RouteOutcome::Consumed {
+            if handler(id, RoutePhase::Bubble, event, &mut sender) == RouteOutcome::Consumed
+                || sender.consumed
+            {
                 return RouteOutcome::Consumed;
             }
         }
@@ -131,7 +131,7 @@ impl Default for EventRouter {
 impl std::fmt::Debug for EventRouter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EventRouter")
-            .field("widgets", &self.parent.len())
+            .field("widgets", &self.tree.len())
             .finish()
     }
 }
@@ -156,7 +156,7 @@ mod tests {
         let p = WidgetId::from_u64(1);
         let c = WidgetId::from_u64(2);
         r.add_child(p, c);
-        assert!(r.parent.contains_key(&c));
+        assert!(r.tree().parent(c).is_some());
     }
 
     #[test]
@@ -179,7 +179,7 @@ mod tests {
     fn route_capture_target_bubble_order() {
         let (r, root, child, leaf) = build_tree();
         let visited = std::cell::RefCell::new(Vec::new());
-        let mut handler: RouteCallback = Box::new(|id, phase, _: &Event| {
+        let mut handler: RouteCallback = Box::new(|id, phase, _: &Event, _: &mut EventSender| {
             visited.borrow_mut().push((id, phase));
             RouteOutcome::Handled
         });
@@ -202,15 +202,16 @@ mod tests {
         let (r, _root, child, leaf) = build_tree();
         let count = std::rc::Rc::new(std::cell::Cell::new(0u32));
         let count_clone = count.clone();
-        let mut handler: RouteCallback = Box::new(move |id, phase, _: &Event| {
-            let c = count_clone.get() + 1;
-            count_clone.set(c);
-            if id == child && phase == RoutePhase::Capture {
-                RouteOutcome::Consumed
-            } else {
-                RouteOutcome::Handled
-            }
-        });
+        let mut handler: RouteCallback =
+            Box::new(move |id, phase, _: &Event, _: &mut EventSender| {
+                let c = count_clone.get() + 1;
+                count_clone.set(c);
+                if id == child && phase == RoutePhase::Capture {
+                    RouteOutcome::Consumed
+                } else {
+                    RouteOutcome::Handled
+                }
+            });
         let event = Event::WindowFocused;
         r.route(leaf, &event, &mut handler);
         assert_eq!(count.get(), 2);
@@ -221,17 +222,40 @@ mod tests {
         let (r, _root, child, leaf) = build_tree();
         let count = std::rc::Rc::new(std::cell::Cell::new(0u32));
         let count_clone = count.clone();
-        let mut handler: RouteCallback = Box::new(move |id, phase, _: &Event| {
-            let c = count_clone.get() + 1;
-            count_clone.set(c);
-            if id == child && phase == RoutePhase::Bubble {
-                RouteOutcome::Consumed
-            } else {
-                RouteOutcome::Handled
-            }
-        });
+        let mut handler: RouteCallback =
+            Box::new(move |id, phase, _: &Event, _: &mut EventSender| {
+                let c = count_clone.get() + 1;
+                count_clone.set(c);
+                if id == child && phase == RoutePhase::Bubble {
+                    RouteOutcome::Consumed
+                } else {
+                    RouteOutcome::Handled
+                }
+            });
         let event = Event::WindowFocused;
         r.route(leaf, &event, &mut handler);
         assert_eq!(count.get(), 4);
+    }
+
+    #[test]
+    fn route_event_sender_consume_stops_propagation() {
+        let (r, root, _child, leaf) = build_tree();
+        let count = std::rc::Rc::new(std::cell::Cell::new(0u32));
+        let count_clone = count.clone();
+        let mut handler: RouteCallback =
+            Box::new(move |id, phase, _: &Event, sender: &mut EventSender| {
+                let c = count_clone.get() + 1;
+                count_clone.set(c);
+                // 在捕获阶段的第一个 widget 消费事件
+                if id == root && phase == RoutePhase::Capture {
+                    sender.consume(); // 通过 EventSender 消费，而非返回值
+                    return RouteOutcome::Handled;
+                }
+                RouteOutcome::Handled
+            });
+        let event = Event::WindowFocused;
+        r.route(leaf, &event, &mut handler);
+        // 只应在捕获阶段的 root 被调用一次
+        assert_eq!(count.get(), 1);
     }
 }
