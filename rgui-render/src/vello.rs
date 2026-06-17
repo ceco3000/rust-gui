@@ -113,7 +113,10 @@ impl VelloBackend {
             atlas_cache: None,
             font_data: {
                 let font_bytes = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
-                Some(FontData::new(Blob::new(std::sync::Arc::new(font_bytes.to_vec())), 0))
+                Some(FontData::new(
+                    Blob::new(std::sync::Arc::new(font_bytes.to_vec())),
+                    0,
+                ))
             },
         })
     }
@@ -188,17 +191,17 @@ impl VelloBackend {
             | wgpu::CurrentSurfaceTexture::Suboptimal(st) => st,
             wgpu::CurrentSurfaceTexture::Timeout => {
                 return Err(RenderError::RenderFailed("surface 纹理获取超时".into()));
-            }
+            },
             wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
             wgpu::CurrentSurfaceTexture::Outdated => {
                 return Err(RenderError::RenderFailed("surface 配置已过期".into()));
-            }
+            },
             wgpu::CurrentSurfaceTexture::Lost => {
                 return Err(RenderError::RenderFailed("surface 已丢失".into()));
-            }
+            },
             wgpu::CurrentSurfaceTexture::Validation => {
                 return Err(RenderError::RenderFailed("surface 验证错误".into()));
-            }
+            },
         };
 
         let surface_view = surface_texture
@@ -288,6 +291,21 @@ pub fn encode_scene_to_vello(
         &vello::kurbo::Rect::new(0.0, 0.0, w, h),
     );
 
+    // DPI 缩放：SceneGraph 中的组件坐标以逻辑像素编码，
+    // 渲染时通过 scale_factor 将逻辑坐标放大为物理坐标。
+    // 当 scale_factor != 1.0 时，用 push_layer 施加全局缩放变换。
+    let sf = params.scale_factor;
+    let needs_dpi_scale = (sf - 1.0).abs() > f64::EPSILON;
+    if needs_dpi_scale {
+        vello_scene.push_layer(
+            vello::peniko::Fill::NonZero,
+            vello::peniko::BlendMode::default(),
+            1.0,
+            vello::kurbo::Affine::scale(sf),
+            &vello::kurbo::Rect::new(0.0, 0.0, w, h),
+        );
+    }
+
     // 逐层编码
     for layer in &scene.layers {
         if layer.opacity <= 0.0 {
@@ -320,17 +338,17 @@ pub fn encode_scene_to_vello(
         }
     }
 
+    if needs_dpi_scale {
+        vello_scene.pop_layer();
+    }
+
     vello_scene
 }
 
 /// 将单个 DrawCommand 编码到 vello::Scene 中。
 ///
 /// `font_data` 为可选的 vello FontData，传入时使用 `draw_glyphs()` 渲染真实字形。
-fn encode_draw_command(
-    scene: &mut vello::Scene,
-    cmd: &DrawCommand,
-    font_data: Option<&FontData>,
-) {
+fn encode_draw_command(scene: &mut vello::Scene, cmd: &DrawCommand, font_data: Option<&FontData>) {
     match cmd {
         DrawCommand::FillRect {
             rect,

@@ -110,6 +110,14 @@ impl SkiaBackend {
             canvas.clear(skia_safe::Color4f::new(1.0, 1.0, 1.0, 1.0));
         }
 
+        // DPI 缩放：SceneGraph 中的组件坐标以逻辑像素编码，
+        // 渲染时通过 scale_factor 将逻辑坐标放大为物理坐标。
+        let sf = params.scale_factor as f32;
+        if (sf - 1.0).abs() > f32::EPSILON {
+            canvas.save();
+            canvas.scale((sf, sf));
+        }
+
         // 逐层绘制
         let mut opacity_stack: Vec<f32> = vec![1.0];
         for layer in &scene.layers {
@@ -201,6 +209,11 @@ impl SkiaBackend {
             if layer.transform.is_some() {
                 canvas.restore();
             }
+        }
+
+        // 还原 DPI 缩放变换（如果需要）
+        if (sf - 1.0).abs() > f32::EPSILON {
+            canvas.restore();
         }
 
         // 读回像素（使用 Surface::read_pixels 直接写入缓冲区）

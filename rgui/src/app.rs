@@ -245,9 +245,12 @@ struct AppHandler {
     text_renderer: TextRenderer,
     frame_count: u64,
     mouse_pos: Point,
-    /// 当前窗口宽度（像素单位），用于构造 RenderParams。
+    /// DPI 缩放因子（逻辑像素 → 物理像素比例）。
+    /// 从 winit `window.scale_factor()` 读取，默认 1.0。
+    scale_factor: f64,
+    /// 当前窗口宽度（物理像素），用于构造 RenderParams。
     width: u32,
-    /// 当前窗口高度（像素单位），用于构造 RenderParams。
+    /// 当前窗口高度（物理像素），用于构造 RenderParams。
     height: u32,
     /// 场景构建回调（从 App 移入）。
     scene_builder: Option<SceneBuilder>,
@@ -263,6 +266,7 @@ impl AppHandler {
             text_renderer: TextRenderer::new(rgui_render::TextureId(0)),
             frame_count: 0,
             mouse_pos: Point::ZERO,
+            scale_factor: 1.0,
             width: 0,
             height: 0,
             scene_builder,
@@ -290,7 +294,10 @@ impl AppHandler {
     fn convert_event(&self, event: &WindowEvent) -> Option<Event> {
         match event {
             WindowEvent::CursorMoved { position, .. } => Some(Event::MouseMove {
-                position: Point::new(position.x, position.y),
+                position: Point::new(
+                    position.x / self.scale_factor,
+                    position.y / self.scale_factor,
+                ),
                 delta: Point::new(0.0, 0.0),
                 modifiers: Modifiers::new(),
             }),
@@ -305,12 +312,12 @@ impl AppHandler {
                 };
                 Some(match state {
                     ElementState::Pressed => Event::MouseDown {
-                        position: Point::ZERO,
+                        position: self.mouse_pos,
                         button: btn,
                         modifiers: Modifiers::new(),
                     },
                     ElementState::Released => Event::MouseUp {
-                        position: Point::ZERO,
+                        position: self.mouse_pos,
                         button: btn,
                         modifiers: Modifiers::new(),
                     },
@@ -451,11 +458,12 @@ impl ApplicationHandler for AppHandler {
             let size = window.inner_size();
             let w = size.width;
             let h = size.height;
+            self.scale_factor = window.scale_factor();
             self.window = Some(Arc::clone(&window));
 
             match VelloBackend::new(Arc::clone(&window), w, h) {
                 Ok(ctx) => {
-                    println!("GPU: Vello (GPU) {w}x{h}");
+                    println!("GPU: Vello (GPU) {w}x{h} (scale: {:.2})", self.scale_factor);
                     self.render_ctx = Some(ctx);
                     self.width = w;
                     self.height = h;
@@ -472,13 +480,16 @@ impl ApplicationHandler for AppHandler {
         &mut self,
         event_loop: &ActiveEventLoop,
         _id: winit::window::WindowId,
-        event: WindowEvent,
+        mut event: WindowEvent,
     ) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_pos = Point::new(position.x, position.y);
+                self.mouse_pos = Point::new(
+                    position.x / self.scale_factor,
+                    position.y / self.scale_factor,
+                );
             },
 
             WindowEvent::MouseInput {
@@ -497,9 +508,11 @@ impl ApplicationHandler for AppHandler {
             WindowEvent::RedrawRequested => {
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
-                    // 优先使用用户提供的场景构建回调，否则回退到空场景图
+                    // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
+                    let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
+                    let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
                     let scene = if let Some(ref mut builder) = self.scene_builder {
-                        let layers = builder(frame, self.width, self.height);
+                        let layers = builder(frame, logical_w as u32, logical_h as u32);
                         build_scene_from_paint_data(&layers, frame, Some(&self.text_renderer))
                     } else {
                         SceneGraph::new(frame)
@@ -507,6 +520,7 @@ impl ApplicationHandler for AppHandler {
                     let params = RenderParams {
                         width: self.width,
                         height: self.height,
+                        scale_factor: self.scale_factor,
                         clear_color: Some(rgui_core::Color::new(
                             14.0 / 255.0,
                             18.0 / 255.0,
@@ -527,6 +541,29 @@ impl ApplicationHandler for AppHandler {
                         Err(e) => eprintln!("渲染: {e}"),
                     }
                 }
+            },
+            WindowEvent::ScaleFactorChanged {
+                scale_factor,
+                ref mut inner_size_writer,
+            } => {
+                self.scale_factor = scale_factor;
+                // 更新物理尺寸，winit 在 DPI 变化后返回新的物理尺寸
+                if let Some(window) = &self.window {
+                    let new_size = window.inner_size();
+                    self.width = new_size.width;
+                    self.height = new_size.height;
+                }
+                // 通知 Vello 后端 resize
+                if let Some(ref mut ctx) = self.render_ctx {
+                    ctx.resize(self.width, self.height);
+                }
+                // 回应 winit：告知我们已接受此尺寸
+                let _ = inner_size_writer
+                    .request_inner_size(winit::dpi::PhysicalSize::new(self.width, self.height));
+                // 转发事件给组件层
+                self.app
+                    .events
+                    .push(Event::ScaleFactorChanged { scale_factor });
             },
             _ => {
                 if let Some(rgui_event) = self.convert_event(&event) {
