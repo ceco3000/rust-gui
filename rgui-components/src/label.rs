@@ -41,8 +41,13 @@ impl WidgetSpec for Label {
         WidgetView::new("Label").prop("text", PropValue::str(s.text.as_str()))
     }
     fn update(&self, _: Self::Message, _: &mut Self::State, _: &mut UpdateContext) {}
-    fn measure(&self, s: &Self::State, _: BoxConstraints, _: &MeasureContext) -> Size {
-        Size::new(8_f64 * s.text.len() as f64 + 8.0, 20.0)
+    fn measure(&self, s: &Self::State, _: BoxConstraints, ctx: &MeasureContext) -> Size {
+        let m = ctx.font_metrics.default_metrics;
+        let font_size = 14.0;
+        // 使用 x_height 估算每字符宽度，ascent-descent 计算行高
+        let char_width = m.x_height * font_size;
+        let line_height = m.line_height() * font_size;
+        Size::new(char_width * s.text.len() as f64 + 8.0, line_height + 6.0)
     }
     fn paint(&self, s: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
         ctx.draw_text(&s.text, bounds, Color::new(0.9, 0.9, 0.95, 1.0), 14.0);

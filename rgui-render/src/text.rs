@@ -65,6 +65,9 @@ impl TextEngine {
     /// `create_default_database()` 将自动包含这些字体。
     #[must_use]
     pub fn new() -> Self {
+        // 初始化全局字体度量缓存（首次调用幂等）
+        crate::font_metrics::init_font_metrics();
+
         let db = crate::font::create_default_database();
         // 尝试获取系统 locale，回退到 en-US
         let locale = std::env::var("LANG")

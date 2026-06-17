@@ -54,30 +54,129 @@ impl Default for UpdateContext {
 }
 
 // ============================================================================
+// FontMetrics
+// ============================================================================
+
+/// 单种字体的度量信息（em 单位）。
+///
+/// 所有值以字体 UPM（Units Per Em）的分数表示。
+/// 使用时乘以字体像素大小得到实际像素值。
+///
+/// 完整定义见 D1 §6.3。
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct FontMetrics {
+    /// 上升部高度（em 单位）。
+    pub ascent: f64,
+    /// 下降部高度（em 单位，通常为负值）。
+    pub descent: f64,
+    /// 行间距（em 单位）。
+    pub line_gap: f64,
+    /// x-height（em 单位，小写字母 x 的高度）。
+    pub x_height: f64,
+    /// 大写字母高度（em 单位）。
+    pub cap_height: f64,
+}
+
+impl FontMetrics {
+    /// 创建新的字体度量。
+    #[must_use]
+    pub const fn new(
+        ascent: f64,
+        descent: f64,
+        line_gap: f64,
+        x_height: f64,
+        cap_height: f64,
+    ) -> Self {
+        Self {
+            ascent,
+            descent,
+            line_gap,
+            x_height,
+            cap_height,
+        }
+    }
+
+    /// 字体的推荐行高（ascent - descent + line_gap，em 单位）。
+    #[must_use]
+    pub fn line_height(&self) -> f64 {
+        self.ascent - self.descent + self.line_gap
+    }
+}
+
+// ============================================================================
+// FontMetricsCache
+// ============================================================================
+
+/// 字体度量缓存。
+///
+/// 提供常用字体的度量信息，由 rgui-render 的 cosmic-text
+/// 集成在启动时填充（见 D1 §6.3 和 D3）。
+#[derive(Clone, Debug)]
+pub struct FontMetricsCache {
+    /// 默认字体族的度量信息。
+    pub default_metrics: FontMetrics,
+}
+
+impl FontMetricsCache {
+    /// 创建新的字体度量缓存。
+    #[must_use]
+    pub const fn new(default_metrics: FontMetrics) -> Self {
+        Self { default_metrics }
+    }
+}
+
+// ============================================================================
 // MeasureContext
 // ============================================================================
 
-/// `measure()` 的上下文：提供 DPI 缩放比例。
+/// `measure()` 的上下文：提供字体度量和 DPI 信息。
 ///
-/// 完整定义见 D3 渲染管线（布局阶段）。
+/// 完整定义见 D1 §6.3 和 D3 渲染管线（布局阶段）。
 #[derive(Clone, Debug)]
 pub struct MeasureContext {
+    /// 字体度量缓存。
+    ///
+    /// 提供常用字体的 ascent、descent、line_gap、x_height 等度量信息。
+    /// 由 rgui-render 的 cosmic-text 集成提供。
+    pub font_metrics: &'static FontMetricsCache,
+
     /// 当前 DPI 缩放比例。
     pub scale_factor: f64,
 }
 
 impl MeasureContext {
+    /// 创建新的测量上下文。
+    ///
+    /// # 参数
+    ///
+    /// * `font_metrics` — 字体度量缓存静态引用。
+    /// * `scale_factor` — 当前 DPI 缩放比例。
     #[must_use]
-    pub fn new(scale_factor: f64) -> Self {
-        Self { scale_factor }
+    pub fn new(font_metrics: &'static FontMetricsCache, scale_factor: f64) -> Self {
+        Self {
+            font_metrics,
+            scale_factor,
+        }
     }
 }
 
 impl Default for MeasureContext {
     fn default() -> Self {
-        Self::new(1.0)
+        Self::new(&FONT_METRICS_CACHE_DEFAULT, 1.0)
     }
 }
+
+/// 默认字体度量缓存（Inter Regular）。
+///
+/// 使用硬编码的 Inter Regular 字体度量值。这些值与嵌入的
+/// Inter-Regular.ttf 完全匹配。
+static FONT_METRICS_CACHE_DEFAULT: FontMetricsCache = FontMetricsCache::new(FontMetrics::new(
+    0.96875,  // ascent:  2728/2816
+    -0.22727, // descent: -640/2816
+    0.0,      // line_gap: 0/2816
+    0.54545,  // x_height: 1536/2816
+    0.72727,  // cap_height: 2048/2816
+));
 
 // ============================================================================
 // PaintOp
@@ -235,6 +334,99 @@ mod tests {
     fn measure_context_default_scale() {
         let ctx = MeasureContext::default();
         assert!((ctx.scale_factor - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn measure_context_has_font_metrics() {
+        let ctx = MeasureContext::default();
+        assert!((ctx.font_metrics.default_metrics.ascent - 0.96875).abs() < 0.001);
+        assert!((ctx.font_metrics.default_metrics.descent - (-0.22727)).abs() < 0.001);
+    }
+
+    #[test]
+    fn measure_context_custom() {
+        static CACHE: FontMetricsCache =
+            FontMetricsCache::new(FontMetrics::new(0.8, -0.2, 0.0, 0.5, 0.7));
+        let ctx = MeasureContext::new(&CACHE, 2.0);
+        assert!((ctx.scale_factor - 2.0).abs() < f64::EPSILON);
+        assert!((ctx.font_metrics.default_metrics.ascent - 0.8).abs() < 0.001);
+    }
+
+    // ============================================================================
+    // FontMetrics 测试
+    // ============================================================================
+
+    #[test]
+    fn font_metrics_new() {
+        let m = FontMetrics::new(0.9, -0.2, 0.05, 0.5, 0.7);
+        assert!((m.ascent - 0.9).abs() < 0.001);
+        assert!((m.descent - (-0.2)).abs() < 0.001);
+        assert!((m.line_gap - 0.05).abs() < 0.001);
+        assert!((m.x_height - 0.5).abs() < 0.001);
+        assert!((m.cap_height - 0.7).abs() < 0.001);
+    }
+
+    #[test]
+    fn font_metrics_line_height() {
+        let m = FontMetrics::new(0.9, -0.2, 0.05, 0.5, 0.7);
+        assert!((m.line_height() - 1.15).abs() < 0.001);
+    }
+
+    #[test]
+    fn font_metrics_line_height_no_gap() {
+        let m = FontMetrics::new(0.8, -0.2, 0.0, 0.5, 0.7);
+        assert!((m.line_height() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn font_metrics_copy_clone() {
+        let m = FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7);
+        let m2 = m;
+        assert_eq!(m, m2);
+        let m3 = m.clone();
+        assert_eq!(m, m3);
+    }
+
+    #[test]
+    fn font_metrics_partial_eq() {
+        let a = FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7);
+        let b = FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn font_metrics_not_equal() {
+        let a = FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7);
+        let b = FontMetrics::new(0.8, -0.2, 0.0, 0.5, 0.7);
+        assert_ne!(a, b);
+    }
+
+    // ============================================================================
+    // FontMetricsCache 测试
+    // ============================================================================
+
+    #[test]
+    fn font_metrics_cache_new() {
+        let metrics = FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7);
+        let cache = FontMetricsCache::new(metrics);
+        assert_eq!(cache.default_metrics, metrics);
+    }
+
+    #[test]
+    fn font_metrics_cache_clone() {
+        let cache = FontMetricsCache::new(FontMetrics::new(0.9, -0.2, 0.0, 0.5, 0.7));
+        let _cloned = cache.clone();
+    }
+
+    #[test]
+    fn default_font_metrics_cache_is_inter_regular() {
+        let ctx = MeasureContext::default();
+        let m = ctx.font_metrics.default_metrics;
+        // Inter Regular metrics
+        assert!((m.ascent - 0.96875).abs() < 0.01);
+        assert!(m.descent < -0.2);
+        assert!(m.x_height > 0.4);
+        assert!(m.cap_height > 0.6);
     }
 
     #[test]

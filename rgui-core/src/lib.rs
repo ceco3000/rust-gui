@@ -43,7 +43,8 @@ pub use traits::{AppMessage, PersistState, WidgetSpec};
 
 // Context 类型
 pub use context::{
-    AccessContext, MeasureContext, PaintContext, PaintOp, UpdateContext, ViewContext,
+    AccessContext, FontMetrics, FontMetricsCache, MeasureContext, PaintContext, PaintOp,
+    UpdateContext, ViewContext,
 };
 
 // 无障碍类型
@@ -61,7 +62,8 @@ pub mod prelude {
         AccessibilityAction, AccessibilityNode, AccessibilityRole, AccessibilityState,
     };
     pub use crate::context::{
-        AccessContext, MeasureContext, PaintContext, PaintOp, UpdateContext, ViewContext,
+        AccessContext, FontMetrics, FontMetricsCache, MeasureContext, PaintContext, PaintOp,
+        UpdateContext, ViewContext,
     };
     pub use crate::geometry::{
         AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,

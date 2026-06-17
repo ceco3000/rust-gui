@@ -8,6 +8,7 @@ pub mod factory;
 pub mod focus_indicator;
 #[cfg(feature = "vello-backend")]
 pub mod font;
+pub mod font_metrics;
 pub mod glyph;
 pub mod primitives;
 pub mod scene;
@@ -32,6 +33,7 @@ pub use backend::{BackendCapabilities, RenderBackend, RenderError, RenderParams}
 pub use dirty::DirtyRegionTracker;
 pub use factory::{BackendType, RenderBackendFactory};
 pub use focus_indicator::FocusIndicator;
+pub use font_metrics::{font_metrics_cache, init_font_metrics};
 pub use glyph::GlyphAtlas;
 pub use primitives::{
     BlendMode, FillRule, GlyphData, GradientStop, ImageRepeat, LineCap, LineJoin, Paint,
