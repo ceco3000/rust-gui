@@ -19,7 +19,7 @@ rgui-components.workspace = true
 rgui-devtools = { workspace = true, optional = true }
 winit.workspace = true
 [features]
-default = ["vello-backend"]
+default = ["vello-backend", "skia-backend"]
 vello-backend = ["rgui-render/vello-backend"]
 skia-backend = ["rgui-render/skia-backend"]
 devtools = ["dep:rgui-devtools", "rgui-style/hot-reload"]

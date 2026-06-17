@@ -332,7 +332,7 @@ impl RenderBackend for SkiaBackend {
     ) {
         // CPU 纹理更新：在存储的纹理数据中替换子区域。
         if let Some(tex) = self.textures.get_mut(&id) {
-            let stride = tex.width as u32 * 4;
+            let stride = tex.width * 4;
             for row in 0..height {
                 let src_start = (row * width * 4) as usize;
                 let src_end = src_start + (width * 4) as usize;

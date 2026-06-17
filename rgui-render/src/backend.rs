@@ -91,6 +91,14 @@ pub trait RenderBackend: Send + Sync {
 
     /// 后端特性集。
     fn capabilities(&self) -> BackendCapabilities;
+
+    /// 类型擦除访问器（用于 VelloBackend 特定操作的下转型）。
+    ///
+    /// 默认返回 `None`。VelloBackend 覆写以暴露其可变引用，
+    /// 使 facade 可在不破坏 trait 封装的前提下执行后端特定操作。
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
+    }
 }
 
 /// 后端特性描述（D3 §5.1）。

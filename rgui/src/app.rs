@@ -7,8 +7,8 @@ use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
 use rgui_render::{
-    PaintLayerData, RenderBackend, RenderParams, SceneGraph, TextRenderer, VelloBackend,
-    build_scene_from_paint_data,
+    PaintLayerData, RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer,
+    VelloBackend, build_scene_from_paint_data,
 };
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
@@ -237,9 +237,12 @@ impl fmt::Debug for App {
 struct AppHandler {
     app: App,
     window: Option<Arc<winit::window::Window>>,
-    /// Vello GPU 渲染后端（直接持有，非 facade 封装）。
-    /// 符合 D8 R06 架构约束：facade 仅通过 RenderBackend trait 接口委托渲染。
-    render_ctx: Option<VelloBackend>,
+    /// 当前活跃的渲染后端（trait object，支持运行时切换）。
+    /// 初始为 VelloBackend；渲染失败时在帧边界切换为 SkiaBackend。
+    render_ctx: Option<Box<dyn RenderBackend>>,
+    /// 待切换标志：当前帧 Vello 渲染失败后设为 true，
+    /// 下一帧开始时切换为 Skia。
+    backend_fallback_pending: bool,
     /// 文本渲染器（字形塑形 + atlas 管理）。
     /// 在每帧渲染时传递给 scene_builder，启用真正的字形渲染。
     text_renderer: TextRenderer,
@@ -263,6 +266,7 @@ impl AppHandler {
             app,
             window: None,
             render_ctx: None,
+            backend_fallback_pending: false,
             text_renderer: TextRenderer::new(rgui_render::TextureId(0)),
             frame_count: 0,
             mouse_pos: Point::ZERO,
@@ -300,33 +304,31 @@ impl AppHandler {
         }
     }
 
-    /// GPU 设备丢失恢复（D3 §12.2）。
+    /// Skia fallback 切换（D3 §12.5）。
     ///
-    /// 重建 VelloBackend，将旧后端的已注册纹理和字形 atlas 数据
-    /// 迁移到新后端。恢复成功后旧后端被替换。
-    fn try_recover_vello_backend(&mut self) {
-        if let Some(window) = &self.window {
-            let w = self.width;
-            let h = self.height;
-            match VelloBackend::new(Arc::clone(window), w, h) {
-                Ok(mut new_ctx) => {
-                    // 迁移已注册纹理
-                    if let Some(mut old_ctx) = self.render_ctx.take() {
-                        for (_tex_id, tex_data) in old_ctx.drain_textures() {
-                            let _ = new_ctx.register_texture(&tex_data, tex_data.format);
-                        }
-                        // 迁移字形 atlas 缓存
-                        if let Some(atlas) = old_ctx.take_atlas_cache() {
-                            new_ctx.restore_atlas_cache(atlas.0, atlas.1, atlas.2);
-                        }
-                    }
-                    self.render_ctx = Some(new_ctx);
-                    eprintln!("GPU 恢复成功 ({w}x{h})");
-                },
-                Err(e2) => eprintln!("GPU 恢复失败: {e2}"),
-            }
-        } else {
-            eprintln!("GPU 恢复失败：无可用窗口");
+    /// 当 Vello 渲染失败时，在下一帧边界切换到备用后端。
+    /// 通过 RenderBackendFactory 自动选择最佳可用后端
+    /// （通常为 SkiaBackend）。
+    fn try_fallback_to_skia(&mut self) {
+        let params = RenderParams {
+            width: self.width.max(1),
+            height: self.height.max(1),
+            scale_factor: self.scale_factor,
+            ..Default::default()
+        };
+        match RenderBackendFactory::create(&params) {
+            Ok(backend) => {
+                eprintln!(
+                    "[rgui] Vello 渲染失败，在帧边界切换到 {} ({}x{})",
+                    backend.backend_name(),
+                    self.width,
+                    self.height
+                );
+                self.render_ctx = Some(backend);
+            },
+            Err(e) => {
+                eprintln!("[rgui] fallback 后端创建失败: {e}");
+            },
         }
     }
 
@@ -516,7 +518,7 @@ impl ApplicationHandler for AppHandler {
             match VelloBackend::new(Arc::clone(&window), w, h) {
                 Ok(ctx) => {
                     println!("GPU: Vello (GPU) {w}x{h} (scale: {:.2})", self.scale_factor);
-                    self.render_ctx = Some(ctx);
+                    self.render_ctx = Some(Box::new(ctx));
                     self.width = w;
                     self.height = h;
                 },
@@ -558,11 +560,16 @@ impl ApplicationHandler for AppHandler {
             },
 
             WindowEvent::RedrawRequested => {
+                // 帧边界 fallback 切换（D3 §12.5）：
+                // 上一帧 Vello 渲染失败 → 切换为 Skia
+                if self.backend_fallback_pending {
+                    self.try_fallback_to_skia();
+                    self.backend_fallback_pending = false;
+                }
                 // 窗口最小化或 surface 不可用时跳过渲染（D3 §12.4）
                 if self.should_skip_render() {
                     return;
                 }
-                let mut device_lost = false;
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
@@ -604,25 +611,33 @@ impl ApplicationHandler for AppHandler {
                         )),
                         ..Default::default()
                     };
-                    // 将字形 Atlas 像素数据传入 Vello 后端
+                    // 将字形 Atlas 像素数据传入后端（Vello 特定路径）
                     if self.text_renderer.is_dirty() {
                         let (aw, ah) = self.text_renderer.atlas_dimensions();
                         let pixels = self.text_renderer.atlas_pixels();
-                        ctx.set_atlas_data(aw, ah, &pixels);
+                        // 仅 VelloBackend 使用 set_atlas_data
+                        if let Some(vello) = ctx
+                            .as_any_mut()
+                            .and_then(|a| a.downcast_mut::<VelloBackend>())
+                        {
+                            vello.set_atlas_data(aw, ah, &pixels);
+                        }
                         self.text_renderer.clear_dirty();
                     }
                     match ctx.render(&scene, &params) {
                         Ok(()) => self.frame_count += 1,
                         Err(e) => {
                             eprintln!("渲染: {e}");
-                            device_lost = ctx.is_device_lost();
+                            // Vello 渲染失败 → 标记帧边界 fallback（D3 §12.5）
+                            let is_vello = ctx
+                                .as_any_mut()
+                                .and_then(|a| a.downcast_mut::<VelloBackend>())
+                                .is_some();
+                            if is_vello {
+                                self.backend_fallback_pending = true;
+                            }
                         },
                     }
-                }
-                // GPU 设备丢失恢复（D3 §12.2）—— borrow 已释放
-                if device_lost {
-                    eprintln!("GPU 设备丢失，尝试恢复...");
-                    self.try_recover_vello_backend();
                 }
             },
             WindowEvent::ScaleFactorChanged {
@@ -636,9 +651,14 @@ impl ApplicationHandler for AppHandler {
                     self.width = new_size.width;
                     self.height = new_size.height;
                 }
-                // 通知 Vello 后端 resize
+                // 通知后端 resize（Vello 特定路径）
                 if let Some(ref mut ctx) = self.render_ctx {
-                    ctx.resize(self.width, self.height);
+                    if let Some(vello) = ctx
+                        .as_any_mut()
+                        .and_then(|a| a.downcast_mut::<VelloBackend>())
+                    {
+                        vello.resize(self.width, self.height);
+                    }
                 }
                 // 回应 winit：告知我们已接受此尺寸
                 let _ = inner_size_writer
@@ -732,13 +752,13 @@ mod tests {
     }
 
     #[test]
-    fn recovery_no_window_does_not_panic() {
-        // 模拟没有窗口时的恢复调用——不应 panic
+    fn fallback_no_window_does_not_panic() {
+        // 模拟没有窗口时的 fallback——不应 panic
         let mut handler = AppHandler::new(App::new(AppConfig::default()));
-        // 没有设置 render_ctx 和 window，恢复应优雅处理
-        handler.try_recover_vello_backend();
-        // 恢复后 render_ctx 仍为 None
-        assert!(handler.render_ctx.is_none());
+        // 没有设置 render_ctx 和 window，fallback 应优雅处理
+        handler.try_fallback_to_skia();
+        // 恢复后 render_ctx 为 SkiaBackend
+        assert!(handler.render_ctx.is_some());
     }
 
     #[test]
