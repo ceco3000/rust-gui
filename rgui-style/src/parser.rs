@@ -439,7 +439,7 @@ fn parse_value(chars: &[char], pos: &mut usize) -> Result<PropValue, ParseError>
         return Err(ParseError::InvalidValue("空值".into()));
     }
 
-    // 字符串 `"..."`
+    // 字符串 `"..."` 或 `'...'`
     if chars[*pos] == '"' || chars[*pos] == '\'' {
         let quote = chars[*pos];
         *pos += 1;
@@ -479,13 +479,66 @@ fn parse_value(chars: &[char], pos: &mut usize) -> Result<PropValue, ParseError>
         }
     }
 
-    // 关键词（true/false/none/auto 等）
+    // 关键词（true/false/none/auto 或 CSS 函数如 calc/min/max/clamp）
     let keyword = parse_identifier(chars, pos);
+
+    // 检测 CSS 函数调用：关键字后跟 `(`
+    if *pos < chars.len() && chars[*pos] == '(' {
+        let func_text = extract_function_call(&keyword, chars, pos)?;
+        match crate::css_functions::evaluate_css_expression(&func_text) {
+            Ok(Some(value)) => return Ok(value),
+            Ok(None) => {}, // 不是函数调用，继续
+            Err(e) => return Err(ParseError::InvalidValue(e.to_string())),
+        }
+    }
+
     match keyword.as_str() {
         "true" => Ok(PropValue::Bool(true)),
         "false" => Ok(PropValue::Bool(false)),
         _ => Ok(PropValue::Str(Arc::from(keyword))),
     }
+}
+
+/// 从当前位置提取完整的 CSS 函数调用字符串（包括函数名、括号和内部表达式）。
+///
+/// 调用前 `pos` 指向 `(` 之后的第一个字符。
+/// 返回形如 `calc(100px - 20px)` 的完整字符串。
+fn extract_function_call(
+    func_name: &str,
+    chars: &[char],
+    pos: &mut usize,
+) -> Result<String, ParseError> {
+    if chars[*pos] != '(' {
+        return Err(ParseError::Syntax("期望 `(` 在函数调用中".into()));
+    }
+
+    let mut depth: u32 = 0;
+    let mut buf = String::from(func_name);
+
+    loop {
+        if *pos >= chars.len() {
+            return Err(ParseError::Syntax("未闭合的 `(`".into()));
+        }
+        buf.push(chars[*pos]);
+
+        match chars[*pos] {
+            '(' => depth += 1,
+            ')' => {
+                if depth == 0 {
+                    return Err(ParseError::Syntax("意外的 `)`".into()));
+                }
+                depth -= 1;
+                if depth == 0 {
+                    *pos += 1;
+                    break; // 函数调用已完整提取
+                }
+            },
+            _ => {},
+        }
+        *pos += 1;
+    }
+
+    Ok(buf)
 }
 
 fn parse_color(hex: &str) -> Result<PropValue, ParseError> {
@@ -815,7 +868,7 @@ mod tests {
         assert!(rules[0].important_declarations.contains(&Arc::from("text")));
     }
 
-    /// !important 在 @media 块内
+    /// `!important` 在 @media 块内
     #[test]
     fn parse_important_inside_media_block() {
         let rules = parse_rgss(
@@ -830,5 +883,74 @@ mod tests {
                 .important_declarations
                 .contains(&Arc::from("color"))
         );
+    }
+
+    // ========================================================================
+    // CSS 函数求值测试（ST11 GREEN）
+    // ========================================================================
+
+    #[test]
+    fn parse_calc_in_property_value() {
+        let rules = parse_rgss("Button { width: calc(100px - 20px); }").unwrap();
+        assert_eq!(rules.len(), 1);
+        let v = rules[0].declarations.get("width").unwrap();
+        assert_eq!(v, &PropValue::Int(80));
+    }
+
+    #[test]
+    fn parse_calc_with_multiplication() {
+        let rules = parse_rgss("VBox { padding: calc(10px * 2); }").unwrap();
+        let v = rules[0].declarations.get("padding").unwrap();
+        assert_eq!(v, &PropValue::Int(20));
+    }
+
+    #[test]
+    fn parse_min_function() {
+        let rules = parse_rgss("Button { font-size: min(14px, 18px); }").unwrap();
+        let v = rules[0].declarations.get("font-size").unwrap();
+        assert_eq!(v, &PropValue::Int(14));
+    }
+
+    #[test]
+    fn parse_max_function() {
+        let rules = parse_rgss("HBox { spacing: max(8px, 16px); }").unwrap();
+        let v = rules[0].declarations.get("spacing").unwrap();
+        assert_eq!(v, &PropValue::Int(16));
+    }
+
+    #[test]
+    fn parse_clamp_function() {
+        let rules = parse_rgss("VBox { width: clamp(100px, 200px, 300px); }").unwrap();
+        let v = rules[0].declarations.get("width").unwrap();
+        assert_eq!(v, &PropValue::Int(200));
+    }
+
+    #[test]
+    fn parse_calc_with_spaces_in_value() {
+        let rules = parse_rgss("Button { margin: calc( 10px  +   5px * 2  ); }").unwrap();
+        let v = rules[0].declarations.get("margin").unwrap();
+        // 10 + (5 * 2) = 10 + 10 = 20
+        assert_eq!(v, &PropValue::Int(20));
+    }
+
+    #[test]
+    fn parse_calc_in_media_block() {
+        let rules = parse_rgss(
+            "@media (max-width: 768px) { \
+                Button { font-size: calc(12px + 2px); } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        let v = rules[0].declarations.get("font-size").unwrap();
+        assert_eq!(v, &PropValue::Int(14));
+    }
+
+    #[test]
+    fn parse_keyword_not_function_is_unchanged() {
+        // "none" 不是函数（不跟括号），应保持为 Str
+        let rules = parse_rgss("Label { display: none; }").unwrap();
+        let v = rules[0].declarations.get("display").unwrap();
+        assert_eq!(v, &PropValue::Str(Arc::from("none")));
     }
 }

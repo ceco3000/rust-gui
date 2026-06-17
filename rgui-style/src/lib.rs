@@ -1,5 +1,6 @@
 //! # rgui-style —— 选择器引擎、主题变量、样式合并、.rgss 解析、热重载、属性映射
 
+pub mod css_functions;
 pub mod merger;
 pub mod parser;
 pub mod property_map;
