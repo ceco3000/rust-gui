@@ -66,6 +66,7 @@ pub enum DevToolsError {
     RuntimeError(String),
 }
 
+#[cfg(feature = "notify")]
 impl From<notify::Error> for DevToolsError {
     fn from(e: notify::Error) -> Self {
         Self::WatchFailed(e.to_string())
@@ -92,6 +93,7 @@ mod tests {
         assert!(err.to_string().contains("语法错误"));
     }
 
+    #[cfg(feature = "notify")]
     #[test]
     fn test_from_notify_error() {
         let notify_err = notify::Error::generic("test error");

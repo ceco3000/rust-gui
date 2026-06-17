@@ -51,4 +51,5 @@ pub mod config;
 pub mod error;
 pub mod fast_restart;
 pub mod ipc;
+#[cfg(feature = "notify")]
 pub mod watcher;

@@ -12,6 +12,10 @@ categories = ["gui", "accessibility"]
 
 [dependencies]
 rgui-core.workspace = true
-accesskit.workspace = true
+accesskit = { workspace = true, optional = true }
 rustc-hash.workspace = true
 thiserror.workspace = true
+
+[features]
+default = ["accesskit"]
+accesskit = ["dep:accesskit"]

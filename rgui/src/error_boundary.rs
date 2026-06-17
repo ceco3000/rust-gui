@@ -27,7 +27,9 @@ pub fn install_panic_hook() {
         } else {
             "unknown panic".to_string()
         };
-        let location = info.location().map_or_else(String::new, |l| format!(" at {}:{}", l.file(), l.line()));
+        let location = info
+            .location()
+            .map_or_else(String::new, |l| format!(" at {}:{}", l.file(), l.line()));
         eprintln!("[rgui] 组件异常: {msg}{location}");
         // 仍调用原有 hook 以保留双输出行为（可选）
         prev(info);

@@ -13,9 +13,13 @@ categories = ["gui"]
 [dependencies]
 rgui-core.workspace = true
 rgui-style.workspace = true
-winit.workspace = true
+winit = { workspace = true, optional = true }
 rustc-hash.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 arboard = "3"
+
+[features]
+default = ["winit"]
+winit = ["dep:winit"]
