@@ -6,7 +6,7 @@
 use crate::selector::{MediaCondition, Selector, StyleRule};
 use crate::theme::ColorScheme;
 use rgui_core::view::PropValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 /// .rgss 解析错误。
@@ -54,10 +54,11 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
 
             // 为块内的每条规则附加媒体查询条件
             for rule in block_rules {
-                rules.push(StyleRule::with_media(
+                rules.push(StyleRule::with_media_and_important(
                     rule.selector,
                     rule.declarations,
                     media_condition.clone(),
+                    rule.important_declarations,
                 ));
             }
             continue;
@@ -75,9 +76,9 @@ pub fn parse_rgss(source: &str) -> Result<Vec<StyleRule>, ParseError> {
         }
         pos += 1;
 
-        let declarations = parse_declarations(&chars, &mut pos)?;
+        let (declarations, important) = parse_declarations_with_important(&chars, &mut pos)?;
 
-        rules.push(StyleRule::new(selector, declarations));
+        rules.push(StyleRule::with_important(selector, declarations, important));
     }
 
     Ok(rules)
@@ -279,19 +280,23 @@ fn parse_rules_in_block(chars: &[char], pos: &mut usize) -> Result<Vec<StyleRule
         }
         *pos += 1;
 
-        let declarations = parse_declarations(chars, pos)?;
-        rules.push(StyleRule::new(selector, declarations));
+        let (declarations, important) = parse_declarations_with_important(chars, pos)?;
+        rules.push(StyleRule::with_important(selector, declarations, important));
     }
 
     Ok(rules)
 }
 
-/// 解析 `{ ... }` 内的声明列表。
-fn parse_declarations(
+/// 同时追踪 `!important` 标记的声明解析结果。
+type DeclarationsResult = (BTreeMap<Arc<str>, PropValue>, BTreeSet<Arc<str>>);
+
+/// 解析 `{ ... }` 内的声明列表，同时追踪 `!important` 标记的属性名。
+fn parse_declarations_with_important(
     chars: &[char],
     pos: &mut usize,
-) -> Result<BTreeMap<Arc<str>, PropValue>, ParseError> {
+) -> Result<DeclarationsResult, ParseError> {
     let mut declarations = BTreeMap::new();
+    let mut important_declarations = BTreeSet::new();
     loop {
         skip_whitespace_and_comments(chars, pos);
         if *pos >= chars.len() {
@@ -302,8 +307,12 @@ fn parse_declarations(
             break;
         }
 
-        let (prop, value) = parse_declaration(chars, pos)?;
-        declarations.insert(Arc::from(prop), value);
+        let (prop, value, important) = parse_declaration_with_important(chars, pos)?;
+        let prop_arc: Arc<str> = Arc::from(prop);
+        if important {
+            important_declarations.insert(Arc::clone(&prop_arc));
+        }
+        declarations.insert(prop_arc, value);
 
         // 跳过分号
         skip_whitespace(chars, pos);
@@ -311,7 +320,7 @@ fn parse_declarations(
             *pos += 1;
         }
     }
-    Ok(declarations)
+    Ok((declarations, important_declarations))
 }
 
 fn skip_whitespace(chars: &[char], pos: &mut usize) {
@@ -381,7 +390,11 @@ fn parse_selector(chars: &[char], pos: &mut usize) -> Result<Selector, ParseErro
     Ok(Selector::Type(type_name))
 }
 
-fn parse_declaration(chars: &[char], pos: &mut usize) -> Result<(String, PropValue), ParseError> {
+/// 解析单条声明 `prop: value [!important]`，返回属性名、值和是否标记 `!important`。
+fn parse_declaration_with_important(
+    chars: &[char],
+    pos: &mut usize,
+) -> Result<(String, PropValue, bool), ParseError> {
     skip_whitespace(chars, pos);
     let prop = parse_identifier(chars, pos);
 
@@ -393,7 +406,32 @@ fn parse_declaration(chars: &[char], pos: &mut usize) -> Result<(String, PropVal
     skip_whitespace(chars, pos);
 
     let value = parse_value(chars, pos)?;
-    Ok((prop, value))
+
+    // 检查 `!important`
+    let important = check_important(chars, pos);
+
+    Ok((prop, value, important))
+}
+
+/// 检查当前位置是否是 `!important` 关键字，消耗字符并返回 true，否则返回 false。
+fn check_important(chars: &[char], pos: &mut usize) -> bool {
+    let start = *pos;
+    skip_whitespace(chars, pos);
+
+    // 需要至少 "!important" 10 个字符
+    if *pos + 10 > chars.len() {
+        *pos = start;
+        return false;
+    }
+
+    let slice: String = chars[*pos..*pos + 10].iter().collect();
+    if slice.eq_ignore_ascii_case("!important") {
+        *pos += 10;
+        true
+    } else {
+        *pos = start;
+        false
+    }
 }
 
 fn parse_value(chars: &[char], pos: &mut usize) -> Result<PropValue, ParseError> {
@@ -703,5 +741,94 @@ mod tests {
         let cond = rules[0].media_condition.as_ref().unwrap();
         assert!(cond.eval(768.0, ColorScheme::Light));
         assert!(!cond.eval(769.0, ColorScheme::Light));
+    }
+
+    // ========================================================================
+    // !important 测试（ST07a RED）
+    // ========================================================================
+
+    /// 解析 `!important` 声明的属性
+    #[test]
+    fn parse_important_single_declaration() {
+        let rules = parse_rgss("Button { color: red !important; }").unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].declarations.contains_key("color"));
+        assert!(
+            rules[0]
+                .important_declarations
+                .contains(&Arc::from("color"))
+        );
+    }
+
+    /// 混合 important 和非 important 声明
+    #[test]
+    fn parse_important_mixed_with_normal() {
+        let rules = parse_rgss("Button { color: red !important; font-size: 14px; }").unwrap();
+        assert_eq!(rules.len(), 1);
+        // color 有 !important
+        assert!(
+            rules[0]
+                .important_declarations
+                .contains(&Arc::from("color"))
+        );
+        // font-size 没有 !important
+        assert!(
+            !rules[0]
+                .important_declarations
+                .contains(&Arc::from("font-size"))
+        );
+    }
+
+    /// 多个 !important 声明
+    #[test]
+    fn parse_multiple_important() {
+        let rules =
+            parse_rgss("Button { color: red !important; background-color: blue !important; }")
+                .unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].important_declarations.len(), 2);
+        assert!(
+            rules[0]
+                .important_declarations
+                .contains(&Arc::from("color"))
+        );
+        assert!(
+            rules[0]
+                .important_declarations
+                .contains(&Arc::from("background-color"))
+        );
+    }
+
+    /// 没有 !important 的规则应该有空 important 集合
+    #[test]
+    fn parse_no_important_empty_set() {
+        let rules = parse_rgss("Button { color: red; font-size: 14px; }").unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].important_declarations.is_empty());
+    }
+
+    /// !important 在字符串值后
+    #[test]
+    fn parse_important_with_string_value() {
+        let rules = parse_rgss(r#"Label { text: "hello" !important; }"#).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(rules[0].important_declarations.contains(&Arc::from("text")));
+    }
+
+    /// !important 在 @media 块内
+    #[test]
+    fn parse_important_inside_media_block() {
+        let rules = parse_rgss(
+            "@media (max-width: 768px) { \
+                Button { color: red !important; } \
+            }",
+        )
+        .unwrap();
+        assert_eq!(rules.len(), 1);
+        assert!(
+            rules[0]
+                .important_declarations
+                .contains(&Arc::from("color"))
+        );
     }
 }

@@ -3,7 +3,7 @@
 //! 定义源自 D4 §4、§8。
 
 use rgui_core::view::PropValue;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::Arc;
 
@@ -231,26 +231,40 @@ pub struct StyleRule {
     /// 可选的媒体查询条件（D4 §8）。
     /// 非 `None` 时，仅当条件满足时规则才生效。
     pub media_condition: Option<MediaCondition>,
+    /// 标记了 `!important` 的属性名集合（D4 §6.1 第 5 优先级）。
+    pub important_declarations: BTreeSet<Arc<str>>,
 }
 
 impl StyleRule {
     #[must_use]
     pub fn new(selector: Selector, declarations: BTreeMap<Arc<str>, PropValue>) -> Self {
+        Self::with_important(selector, declarations, BTreeSet::new())
+    }
+
+    /// 创建带 `!important` 标记的样式规则。
+    #[must_use]
+    pub fn with_important(
+        selector: Selector,
+        declarations: BTreeMap<Arc<str>, PropValue>,
+        important_declarations: BTreeSet<Arc<str>>,
+    ) -> Self {
         let specificity = selector.specificity();
         Self {
             selector,
             declarations,
             specificity,
             media_condition: None,
+            important_declarations,
         }
     }
 
-    /// 创建带媒体查询条件的样式规则。
+    /// 创建带媒体查询条件和 `!important` 标记的样式规则。
     #[must_use]
-    pub fn with_media(
+    pub fn with_media_and_important(
         selector: Selector,
         declarations: BTreeMap<Arc<str>, PropValue>,
         media_condition: MediaCondition,
+        important_declarations: BTreeSet<Arc<str>>,
     ) -> Self {
         let specificity = selector.specificity();
         Self {
@@ -258,7 +272,18 @@ impl StyleRule {
             declarations,
             specificity,
             media_condition: Some(media_condition),
+            important_declarations,
         }
+    }
+
+    /// 创建带媒体查询条件的样式规则（无 `!important`）。
+    #[must_use]
+    pub fn with_media(
+        selector: Selector,
+        declarations: BTreeMap<Arc<str>, PropValue>,
+        media_condition: MediaCondition,
+    ) -> Self {
+        Self::with_media_and_important(selector, declarations, media_condition, BTreeSet::new())
     }
 }
 
