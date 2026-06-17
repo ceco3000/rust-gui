@@ -148,10 +148,7 @@ impl TextRenderer {
         }
         let attrs = cosmic_text::Attrs::new();
         let shaped = self.engine.borrow_mut().shape_text(text, font_size, attrs);
-        shaped
-            .last()
-            .map(|g| g.x + g.advance)
-            .unwrap_or(0.0)
+        shaped.last().map(|g| g.x + g.advance).unwrap_or(0.0)
     }
 
     /// 测量文本的精确度量（宽度、ascent、descent）。
@@ -178,9 +175,7 @@ impl TextRenderer {
         let mut max_descent: f32 = 0.0;
 
         for g in &shaped {
-            if let Some((_left, top, _w, h)) =
-                self.engine.borrow_mut().glyph_placement(&g.key)
-            {
+            if let Some((_left, top, _w, h)) = self.engine.borrow_mut().glyph_placement(&g.key) {
                 // zeno::Placement: origin 在图像内坐标 (left, top)，
                 // top = 基线到图像顶部的像素距离（正值 = 基线上方）
                 // height - top = 基线下方像素数（若为正值）

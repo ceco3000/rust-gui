@@ -60,8 +60,7 @@ fn paint_op_to_draw_command_inner(
         } => {
             if let Some(tr) = text_renderer {
                 // 一次光栅化同时拿到渲染指令和度量数据（ascent/descent）
-                let (mut commands, metrics) =
-                    tr.render_text(text, 0.0, 0.0, color, font_size);
+                let (mut commands, metrics) = tr.render_text(text, 0.0, 0.0, color, font_size);
                 if commands.is_empty() {
                     return DrawCommand::FillRect {
                         rect: Rect::ZERO,
@@ -73,8 +72,8 @@ fn paint_op_to_draw_command_inner(
                 let baseline_x = bounds.origin.x as f32
                     + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
                 // 垂直：按 ascent 居中（视觉内容居中，忽略 descent 空白区）
-                let baseline_y = bounds.origin.y as f32
-                    + (bounds.size.height as f32 + metrics.ascent) / 2.0;
+                let baseline_y =
+                    bounds.origin.y as f32 + (bounds.size.height as f32 + metrics.ascent) / 2.0;
                 // 将预先计算的基线偏移应用到 glyph 位置
                 let dx = baseline_x;
                 let dy = baseline_y;
