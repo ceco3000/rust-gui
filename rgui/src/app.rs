@@ -276,11 +276,20 @@ impl AppHandler {
     fn handle_click(&mut self, position: Point) {
         if let Some(hit_id) = self.app.hit_tester.hit_test(position) {
             if let Some((_bounds, action, cb)) = self.app.interactions.get_mut(&hit_id) {
-                println!(
-                    "点击: widget {hit_id:?} at ({}, {}), action: {action}",
-                    position.x as i32, position.y as i32
-                );
-                cb(action);
+                // 交互回调带异常隔离（D1 §11.3）
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    cb(action);
+                }));
+                if let Err(e) = result {
+                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                        *s
+                    } else if let Some(s) = e.downcast_ref::<String>() {
+                        s.as_str()
+                    } else {
+                        "unknown panic"
+                    };
+                    eprintln!("[rgui] 交互回调 panic (widget={hit_id:?}, action={action}): {msg}");
+                }
                 // 记录事件
                 self.app.events.push(Event::MouseDown {
                     position,
@@ -559,8 +568,26 @@ impl ApplicationHandler for AppHandler {
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
                     let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
+                    // 场景构建回调，带异常隔离（D1 §11.3）：
+                    // paint() panic → 跳过该组件，用空场景继续
                     let scene = if let Some(ref mut builder) = self.scene_builder {
-                        let layers = builder(frame, logical_w as u32, logical_h as u32);
+                        let layers =
+                            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                builder(frame, logical_w as u32, logical_h as u32)
+                            })) {
+                                Ok(layers) => layers,
+                                Err(e) => {
+                                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                                        *s
+                                    } else if let Some(s) = e.downcast_ref::<String>() {
+                                        s.as_str()
+                                    } else {
+                                        "unknown panic"
+                                    };
+                                    eprintln!("[rgui] 场景构建 panic (frame={frame}): {msg}");
+                                    Vec::new()
+                                },
+                            };
                         build_scene_from_paint_data(&layers, frame, Some(&self.text_renderer))
                     } else {
                         SceneGraph::new(frame)
