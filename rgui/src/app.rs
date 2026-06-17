@@ -321,6 +321,19 @@ impl AppHandler {
         }
     }
 
+    /// 窗口最小化或 surface 不可用时跳过渲染（D3 §12.4）。
+    ///
+    /// 当窗口尺寸为 0（最小化状态）或渲染后端不可用时，
+    /// 应跳过场景构建与 GPU 提交以节省资源，不视为错误。
+    fn should_skip_render(&self) -> bool {
+        self.width == 0
+            || self.height == 0
+            || self
+                .render_ctx
+                .as_ref()
+                .is_none_or(|ctx| !ctx.is_available())
+    }
+
     fn convert_event(&self, event: &WindowEvent) -> Option<Event> {
         match event {
             WindowEvent::CursorMoved { position, .. } => Some(Event::MouseMove {
@@ -536,6 +549,10 @@ impl ApplicationHandler for AppHandler {
             },
 
             WindowEvent::RedrawRequested => {
+                // 窗口最小化或 surface 不可用时跳过渲染（D3 §12.4）
+                if self.should_skip_render() {
+                    return;
+                }
                 let mut device_lost = false;
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
@@ -704,5 +721,40 @@ mod tests {
         let handler = AppHandler::new(app);
         // 初始状态下无 render_ctx，但无论如何不应 panic
         assert!(handler.render_ctx.is_none());
+    }
+
+    // ========================================================================
+    // R22: 窗口最小化跳过渲染测试（D3 §12.4）
+    // ========================================================================
+
+    #[test]
+    fn should_skip_render_when_width_zero() {
+        // 窗口宽度为 0（最小化）→ 跳过渲染
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let mut handler = AppHandler::new(App::new(config));
+        handler.width = 0;
+        handler.height = 100;
+        assert!(handler.should_skip_render());
+    }
+
+    #[test]
+    fn should_skip_render_when_height_zero() {
+        // 窗口高度为 0（最小化）→ 跳过渲染
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let mut handler = AppHandler::new(App::new(config));
+        handler.width = 100;
+        handler.height = 0;
+        assert!(handler.should_skip_render());
+    }
+
+    #[test]
+    fn should_skip_render_when_no_render_ctx() {
+        // 无渲染上下文 → 跳过渲染
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let mut handler = AppHandler::new(App::new(config));
+        handler.width = 800;
+        handler.height = 600;
+        // render_ctx 为 None
+        assert!(handler.should_skip_render());
     }
 }
