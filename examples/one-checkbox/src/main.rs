@@ -34,12 +34,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if !d.load(Ordering::Relaxed) {
                 let prev = c.fetch_xor(true, Ordering::Relaxed);
                 println!(
-                    "  CheckBox 切换: {}",
-                    if prev {
-                        "选中->未选中"
-                    } else {
-                        "未选中->选中"
-                    }
+                    "  CheckBox toggle: {}",
+                    if prev { "checked -> unchecked" } else { "unchecked -> checked" }
                 );
             }
         }
@@ -73,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let s = CheckBoxState {
             checked: c.load(Ordering::Relaxed),
             disabled: d.load(Ordering::Relaxed),
-            label: "同意服务条款".into(),
+            label: "I agree to the terms".into(),
         };
         CheckBox.paint(&s, cb_bounds, &mut cb_ctx);
         layers.push(PaintLayerData::new(
