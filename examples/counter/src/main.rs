@@ -5,7 +5,9 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
-use rgui::{AppMessage, Rect, WidgetId, WidgetView, build_scene_from_view, html};
+use rgui::{
+    AppMessage, Rect, Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
+};
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -63,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let cnt = *count_for_view.lock().unwrap();
 
         // html! 声明式 UI 定义
-        let view: WidgetView<CounterMsg> = html! {
+        let mut view: WidgetView<CounterMsg> = html! {
             <Column>
                 <Label text="rgui 计数器演示" />
                 <Row gap="8.0">
@@ -73,6 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 <Label text={format!("计数: {}", cnt)} />
             </Column>
         };
+
+        // V01: 计算 Taffy 布局（V03 集成后将用于 widget 位置计算）
+        let _layout = compute_view_layout(&mut view, Size::new(w, h));
 
         // 从 WidgetView 树构建 SceneGraph（背景由 RenderParams::clear_color 提供）
         build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None)

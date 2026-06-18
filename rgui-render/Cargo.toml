@@ -12,6 +12,8 @@ categories = ["gui", "rendering"]
 
 [dependencies]
 rgui-core.workspace = true
+rgui-layout.workspace = true
+taffy.workspace = true
 rustc-hash.workspace = true
 log.workspace = true
 thiserror.workspace = true

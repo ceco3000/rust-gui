@@ -10,6 +10,8 @@ use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
 use rgui_core::id::WidgetId;
 
+use rgui_layout::{LayoutEngine, LayoutNode};
+
 use crate::primitives::Transform;
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
 
@@ -321,6 +323,101 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
 }
 
 // ============================================================================
+// WidgetView 树 → Taffy 布局计算
+// ============================================================================
+
+/// 计算 WidgetView 树的 Taffy 布局。
+///
+/// 为树中每个节点分配唯一的 `WidgetId`，为每个节点创建 Taffy layout node，
+/// 并从 `WidgetView.props` 中提取 CSS 布局属性映射到 Taffy `Style`。
+///
+/// 返回的 `LayoutEngine` 中缓存了所有节点的计算后位置和尺寸，
+/// 可通过 `engine.get_layout(widget_id)` 查询。
+///
+/// # 参数
+///
+/// - `view`：可变引用到 WidgetView 树（将被修改：为每个节点设置 `id` 字段）。
+/// - `available`：可用空间尺寸（通常为窗口像素尺寸）。
+///
+/// # 实现说明
+///
+/// - DFS 后序遍历：先处理子节点，再创建父节点（Taffy 要求）。
+/// - 容器组件（Container/Row/Column 等）从 props 中提取完整 CSS 布局属性。
+/// - 叶子组件（Button/Label 等）使用默认 Taffy Style（无特殊布局属性）。
+pub fn compute_view_layout<M: rgui_core::traits::AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    available: rgui_core::geometry::Size,
+) -> LayoutEngine {
+    let mut engine = LayoutEngine::new();
+    let root = build_layout_tree(view, &mut engine);
+    engine.compute_layout(root, available);
+    engine
+}
+
+/// DFS 后序遍历 WidgetView 树，为每个节点创建 Taffy layout node。
+fn build_layout_tree<M: rgui_core::traits::AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    engine: &mut LayoutEngine,
+) -> LayoutNode {
+    // 后序：先递归子节点
+    let child_nodes: Vec<LayoutNode> = view
+        .children
+        .iter_mut()
+        .map(|child| build_layout_tree(child, engine))
+        .collect();
+
+    // 从 props 提取 Taffy Style
+    let style = extract_taffy_style_from_props(&view.props);
+
+    // 分配唯一 WidgetId
+    let widget_id = WidgetId::new();
+    view.id = Some(widget_id);
+
+    // 创建 Taffy 节点
+    engine.create_node(widget_id, style, &child_nodes)
+}
+
+/// 从 `WidgetView.props` 中提取 CSS 布局属性并转换为 Taffy `Style`。
+///
+/// 支持的布局属性：
+/// - `display`、`flex-direction`、`justify-content`、`align-items`（字符串）。
+/// - `width`、`height`、`gap`、`padding`、`margin`（数值）。
+///
+/// 未识别的属性或非布局属性（`label`、`text`、`checked` 等）被忽略。
+fn extract_taffy_style_from_props(
+    props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
+) -> taffy::Style {
+    use rgui_core::view::PropValue;
+
+    let get_str = |key: &str| -> Option<&str> {
+        match props.get(key) {
+            Some(PropValue::Str(s)) => Some(s),
+            _ => None,
+        }
+    };
+
+    let get_f32 = |key: &str| -> Option<f32> {
+        match props.get(key) {
+            Some(PropValue::Float(f)) => Some(f.0 as f32),
+            Some(PropValue::Int(i)) => Some(*i as f32),
+            _ => None,
+        }
+    };
+
+    rgui_layout::mapping::to_taffy_style(
+        get_str("display"),
+        get_f32("width"),
+        get_f32("height"),
+        get_str("flex-direction"),
+        get_str("justify-content"),
+        get_str("align-items"),
+        get_f32("gap"),
+        get_f32("padding"),
+        get_f32("margin"),
+    )
+}
+
+// ============================================================================
 // 测试
 // ============================================================================
 
@@ -328,6 +425,7 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
 mod tests {
     use super::*;
     use rgui_core::Color;
+    use rgui_core::geometry::Size;
 
     // --- PaintOp → DrawCommand ---
 
@@ -521,5 +619,105 @@ mod tests {
         assert!(matches!(cmds[2], DrawCommand::FillRect { .. }));
         assert!(matches!(cmds[3], DrawCommand::PopTransform));
         assert!(matches!(cmds[4], DrawCommand::PopClip));
+    }
+
+    // --- compute_view_layout ---
+
+    /// 测试用消息类型。
+    #[derive(Debug, Clone, PartialEq)]
+    enum TestMsg {
+        Dummy,
+    }
+
+    impl rgui_core::traits::AppMessage for TestMsg {
+        fn message_name(&self) -> &'static str {
+            match self {
+                Self::Dummy => "dummy",
+            }
+        }
+    }
+
+    /// 辅助函数：创建带 widget_type 和子节点的 WidgetView。
+    fn make_view(
+        widget_type: &'static str,
+        children: Vec<rgui_core::view::WidgetView<TestMsg>>,
+    ) -> rgui_core::view::WidgetView<TestMsg> {
+        rgui_core::view::WidgetView::new(widget_type).children(children)
+    }
+
+    /// 辅助函数：创建带 text 属性的 Label WidgetView。
+    fn make_label(text: &str) -> rgui_core::view::WidgetView<TestMsg> {
+        rgui_core::view::WidgetView::new("Label")
+            .prop("text", rgui_core::view::PropValue::str(text))
+    }
+
+    /// 辅助函数：创建带 label 属性的 Button WidgetView。
+    fn make_button(label: &str) -> rgui_core::view::WidgetView<TestMsg> {
+        rgui_core::view::WidgetView::new("Button")
+            .prop("label", rgui_core::view::PropValue::str(label))
+    }
+
+    #[test]
+    fn compute_view_layout_assigns_unique_ids() {
+        let mut view = make_view("Column", vec![make_label("Hello"), make_button("Click")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+
+        // 根节点有 ID
+        assert!(view.id.is_some());
+        let root_id = view.id.unwrap();
+        assert_ne!(root_id, WidgetId::default());
+
+        // 子节点也有 ID，且与根节点不同
+        for child in &view.children {
+            assert!(child.id.is_some());
+            assert_ne!(child.id.unwrap(), root_id);
+        }
+
+        // LayoutEngine 中有布局结果
+        assert!(engine.get_layout(root_id).is_some());
+    }
+
+    #[test]
+    fn compute_view_layout_column_children_spaced() {
+        let mut view = make_view("Column", vec![make_label("Line 1"), make_label("Line 2")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+
+        let root_id = view.id.unwrap();
+        let root_layout = engine.get_layout(root_id).unwrap();
+        // 根 Column 的位置应为原点
+        assert!((root_layout.result.position.x - 0.0).abs() < 1.0);
+        assert!((root_layout.result.position.y - 0.0).abs() < 1.0);
+        // 子节点也被布局（有结果）
+        for child in &view.children {
+            assert!(engine.get_layout(child.id.unwrap()).is_some());
+        }
+    }
+
+    #[test]
+    fn compute_view_layout_reassigns_ids_on_each_call() {
+        let mut view1 = make_view("Row", vec![make_button("A")]);
+        let mut view2 = make_view("Row", vec![make_button("B")]);
+
+        let _e1 = compute_view_layout(&mut view1, Size::new(200.0, 100.0));
+        let _e2 = compute_view_layout(&mut view2, Size::new(200.0, 100.0));
+
+        // 不同调用分配不同 ID
+        assert_ne!(view1.id, view2.id);
+        assert_ne!(view1.children[0].id, view2.children[0].id);
+    }
+
+    #[test]
+    fn compute_view_layout_empty_view() {
+        let mut view = make_view("Container", vec![]);
+
+        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0));
+
+        assert!(view.id.is_some());
+        let layout = engine.get_layout(view.id.unwrap()).unwrap();
+        // 空容器返回有效的布局结果（位置在原点）
+        assert!(layout.result.position.x >= 0.0);
+        assert!(layout.result.position.y >= 0.0);
     }
 }
