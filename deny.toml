@@ -1,0 +1,63 @@
+# cargo-deny license and security audit configuration
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Exclude verification crates from checks (internal tools, not for publishing)
+exclude = [
+    "baseline-restart",
+    "verify-v5-diff-bench",
+    "verify-v7-snapshot-bench",
+    "verify-v2-cjk-text",
+    "verify-v6-taffy-layout",
+    "verify-v10-ime",
+]
+
+[output]
+feature-depth = 1
+
+[advisories]
+# RUSTSEC-2023-0089: atomic-polyfill is unmaintained
+# Transitive dependency via heapless -> postcard (used by rgui-state, rgui-devtools)
+# No maintained fork available; the crate is feature-complete for our use case
+ignore = [
+    "RUSTSEC-2023-0089",
+    # RUSTSEC-2024-0384: instant is unmaintained
+    # Transitive dependency via notify-types -> notify (used by rgui-devtools)
+    # The author recommends web-time as replacement, but notify crate has not migrated yet
+    "RUSTSEC-2024-0384",
+]
+
+[licenses]
+# Allow commonly-used permissive open-source licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "MPL-2.0",
+    "Unlicense",
+    "CC0-1.0",
+    "Unicode-3.0",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# Ignore license checks for private (unpublished) workspace crates
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
