@@ -396,7 +396,7 @@ fn build_layout_tree<M: rgui_core::traits::AppMessage>(
         .collect();
 
     // 从 props 提取 Taffy Style
-    let style = extract_taffy_style_from_props(&view.props);
+    let style = extract_taffy_style(view.widget_type, &view.props);
 
     // 分配唯一 WidgetId
     let widget_id = WidgetId::new();
@@ -408,15 +408,22 @@ fn build_layout_tree<M: rgui_core::traits::AppMessage>(
 
 /// 从 `WidgetView.props` 中提取 CSS 布局属性并转换为 Taffy `Style`。
 ///
+/// 首先根据 `widget_type` 注入默认布局样式（如 Center→flex+center、Column→flex+column），
+/// 然后用 `props` 中的显式属性覆盖默认值。
+///
 /// 支持的布局属性：
 /// - `display`、`flex-direction`、`justify-content`、`align-items`（字符串）。
 /// - `width`、`height`、`gap`、`padding`、`margin`（数值）。
 ///
 /// 未识别的属性或非布局属性（`label`、`text`、`checked` 等）被忽略。
-fn extract_taffy_style_from_props(
+fn extract_taffy_style(
+    widget_type: &str,
     props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
 ) -> taffy::Style {
     use rgui_core::view::PropValue;
+
+    // 第一步：根据 widget 类型注入默认布局样式
+    let mut style = default_layout_for_type(widget_type);
 
     let get_str = |key: &str| -> Option<&str> {
         match props.get(key) {
@@ -433,17 +440,152 @@ fn extract_taffy_style_from_props(
         }
     };
 
-    rgui_layout::mapping::to_taffy_style(
-        get_str("display"),
-        get_f32("width"),
-        get_f32("height"),
-        get_str("flex-direction"),
-        get_str("justify-content"),
-        get_str("align-items"),
-        get_f32("gap"),
-        get_f32("padding"),
-        get_f32("margin"),
-    )
+    // 第二步：用 props 中的显式属性覆盖默认值
+    if let Some(d) = get_str("display") {
+        style.display = rgui_layout::mapping::to_taffy_display(d);
+    }
+    if let Some(w) = get_f32("width") {
+        style.size.width = taffy::Dimension::Length(w);
+    }
+    if let Some(h) = get_f32("height") {
+        style.size.height = taffy::Dimension::Length(h);
+    }
+    if let Some(fd) = get_str("flex-direction") {
+        style.flex_direction = rgui_layout::mapping::to_taffy_flex_direction(fd);
+    }
+    if let Some(jc) = get_str("justify-content") {
+        style.justify_content = Some(rgui_layout::mapping::to_taffy_justify_content(jc));
+    }
+    if let Some(ai) = get_str("align-items") {
+        style.align_items = Some(rgui_layout::mapping::to_taffy_align_items(ai));
+    }
+    if let Some(g) = get_f32("gap") {
+        let length = taffy::LengthPercentage::Length(g);
+        style.gap = taffy::geometry::Size {
+            width: length,
+            height: length,
+        };
+    }
+    if let Some(p) = get_f32("padding") {
+        let lp = taffy::LengthPercentage::Length(p);
+        style.padding = taffy::geometry::Rect {
+            left: lp,
+            right: lp,
+            top: lp,
+            bottom: lp,
+        };
+    }
+    if let Some(m) = get_f32("margin") {
+        let lpa = taffy::LengthPercentageAuto::Length(m);
+        style.margin = taffy::geometry::Rect {
+            left: lpa,
+            right: lpa,
+            top: lpa,
+            bottom: lpa,
+        };
+    }
+
+    style
+}
+
+/// 为已知 widget 类型提供默认 Taffy 布局样式。
+///
+/// 这些默认值确保无显式布局属性的 widget（如 `html!` 宏生成的 `<Center><Button/></Center>`）
+/// 仍能正确参与布局计算，而非退化为 0×0 的 Block+Auto 节点。
+///
+/// # 默认规则
+///
+/// | Widget 类型 | 默认布局样式 |
+/// |-------------|-------------|
+/// | `Center` | display: Flex, justify-content: Center, align-items: Center, 100%×100% |
+/// | `Column` | display: Flex, flex-direction: Column, 100%×auto |
+/// | `Row` | display: Flex, flex-direction: Row, 100%×auto |
+/// | `Container`/`Card` | display: Flex, 100%×auto |
+/// | `Padding` | display: Flex, 100%×auto, padding: 16px |
+/// | `SizedBox` | 无默认（需 props 提供 width/height） |
+/// | `Expanded` | flex-grow: 1 |
+/// | `ScrollView` | display: Flex, 100%×100% |
+/// | `Button` | min-height: 40px, min-width: 80px |
+/// | `Label` | 无默认（自动适应内容） |
+/// | 其他叶子组件 | min-height: 40px |
+fn default_layout_for_type(widget_type: &str) -> taffy::Style {
+    use taffy::prelude::*;
+
+    let full_size = taffy::geometry::Size {
+        width: Dimension::Percent(1.0),
+        height: Dimension::Percent(1.0),
+    };
+    let full_width_auto_height = taffy::geometry::Size {
+        width: Dimension::Percent(1.0),
+        height: Dimension::Auto,
+    };
+    let button_min_size = taffy::geometry::Size {
+        width: Dimension::Length(80.0),
+        height: Dimension::Length(40.0),
+    };
+
+    match widget_type {
+        // ── 布局容器 ──
+        "Center" => Style {
+            display: Display::Flex,
+            justify_content: Some(JustifyContent::Center),
+            align_items: Some(AlignItems::Center),
+            size: full_size,
+            ..Style::default()
+        },
+        "Column" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        "Row" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Row,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        "Container" | "Card" | "Stack" => Style {
+            display: Display::Flex,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        "Padding" => Style {
+            display: Display::Flex,
+            size: full_width_auto_height,
+            padding: taffy::geometry::Rect {
+                left: LengthPercentage::Length(16.0),
+                right: LengthPercentage::Length(16.0),
+                top: LengthPercentage::Length(16.0),
+                bottom: LengthPercentage::Length(16.0),
+            },
+            ..Style::default()
+        },
+        "Expanded" => Style {
+            flex_grow: 1.0,
+            ..Style::default()
+        },
+        "ScrollView" => Style {
+            display: Display::Flex,
+            size: full_size,
+            ..Style::default()
+        },
+        // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
+        "Button" => Style {
+            size: button_min_size,
+            ..Style::default()
+        },
+        "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
+        | "DataGrid" | "Image" | "ListView" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(80.0),
+                height: Dimension::Length(40.0),
+            },
+            ..Style::default()
+        },
+        // Label、Divider、SizedBox 等——无默认，由内容或 props 决定
+        _ => Style::default(),
+    }
 }
 
 // ============================================================================
@@ -815,10 +957,17 @@ mod tests {
                     cached.result.size.width,
                     cached.result.size.height,
                 );
-                // 在 rec 中找到对应 widget 的 bounds
-                let actual = rec
-                    .iter()
-                    .find(|(name, _)| name.starts_with(view.widget_type));
+                // 用 widget_type + prop 值精确匹配（同类型多 widget 时避免误匹配）
+                let type_key = format!(
+                    "{}:{}",
+                    view.widget_type,
+                    view.props
+                        .get("text")
+                        .or(view.props.get("label"))
+                        .map(|v| format!("{v:?}"))
+                        .unwrap_or_default()
+                );
+                let actual = rec.iter().find(|(name, _)| name.starts_with(&type_key));
                 if let Some((_name, actual_bounds)) = actual {
                     assert!(
                         (actual_bounds.origin.x - expected.origin.x).abs() < 1.0,
@@ -896,5 +1045,122 @@ mod tests {
         }
 
         check_layer_bounds(&view, &engine, &scene);
+    }
+
+    // --- 默认布局样式测试 (V03 bugfix: html! 无显式 props 的 widget 不退化为 0×0) ---
+
+    #[test]
+    fn default_layout_center_without_props_is_flex_center() {
+        // Center 无显式 props 时应有 Flex+Center 默认样式
+        let style = default_layout_for_type("Center");
+        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.justify_content, Some(taffy::JustifyContent::Center));
+        assert_eq!(style.align_items, Some(taffy::AlignItems::Center));
+        // Center 默认 100%×100% 填充父容器
+        assert_eq!(style.size.width, taffy::Dimension::Percent(1.0));
+        assert_eq!(style.size.height, taffy::Dimension::Percent(1.0));
+    }
+
+    #[test]
+    fn default_layout_button_has_minimum_size() {
+        let style = default_layout_for_type("Button");
+        // Button 默认有最小尺寸 80×40
+        assert_eq!(style.size.width, taffy::Dimension::Length(80.0));
+        assert_eq!(style.size.height, taffy::Dimension::Length(40.0));
+    }
+
+    #[test]
+    fn default_layout_column_is_flex_column() {
+        let style = default_layout_for_type("Column");
+        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.flex_direction, taffy::FlexDirection::Column);
+    }
+
+    #[test]
+    fn default_layout_row_is_flex_row() {
+        let style = default_layout_for_type("Row");
+        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.flex_direction, taffy::FlexDirection::Row);
+    }
+
+    #[test]
+    fn default_layout_unknown_type_returns_default() {
+        // 未知 widget 类型回退到 Taffy 默认 Style（Flex + Auto）
+        let style = default_layout_for_type("UnknownWidget");
+        assert_eq!(style.display, taffy::Display::Flex);
+        assert_eq!(style.size.width, taffy::Dimension::Auto);
+    }
+
+    #[test]
+    fn center_with_button_layout_produces_nonzero_bounds() {
+        // 回归测试：Center+Button（均无显式 props）不应退化为 0×0
+        let mut view = make_view("Center", vec![make_button("OK")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(300.0, 200.0));
+
+        // Center 应填充全窗口
+        let center_id = view.id.unwrap();
+        let center_layout = engine.get_layout(center_id).unwrap();
+        assert!(
+            center_layout.result.size.width > 10.0,
+            "Center width should be >10, got {}",
+            center_layout.result.size.width
+        );
+        assert!(
+            center_layout.result.size.height > 10.0,
+            "Center height should be >10, got {}",
+            center_layout.result.size.height
+        );
+
+        // Button 应有非零尺寸（至少接近 80×40 的默认值）
+        let button_id = view.children[0].id.unwrap();
+        let button_layout = engine.get_layout(button_id).unwrap();
+        assert!(
+            button_layout.result.size.width > 10.0,
+            "Button width should be >10, got {}",
+            button_layout.result.size.width
+        );
+        assert!(
+            button_layout.result.size.height > 10.0,
+            "Button height should be >10, got {}",
+            button_layout.result.size.height
+        );
+
+        // Button 应被居中放置在 Center 内
+        // Center 300×200, Button ~80×40 → x ≈ (300-80)/2 = 110
+        let expected_x = (300.0 - button_layout.result.size.width) / 2.0;
+        assert!(
+            (button_layout.result.position.x - expected_x).abs() < 5.0,
+            "Button x should be centered: expected ~{expected_x}, got {}",
+            button_layout.result.position.x
+        );
+    }
+
+    #[test]
+    fn props_override_default_layout() {
+        // 验证显式 props 覆盖默认布局样式
+        let mut view = make_view("Center", vec![make_button("OK")])
+            .prop(
+                "display",
+                rgui_core::view::PropValue::Str(std::sync::Arc::from("block")),
+            )
+            .prop("width", rgui_core::view::PropValue::from(200.0_f64))
+            .prop("height", rgui_core::view::PropValue::from(100.0_f64));
+
+        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0));
+
+        let center_id = view.id.unwrap();
+        let center_layout = engine.get_layout(center_id).unwrap();
+        // 显式尺寸覆盖了默认的 100%
+        assert!(
+            (center_layout.result.size.width - 200.0).abs() < 1.0,
+            "width should be 200, got {}",
+            center_layout.result.size.width
+        );
+        assert!(
+            (center_layout.result.size.height - 100.0).abs() < 1.0,
+            "height should be 100, got {}",
+            center_layout.result.size.height
+        );
     }
 }
