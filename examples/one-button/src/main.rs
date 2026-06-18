@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Button clicked: {action}");
     });
 
-    let paint_fn = default_paint_fn();
+    let paint_fn = default_paint_fn::<Msg>();
     app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;

@@ -278,7 +278,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- View-scene builder with html! declarative syntax + manual paint layers ---
 
     let scene_state = Arc::clone(&state);
-    let paint_fn = default_paint_fn();
+    let paint_fn = default_paint_fn::<CrudMsg>();
     app.set_view_scene_builder(move |_frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;

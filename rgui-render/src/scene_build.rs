@@ -258,8 +258,13 @@ pub fn build_single_layer_scene(
 
 /// 遍历 WidgetView 树的回调：为每个 widget 提供 paint 函数。
 ///
-/// 回调接收 widget 类型名、WidgetId、bounds，应返回该 widget 的 PaintOp 列表。
-pub type PaintFn = Box<dyn Fn(&str, WidgetId, Rect) -> Vec<PaintOp> + Send + Sync>;
+/// 回调接收 `&WidgetView<M>`（含 props、widget_type 等完整信息）和 widget 的 bounds，
+/// 应返回该 widget 的 PaintOp 列表。
+///
+/// 从 `WidgetView.props` 中可提取 `label`、`text`、`checked`、`value` 等属性
+/// 构造实际 `WidgetState`，供组件 `paint()` 方法使用。
+pub type PaintFn<M> =
+    Box<dyn Fn(&rgui_core::view::WidgetView<M>, Rect) -> Vec<PaintOp> + Send + Sync>;
 
 /// 从 WidgetView 树构建 SceneGraph。
 ///
@@ -276,7 +281,7 @@ pub type PaintFn = Box<dyn Fn(&str, WidgetId, Rect) -> Vec<PaintOp> + Send + Syn
 pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
     root: &rgui_core::view::WidgetView<M>,
     root_bounds: Rect,
-    paint_fn: &PaintFn,
+    paint_fn: &PaintFn<M>,
     version: u64,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) -> SceneGraph {
@@ -299,14 +304,14 @@ pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
 fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     view: &rgui_core::view::WidgetView<M>,
     bounds: Rect,
-    paint_fn: &PaintFn,
+    paint_fn: &PaintFn<M>,
     builder: &mut SceneGraphBuilder,
     z_index: &mut i32,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) {
     let widget_id = view.id.unwrap_or_default();
 
-    let ops = paint_fn(view.widget_type, widget_id, bounds);
+    let ops = paint_fn(view, bounds);
 
     let mut commands = Vec::with_capacity(ops.len());
     for op in &ops {
