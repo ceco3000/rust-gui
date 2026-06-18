@@ -240,6 +240,11 @@ pub enum PaintOp {
         /// 字体逻辑大小（像素单位，未乘 DPI 缩放因子）。
         font_size: f32,
     },
+    /// 绘制图像。
+    DrawImage {
+        /// 目标矩形区域。
+        rect: Rect,
+    },
 }
 
 // ============================================================================
@@ -296,6 +301,13 @@ impl PaintContext {
             color,
             font_size,
         });
+    }
+
+    /// 提交图像绘制操作。
+    ///
+    /// `rect` 定义了图像的目标矩形区域（已应用 fit 模式后的最终位置和尺寸）。
+    pub fn draw_image(&mut self, rect: Rect) {
+        self.operations.push(PaintOp::DrawImage { rect });
     }
 
     /// 返回已收集的绘制操作（只读）。

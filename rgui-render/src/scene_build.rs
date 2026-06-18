@@ -108,6 +108,16 @@ fn paint_op_to_draw_command_inner(
                 }
             }
         },
+        PaintOp::DrawImage { rect } => {
+            // 阶段 0：DrawImage 占位——VelloBackend 以洋红色半透明矩形渲染
+            // 未来阶段：通过纹理注册机制使用实际 RGBA 像素数据
+            DrawCommand::DrawImage {
+                texture_id: crate::texture::TextureId(0),
+                src: Rect::ZERO,
+                dst: rect,
+                blend_mode: crate::primitives::BlendMode::SrcOver,
+            }
+        },
     }
 }
 
