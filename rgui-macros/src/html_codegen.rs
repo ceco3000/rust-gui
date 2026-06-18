@@ -9,6 +9,94 @@ use crate::html_parser::{HtmlAttribute, HtmlChild, HtmlElement, HtmlValue};
 use proc_macro2::TokenStream;
 use quote::quote;
 
+/// 已知的组件类型名（由 rgui-components 提供）。
+///
+/// 用于在编译期验证 `html!` 宏中的标签名，并提供拼写建议。
+const KNOWN_WIDGET_TYPES: &[&str] = &[
+    // 基础组件
+    "Button",
+    "Label",
+    "TextField",
+    "CheckBox",
+    "Switch",
+    "RadioButton",
+    "Slider",
+    "ProgressBar",
+    "DataGrid",
+    // 容器与布局组件
+    "Container",
+    "Row",
+    "Column",
+    "Padding",
+    "Center",
+    "Expanded",
+    "SizedBox",
+    "Card",
+    "Divider",
+    "Image",
+    "ScrollView",
+    "Stack",
+    "ListView",
+    // 隐式组件
+    "Text",
+];
+
+/// 计算两个字符串之间的编辑距离（Levenshtein 距离）。
+///
+/// 用于在未知标签名时提供拼写建议。
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let n = a_chars.len();
+    let m = b_chars.len();
+
+    if n == 0 {
+        return m;
+    }
+    if m == 0 {
+        return n;
+    }
+
+    let mut dp = vec![vec![0usize; m + 1]; n + 1];
+    for (i, row) in dp.iter_mut().enumerate().take(n + 1) {
+        row[0] = i;
+    }
+    for (j, item) in dp[0].iter_mut().enumerate().take(m + 1) {
+        *item = j;
+    }
+
+    for i in 1..=n {
+        for j in 1..=m {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            dp[i][j] = (dp[i - 1][j] + 1) // 删除
+                .min(dp[i][j - 1] + 1) // 插入
+                .min(dp[i - 1][j - 1] + cost); // 替换/相同
+        }
+    }
+    dp[n][m]
+}
+
+/// 在已知组件类型列表中查找最佳匹配。
+///
+/// 返回编辑距离最小（≤3）且与输入不同的类型名。
+fn find_best_match(input: &str) -> Option<&'static str> {
+    let input_lower = input.to_lowercase();
+    KNOWN_WIDGET_TYPES
+        .iter()
+        .filter(|t| !t.eq_ignore_ascii_case(input))
+        .map(|t| {
+            let distance = edit_distance(&input_lower, &t.to_lowercase());
+            (t, distance)
+        })
+        .filter(|(_, d)| *d <= 3)
+        .min_by_key(|(_, d)| *d)
+        .map(|(t, _)| *t)
+}
+
 /// 事件名称 → message_name 映射表（D1 §13.5、D5 §13.3）。
 ///
 /// 编译期硬编码，零运行时开销。
@@ -61,6 +149,25 @@ pub(crate) fn generate_widget_views(elements: &[HtmlElement]) -> TokenStream {
 /// 生成单个元素的 WidgetView 代码。
 fn generate_element(el: &HtmlElement) -> TokenStream {
     let widget_type = &el.tag_name;
+
+    // 验证标签名：未知类型产生编译错误，并提供拼写建议
+    if !KNOWN_WIDGET_TYPES.contains(&widget_type.as_str()) {
+        let suggestion = find_best_match(widget_type);
+        let error_msg = if let Some(best) = suggestion {
+            format!(
+                "unknown widget type '{}', did you mean '{}'?",
+                widget_type, best
+            )
+        } else {
+            format!(
+                "unknown widget type '{}'. Available types: {:?}",
+                widget_type, KNOWN_WIDGET_TYPES
+            )
+        };
+        return quote! {
+            compile_error!(#error_msg);
+        };
+    }
 
     // 分离普通属性和事件绑定
     let prop_setters: Vec<_> = el
@@ -399,5 +506,63 @@ mod tests {
         assert!(!is_event_binding("label"));
         assert!(!is_event_binding("disabled"));
         assert!(!is_event_binding("on")); // no colon
+    }
+
+    // --- H07: 编辑距离 & 拼写建议 ---
+
+    #[test]
+    fn h07_edit_distance_identical() {
+        assert_eq!(edit_distance("Button", "Button"), 0);
+    }
+
+    #[test]
+    fn h07_edit_distance_one_char() {
+        assert_eq!(edit_distance("Buton", "Button"), 1); // 缺少一个 t
+    }
+
+    #[test]
+    fn h07_edit_distance_two_char() {
+        assert_eq!(edit_distance("Buttn", "Button"), 1); // 缺少 'o'
+    }
+
+    #[test]
+    fn h07_edit_distance_case_insensitive_usage() {
+        // find_best_match 内部用 lowercase 比较，但 edit_distance 本身区分大小写
+        assert!(edit_distance("button", "Button") > 0);
+    }
+
+    #[test]
+    fn h07_edit_distance_empty() {
+        assert_eq!(edit_distance("", "Button"), 6);
+        assert_eq!(edit_distance("Button", ""), 6);
+    }
+
+    #[test]
+    fn h07_find_best_match_misspelled() {
+        assert_eq!(find_best_match("Buton"), Some("Button"));
+    }
+
+    #[test]
+    fn h07_find_best_match_case_insensitive() {
+        assert_eq!(find_best_match("buton"), Some("Button"));
+    }
+
+    #[test]
+    fn h07_find_best_match_exact() {
+        // 精确匹配应返回 None（不相同）
+        assert_eq!(find_best_match("Button"), None);
+    }
+
+    #[test]
+    fn h07_find_best_match_too_different() {
+        // 编辑距离 > 3 应返回 None
+        assert_eq!(find_best_match("xyzzy"), None);
+    }
+
+    #[test]
+    fn h07_find_best_match_close_match() {
+        assert_eq!(find_best_match("Lable"), Some("Label"));
+        assert_eq!(find_best_match("Colum"), Some("Column"));
+        assert_eq!(find_best_match("ChecBox"), Some("CheckBox"));
     }
 }

@@ -57,6 +57,8 @@ pub(crate) fn parse_html(input: TokenStream) -> Result<Vec<HtmlElement>, syn::Er
 struct HtmlParser {
     tokens: Vec<TokenTree>,
     pos: usize,
+    /// 最近成功解析的 token 的位置（用于到达 EOF 时提供更准确的错误位置）
+    last_span: Span,
 }
 
 impl HtmlParser {
@@ -64,6 +66,7 @@ impl HtmlParser {
         Self {
             tokens: input.into_iter().collect(),
             pos: 0,
+            last_span: Span::call_site(),
         }
     }
 
@@ -72,6 +75,9 @@ impl HtmlParser {
     }
 
     fn advance(&mut self) {
+        if let Some(tt) = self.tokens.get(self.pos) {
+            self.last_span = tt.span();
+        }
         if self.pos < self.tokens.len() {
             self.pos += 1;
         }
@@ -88,7 +94,7 @@ impl HtmlParser {
                 format!("期望 `{c}`，但找到 `{other}`"),
             )),
             None => Err(syn::Error::new(
-                Span::call_site(),
+                self.last_span,
                 format!("期望 `{c}`，但到达输入末尾"),
             )),
         }
@@ -106,7 +112,7 @@ impl HtmlParser {
                 format!("期望标识符，但找到 `{other}`"),
             )),
             None => Err(syn::Error::new(
-                Span::call_site(),
+                self.last_span,
                 "期望标识符，但到达输入末尾",
             )),
         }
@@ -130,7 +136,7 @@ impl HtmlParser {
                 format!("期望字符串字面量，但找到 `{other}`"),
             )),
             None => Err(syn::Error::new(
-                Span::call_site(),
+                self.last_span,
                 "期望字符串字面量，但到达输入末尾",
             )),
         }
@@ -148,7 +154,7 @@ impl HtmlParser {
                 format!("期望 `{{ }}` 表达式，但找到 `{other}`"),
             )),
             None => Err(syn::Error::new(
-                Span::call_site(),
+                self.last_span,
                 "期望 `{ }` 表达式，但到达输入末尾",
             )),
         }
@@ -191,15 +197,16 @@ impl HtmlParser {
         // `<`
         self.expect_punct('<')?;
 
-        // 标签名
+        // 标签名（保留 span 用于错误报告）
         let tag_name = self.expect_ident()?;
+        let tag_span = self.last_span; // 记录标签名的 span
 
         // 属性列表
         let mut attributes = Vec::new();
         loop {
             if self.pos >= self.tokens.len() {
                 return Err(syn::Error::new(
-                    Span::call_site(),
+                    tag_span,
                     format!("未闭合的 `<{tag_name}>` 标签"),
                 ));
             }
@@ -228,8 +235,8 @@ impl HtmlParser {
             attributes.push(self.parse_attribute()?);
         }
 
-        // 解析子节点
-        let children = self.parse_children(&tag_name)?;
+        // 解析子节点（传递标签名 span 用于更好的错误消息）
+        let children = self.parse_children(&tag_name, tag_span)?;
 
         Ok(HtmlElement {
             tag_name,
@@ -287,13 +294,17 @@ impl HtmlParser {
         }
     }
 
-    fn parse_children(&mut self, parent_tag: &str) -> Result<Vec<HtmlChild>, syn::Error> {
+    fn parse_children(
+        &mut self,
+        parent_tag: &str,
+        parent_span: Span,
+    ) -> Result<Vec<HtmlChild>, syn::Error> {
         let mut children = Vec::new();
 
         loop {
             if self.pos >= self.tokens.len() {
                 return Err(syn::Error::new(
-                    Span::call_site(),
+                    parent_span,
                     format!("未闭合的 `<{parent_tag}>` 标签，缺少 `</{parent_tag}>`"),
                 ));
             }
@@ -311,12 +322,14 @@ impl HtmlParser {
                         // 解析闭合标签
                         self.advance(); // `<`
                         self.advance(); // `/`
+                        let _close_span = self.last_span; // `/` 的 span
                         let close_tag = self.expect_ident()?;
+                        let close_tag_span = self.last_span; // 闭合标签名的 span
                         self.expect_punct('>')?;
 
                         if close_tag != parent_tag {
                             return Err(syn::Error::new(
-                                Span::call_site(),
+                                close_tag_span,
                                 format!(
                                     "闭合标签不匹配：期望 `</{parent_tag}>`，但找到 `</{close_tag}>`"
                                 ),
@@ -556,6 +569,15 @@ mod tests {
             err.contains("闭合标签不匹配"),
             "期望闭合标签不匹配错误，实际: {err}"
         );
+    }
+
+    #[test]
+    fn parse_unclosed_tag_error() {
+        let tokens = quote! { <Column> };
+        let result = parse_html(tokens);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("未闭合"), "期望未闭合标签错误，实际: {err}");
     }
 
     #[test]
