@@ -10,6 +10,12 @@ repository.workspace = true
 keywords = ["gui", "devtools", "hot-reload"]
 categories = ["gui", "development-tools"]
 
+[features]
+default = ["notify", "serde_json"]
+notify = ["dep:notify"]
+serde_json = ["dep:serde_json"]
+html-hot-reload = ["dep:quick-xml"]
+
 [dependencies]
 rgui-core.workspace = true
 rgui-state.workspace = true
@@ -18,13 +24,10 @@ serde.workspace = true
 serde_json = { workspace = true, optional = true }
 postcard.workspace = true
 notify = { workspace = true, optional = true }
+quick-xml = { version = "0.36", optional = true }
+ordered-float.workspace = true
 log.workspace = true
 thiserror.workspace = true
-
-[features]
-default = ["notify", "serde_json"]
-notify = ["dep:notify"]
-serde_json = ["dep:serde_json"]
 
 [dev-dependencies]
 tempfile = "3"

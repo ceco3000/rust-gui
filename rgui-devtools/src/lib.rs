@@ -50,6 +50,8 @@
 pub mod config;
 pub mod error;
 pub mod fast_restart;
+#[cfg(feature = "html-hot-reload")]
+pub mod html_reload;
 pub mod ipc;
 #[cfg(feature = "notify")]
 pub mod watcher;
