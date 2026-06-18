@@ -3063,6 +3063,7 @@ dependencies = [
 name = "rgui-macros"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "proc-macro2",
  "quote",
  "rgui-core",
