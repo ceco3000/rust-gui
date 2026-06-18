@@ -2301,6 +2301,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-checkbox"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
 name = "one-label"
 version = "0.1.0"
 dependencies = [
@@ -2316,6 +2323,13 @@ dependencies = [
 
 [[package]]
 name = "one-radio-button"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
+name = "one-switch"
 version = "0.1.0"
 dependencies = [
  "rgui",
