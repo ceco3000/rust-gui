@@ -3,6 +3,7 @@
 
 pub mod button;
 pub mod check_box;
+pub mod column;
 pub mod container;
 pub mod data_grid;
 pub mod label;
@@ -15,6 +16,7 @@ pub mod text_field;
 
 pub use button::{Button, ButtonMessage, ButtonState};
 pub use check_box::{CheckBox, CheckBoxMessage, CheckBoxState};
+pub use column::{Column, ColumnMessage, ColumnState};
 pub use container::{Container, ContainerMessage, ContainerState};
 pub use data_grid::{ColumnDef, DataGrid, DataGridMessage, DataGridState};
 pub use label::{Label, LabelMessage, LabelState};
