@@ -14,7 +14,7 @@ use rgui::paint_factory::default_paint_fn;
 use rgui::prelude::*;
 use rgui::{
     AppMessage, Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData, Rect,
-    WidgetId, WidgetView, build_scene_from_view, html,
+    Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
 };
 use std::sync::{Arc, Mutex};
 
@@ -285,7 +285,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let guard = scene_state.lock().unwrap();
 
         // html! declarative UI definition (demonstrates the syntax)
-        let _view: WidgetView<CrudMsg> = html! {
+        let mut _view: WidgetView<CrudMsg> = html! {
             <Column>
                 <Label text="Contact Manager" />
                 <Row>
@@ -442,9 +442,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Also include the html! view's scene on top (demonstrates integration)
         let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, None);
-        // Add structural view from html! (containers add no paint ops, so this is structural only)
-        let view_scene =
-            build_scene_from_view(&_view, Rect::new(0.0, 0.0, w, h), &paint_fn, _frame, None);
+        // Compute layout for html! view and integrate with manual layers
+        let layout = compute_view_layout(&mut _view, Size::new(w, h));
+        let view_scene = build_scene_from_view(&_view, &layout, &paint_fn, _frame, None);
         scene.layers.extend(view_scene.layers);
         scene
     });

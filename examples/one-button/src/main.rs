@@ -4,7 +4,9 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
-use rgui::{AppMessage, Rect, WidgetId, WidgetView, build_scene_from_view, html};
+use rgui::{
+    AppMessage, Rect, Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
+};
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 enum Msg {
@@ -35,14 +37,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // html! declarative UI definition
-        let view: WidgetView<Msg> = html! {
+        let mut view: WidgetView<Msg> = html! {
             <Center>
                 <Button id="1" label="OK" on:click={Msg::Clicked} />
             </Center>
         };
 
-        // Build SceneGraph from WidgetView tree（背景由 RenderParams::clear_color 提供）
-        build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None)
+        // Compute Taffy layout and build SceneGraph from WidgetView tree
+        let layout = compute_view_layout(&mut view, Size::new(w, h));
+        build_scene_from_view(&view, &layout, &paint_fn, frame, None)
     });
 
     println!("=== rgui Single Button (html! 声明式渲染) ===\n");

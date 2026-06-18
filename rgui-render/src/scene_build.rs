@@ -266,21 +266,22 @@ pub fn build_single_layer_scene(
 pub type PaintFn<M> =
     Box<dyn Fn(&rgui_core::view::WidgetView<M>, Rect) -> Vec<PaintOp> + Send + Sync>;
 
-/// 从 WidgetView 树构建 SceneGraph。
+/// 从 WidgetView 树构建 SceneGraph（集成布局引擎）。
 ///
-/// 深度优先遍历 WidgetView 树，对每个节点调用 `paint_fn` 获取绘制操作，
+/// 深度优先遍历 WidgetView 树，通过 `layout_engine` 查询每个 widget
+/// 的 Taffy 计算后位置和尺寸作为 bounds，调用 `paint_fn` 获取绘制操作，
 /// 组装为图层并构建 SceneGraph。
 ///
 /// # 参数
 ///
 /// - `root`: 根 WidgetView（通常由 `html!` 宏生成）。
-/// - `root_bounds`: 根 widget 的窗口边界矩形（通常为窗口尺寸）。
+/// - `layout_engine`: 布局引擎（需先通过 `compute_view_layout()` 计算布局）。
 /// - `paint_fn`: 为每个 widget 生成 PaintOp 的回调。
 /// - `version`: 场景图版本号。
 /// - `text_renderer`: 可选的文本渲染器。
 pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
     root: &rgui_core::view::WidgetView<M>,
-    root_bounds: Rect,
+    layout_engine: &LayoutEngine,
     paint_fn: &PaintFn<M>,
     version: u64,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
@@ -290,7 +291,7 @@ pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
 
     walk_view_tree(
         root,
-        root_bounds,
+        layout_engine,
         paint_fn,
         &mut builder,
         &mut z_index,
@@ -301,15 +302,31 @@ pub fn build_scene_from_view<M: rgui_core::traits::AppMessage>(
 }
 
 /// 深度优先遍历 WidgetView 树，收集绘制操作并构建图层。
+///
+/// 通过 `layout_engine` 查询每个 widget 的 Taffy 计算后位置和尺寸，
+/// 而非使用统一的 root_bounds。递归子节点时传递同一 `layout_engine` 引用。
 fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     view: &rgui_core::view::WidgetView<M>,
-    bounds: Rect,
+    layout_engine: &LayoutEngine,
     paint_fn: &PaintFn<M>,
     builder: &mut SceneGraphBuilder,
     z_index: &mut i32,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) {
     let widget_id = view.id.unwrap_or_default();
+
+    // 从布局引擎查询该 widget 的计算后 bounds
+    let bounds = layout_engine
+        .get_layout(widget_id)
+        .map(|cached| {
+            Rect::new(
+                cached.result.position.x,
+                cached.result.position.y,
+                cached.result.size.width,
+                cached.result.size.height,
+            )
+        })
+        .unwrap_or(Rect::ZERO);
 
     let ops = paint_fn(view, bounds);
 
@@ -321,9 +338,16 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     builder.build_layer(widget_id, *z_index, bounds, commands, true);
     *z_index += 1;
 
-    // 递归处理子节点——子节点 bounds 继承父节点 bounds
+    // 递归处理子节点——传递同一 layout_engine 引用
     for child in &view.children {
-        walk_view_tree(child, bounds, paint_fn, builder, z_index, text_renderer);
+        walk_view_tree(
+            child,
+            layout_engine,
+            paint_fn,
+            builder,
+            z_index,
+            text_renderer,
+        );
     }
 }
 
@@ -724,5 +748,153 @@ mod tests {
         // 空容器返回有效的布局结果（位置在原点）
         assert!(layout.result.position.x >= 0.0);
         assert!(layout.result.position.y >= 0.0);
+    }
+
+    // --- build_scene_from_view + layout engine (V03) ---
+
+    /// 简单的 paint_fn：返回空 Vec（仅测试 bounds 传递）。
+    fn make_empty_paint_fn() -> PaintFn<TestMsg> {
+        Box::new(|_view: &rgui_core::view::WidgetView<TestMsg>, _bounds: Rect| Vec::new())
+    }
+
+    /// 记录 bounds 的 paint_fn：用于验证每个 widget 收到的 bounds。
+    fn make_recording_paint_fn(
+        records: std::sync::Arc<std::sync::Mutex<Vec<(String, Rect)>>>,
+    ) -> PaintFn<TestMsg> {
+        Box::new(
+            move |view: &rgui_core::view::WidgetView<TestMsg>, bounds: Rect| {
+                let name = format!(
+                    "{}:{}",
+                    view.widget_type,
+                    view.props
+                        .get("text")
+                        .or(view.props.get("label"))
+                        .map(|v| format!("{v:?}"))
+                        .unwrap_or_default()
+                );
+                records.lock().unwrap().push((name, bounds));
+                Vec::new()
+            },
+        )
+    }
+
+    #[test]
+    fn build_scene_from_view_with_layout_uses_computed_bounds() {
+        // 构造树：Column 包含两个带 height 的 Label（确保 Taffy 能计算不同位置）
+        let mut view = make_view(
+            "Column",
+            vec![
+                make_label("Top").prop("height", rgui_core::view::PropValue::from(30.0_f64)),
+                make_label("Bottom").prop("height", rgui_core::view::PropValue::from(30.0_f64)),
+            ],
+        );
+
+        // 计算布局
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+
+        // 记录 paint_fn 收到的 bounds
+        let records = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let paint_fn = make_recording_paint_fn(std::sync::Arc::clone(&records));
+
+        let _scene = build_scene_from_view(&view, &engine, &paint_fn, 42, None);
+
+        let rec = records.lock().unwrap();
+        assert_eq!(rec.len(), 3, "应记录 3 个 widget 的 bounds");
+
+        // 验证每个 widget 收到的 bounds 与 layout engine 一致
+        fn verify_bounds(
+            view: &rgui_core::view::WidgetView<TestMsg>,
+            engine: &LayoutEngine,
+            rec: &[(String, Rect)],
+        ) {
+            let widget_id = view.id.unwrap_or_default();
+            if let Some(cached) = engine.get_layout(widget_id) {
+                let expected = Rect::new(
+                    cached.result.position.x,
+                    cached.result.position.y,
+                    cached.result.size.width,
+                    cached.result.size.height,
+                );
+                // 在 rec 中找到对应 widget 的 bounds
+                let actual = rec
+                    .iter()
+                    .find(|(name, _)| name.starts_with(view.widget_type));
+                if let Some((_name, actual_bounds)) = actual {
+                    assert!(
+                        (actual_bounds.origin.x - expected.origin.x).abs() < 1.0,
+                        "widget {widget_id:?} x mismatch: expected={}, actual={}",
+                        expected.origin.x,
+                        actual_bounds.origin.x
+                    );
+                    assert!(
+                        (actual_bounds.origin.y - expected.origin.y).abs() < 1.0,
+                        "widget {widget_id:?} y mismatch: expected={}, actual={}",
+                        expected.origin.y,
+                        actual_bounds.origin.y
+                    );
+                }
+            }
+            for child in &view.children {
+                verify_bounds(child, engine, rec);
+            }
+        }
+        verify_bounds(&view, &engine, &rec);
+    }
+
+    #[test]
+    fn build_scene_from_view_scene_layers_have_correct_bounds() {
+        let mut view = make_view(
+            "Column",
+            vec![
+                make_view("Row", vec![make_button("A"), make_button("B")]),
+                make_label("Footer"),
+            ],
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+
+        // 5 层：Column + Row + 2 Buttons + Footer Label
+        assert_eq!(scene.layer_count(), 5);
+
+        // 每个 layer 的 bounds 应与 layout engine 一致
+        fn check_layer_bounds(
+            view: &rgui_core::view::WidgetView<TestMsg>,
+            engine: &LayoutEngine,
+            scene: &SceneGraph,
+        ) {
+            if let Some(id) = view.id {
+                let layout = engine.get_layout(id);
+                let layer = scene.layers.iter().find(|l| l.widget_id == id);
+                match (layout, layer) {
+                    (Some(l), Some(ly)) => {
+                        assert!(
+                            (ly.bounds.origin.x - l.result.position.x).abs() < 1.0,
+                            "x mismatch for {id:?}"
+                        );
+                        assert!(
+                            (ly.bounds.origin.y - l.result.position.y).abs() < 1.0,
+                            "y mismatch for {id:?}"
+                        );
+                        assert!(
+                            (ly.bounds.size.width - l.result.size.width).abs() < 1.0,
+                            "w mismatch for {id:?}"
+                        );
+                        assert!(
+                            (ly.bounds.size.height - l.result.size.height).abs() < 1.0,
+                            "h mismatch for {id:?}"
+                        );
+                    },
+                    _ => { /* widget without layout -- skip */ },
+                }
+            }
+            for child in &view.children {
+                check_layer_bounds(child, engine, scene);
+            }
+        }
+
+        check_layer_bounds(&view, &engine, &scene);
     }
 }

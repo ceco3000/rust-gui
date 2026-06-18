@@ -76,11 +76,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             </Column>
         };
 
-        // V01: 计算 Taffy 布局（V03 集成后将用于 widget 位置计算）
-        let _layout = compute_view_layout(&mut view, Size::new(w, h));
+        // V01: 计算 Taffy 布局
+        let layout = compute_view_layout(&mut view, Size::new(w, h));
 
-        // 从 WidgetView 树构建 SceneGraph（背景由 RenderParams::clear_color 提供）
-        build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None)
+        // 从 WidgetView 树构建 SceneGraph（布局引擎提供每个 widget 的计算后位置）
+        build_scene_from_view(&view, &layout, &paint_fn, frame, None)
     });
 
     println!("=== rgui 计数器（html! 声明式渲染）===\n");
