@@ -1,13 +1,15 @@
-//! rgui 单 Label 示例——最简组件 paint() 演示。
+//! rgui 单 Label 示例——html! 声明式渲染演示。
 //!
-//! 本示例仅绘制一个居中的文本标签，用于验证 Label 组件的
-//! 文本绘制是否正常工作。
+//! 本示例使用 html! 宏声明一个居中文本标签，验证声明式渲染管线。
 
 use rgui::app::{App, AppConfig};
-use rgui::{
-    Label, LabelState, PaintContext, PaintLayerData, Rect, WidgetId, WidgetSpec,
-    build_scene_from_paint_data,
-};
+use rgui::paint_factory::default_paint_fn;
+use rgui::{AppMessage, Size, WidgetView, build_scene_from_view, compute_view_layout, html};
+
+#[derive(Debug, Clone, PartialEq, AppMessage)]
+enum Msg {
+    _Dummy,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
@@ -17,28 +19,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     app.register_defaults();
 
-    // Label 坐标：窗口 300×200 居中
-    let label_bounds = Rect::new(60.0, 85.0, 180.0, 30.0);
-
-    // 视图场景构建回调
+    let paint_fn = default_paint_fn::<Msg>();
     app.set_view_scene_builder(
-        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
-            let mut layers: Vec<PaintLayerData> = Vec::new();
+        move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
 
-            // --- 文本标签 ---
-            let mut label_ctx = PaintContext::new(label_bounds);
-            let state = LabelState {
-                text: "Hello, rgui!".into(),
+            let mut view: WidgetView<Msg> = html! {
+                <Center>
+                    <Label text="Hello, rgui!" />
+                </Center>
             };
-            Label.paint(&state, label_bounds, &mut label_ctx);
-            layers.push(PaintLayerData::new(
-                WidgetId::from_u64(1),
-                0,
-                label_bounds,
-                label_ctx.into_operations(),
-            ));
 
-            build_scene_from_paint_data(&layers, frame, Some(_tr))
+            let layout = compute_view_layout(&mut view, Size::new(w, h));
+            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(tr))
         },
     );
 

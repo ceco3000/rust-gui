@@ -1,7 +1,8 @@
 //! rgui DataGrid example — static data table demo.
 //!
-//! Displays a centered DataGrid with 3 columns (Name, Age, City) and
-//! 3 sample data rows on a dark background. No interaction required.
+//! Demonstrates `build_scene_from_paint_data` low-level API for complex-state
+//! widgets (DataGrid with columns + rows). DataGrid state cannot be expressed
+//! as simple html! props, so this example uses the manual PaintLayerData path.
 
 use rgui::app::{App, AppConfig};
 use rgui::{

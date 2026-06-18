@@ -2310,7 +2310,9 @@ dependencies = [
 name = "one-checkbox"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
@@ -2324,42 +2326,54 @@ dependencies = [
 name = "one-label"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
 name = "one-progress-bar"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
 name = "one-radio-button"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
 name = "one-slider"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
 name = "one-switch"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
 name = "one-textfield"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]

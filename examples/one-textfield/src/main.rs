@@ -1,12 +1,15 @@
-//! rgui 单 TextField 示例——文本输入框演示。
+//! rgui 单 TextField 示例——html! 声明式渲染演示。
 //!
-//! 本示例绘制一个带占位符的 TextField，点击可聚焦。
+//! 本示例使用 html! 宏声明一个带占位符文本的输入框。
 
 use rgui::app::{App, AppConfig};
-use rgui::{
-    PaintContext, PaintLayerData, Rect, TextField, TextFieldState, WidgetId, WidgetSpec,
-    build_scene_from_paint_data,
-};
+use rgui::paint_factory::default_paint_fn;
+use rgui::{AppMessage, Size, WidgetView, build_scene_from_view, compute_view_layout, html};
+
+#[derive(Debug, Clone, PartialEq, AppMessage)]
+enum Msg {
+    _Dummy,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
@@ -16,31 +19,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     app.register_defaults();
 
-    // TextField 坐标：窗口 300x200，居中
-    let tf_bounds = Rect::new(50.0, 85.0, 200.0, 32.0);
-    let tf_id = WidgetId::from_u64(1);
-
-    // 视图场景构建回调
+    let paint_fn = default_paint_fn::<Msg>();
     app.set_view_scene_builder(
-        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
-            let mut layers: Vec<PaintLayerData> = Vec::new();
+        move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
 
-            // --- TextField ---
-            let mut tf_ctx = PaintContext::new(tf_bounds);
-            // 显示占位符文本（无实际输入内容时）
-            let s = TextFieldState {
-                placeholder: "Enter text...".into(),
-                ..Default::default()
+            let mut view: WidgetView<Msg> = html! {
+                <Center>
+                    <TextField id="1" placeholder="Enter text..." />
+                </Center>
             };
-            TextField.paint(&s, tf_bounds, &mut tf_ctx);
-            layers.push(PaintLayerData::new(
-                tf_id,
-                0,
-                tf_bounds,
-                tf_ctx.into_operations(),
-            ));
 
-            build_scene_from_paint_data(&layers, frame, Some(_tr))
+            let layout = compute_view_layout(&mut view, Size::new(w, h));
+            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(tr))
         },
     );
 

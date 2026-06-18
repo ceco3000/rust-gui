@@ -1,13 +1,17 @@
-//! rgui 单 RadioButton 示例——最简组件 paint() 演示。
+//! rgui 单 RadioButton 示例——html! 声明式渲染演示。
 //!
-//! 本示例绘制一个居中的单选按钮（选中状态），用于验证
-//! RadioButton 组件的外圈 + 内圆 + 标签文本绘制是否正常。
+//! 本示例使用 html! 宏声明一个选中的单选按钮。
 
 use rgui::app::{App, AppConfig};
+use rgui::paint_factory::default_paint_fn;
 use rgui::{
-    PaintContext, PaintLayerData, RadioButton, RadioButtonState, Rect, WidgetId, WidgetSpec,
-    build_scene_from_paint_data,
+    AppMessage, Rect, Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
 };
+
+#[derive(Debug, Clone, PartialEq, AppMessage)]
+enum Msg {
+    _Dummy,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
@@ -17,10 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     app.register_defaults();
 
-    // RadioButton 坐标：窗口 300×200 居中
     let rb_bounds = Rect::new(75.0, 88.0, 150.0, 24.0);
-
-    // RadioButton 交互（点击可切换选中/取消 — 示例中为选中状态）
     app.register_interaction(
         WidgetId::from_u64(1),
         rb_bounds,
@@ -30,24 +31,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    // 视图场景构建回调
+    let paint_fn = default_paint_fn::<Msg>();
     app.set_view_scene_builder(
-        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
-            let mut layers: Vec<PaintLayerData> = Vec::new();
+        move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
 
-            // --- 单选按钮（选中状态） ---
-            let mut rb_ctx = PaintContext::new(rb_bounds);
-            let mut state = RadioButtonState::new("Option A", "demo");
-            state.selected = true;
-            RadioButton.paint(&state, rb_bounds, &mut rb_ctx);
-            layers.push(PaintLayerData::new(
-                WidgetId::from_u64(1),
-                0,
-                rb_bounds,
-                rb_ctx.into_operations(),
-            ));
+            let mut view: WidgetView<Msg> = html! {
+                <Center>
+                    <RadioButton id="1" label="Option A" />
+                </Center>
+            };
 
-            build_scene_from_paint_data(&layers, frame, Some(_tr))
+            let layout = compute_view_layout(&mut view, Size::new(w, h));
+            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(tr))
         },
     );
 

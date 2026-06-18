@@ -1,7 +1,6 @@
-//! # rgui CRUD Example - Contact Manager using `html!` declarative syntax
+//! # rgui CRUD Example - Contact Manager
 //!
-//! Demonstrates CRUD operations with rgui framework using html! macro +
-//! `build_scene_from_view` rendering pipeline.
+//! html! 声明式渲染表单 + 手动 PaintLayerData 渲染动态联系人列表。
 //!
 //! ## Usage
 //!
@@ -11,18 +10,16 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
-use rgui::prelude::*;
 use rgui::{
-    AppMessage, Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData, Rect,
+    AppMessage, Color, PaintContext, PaintLayerData, Rect,
     Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
 };
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
-// Step 1: Define data structures
+// Data structures
 // ============================================================================
 
-/// A contact.
 #[derive(Debug, Clone)]
 struct Contact {
     name: String,
@@ -41,10 +38,9 @@ impl Contact {
 }
 
 // ============================================================================
-// Step 2: Define global shared state
+// App state
 // ============================================================================
 
-/// Application global state.
 struct AppState {
     contacts: Vec<Contact>,
     selected_index: Option<usize>,
@@ -86,8 +82,8 @@ impl AppState {
         self.edit_phone.clear();
     }
 
-    fn contact_count(&self) -> usize {
-        self.contacts.len()
+    fn select(&mut self, idx: usize) {
+        self.selected_index = Some(idx);
     }
 
     fn edit_selected(&mut self) {
@@ -103,12 +99,7 @@ impl AppState {
                     self.contacts[idx].phone = self.edit_phone.clone();
                 }
                 self.message = format!("Updated: {}", self.contacts[idx].name);
-                self.edit_name.clear();
-                self.edit_email.clear();
-                self.edit_phone.clear();
             }
-        } else {
-            self.message = "Please select a contact first".into();
         }
     }
 
@@ -120,173 +111,111 @@ impl AppState {
                 self.selected_index = None;
                 self.message = format!("Deleted: {name}");
             }
-        } else {
-            self.message = "Please select a contact first".into();
-        }
-    }
-
-    fn select(&mut self, index: usize) {
-        if index < self.contacts.len() {
-            self.selected_index = Some(index);
-            let c = &self.contacts[index];
-            self.edit_name = c.name.clone();
-            self.edit_email = c.email.clone();
-            self.edit_phone = c.phone.clone();
-            self.message = format!("Selected: {}", c.name);
         }
     }
 }
 
 // ============================================================================
-// Step 2b: Message type (for html! declarative syntax)
+// Message type
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
-#[allow(dead_code)]
 enum CrudMsg {
     Add,
     Edit,
     Delete,
     Clear,
-    SelectRow(usize),
 }
 
 // ============================================================================
-// Step 3: UI layout constants
+// Layout constants
 // ============================================================================
 
-const INPUT_Y: f64 = 60.0;
-const BUTTON_Y: f64 = 120.0;
-const LIST_TOP: f64 = 170.0;
-const LIST_ROW_H: f64 = 28.0;
 const LEFT: f64 = 20.0;
-const LABEL_W: f64 = 40.0;
-const INPUT_W: f64 = 160.0;
+const BUTTON_Y: f64 = 155.0;
+const LIST_TOP: f64 = 200.0;
+const LIST_ROW_H: f64 = 28.0;
 
 // ============================================================================
-// Step 4: Build UI and run
+// Main
 // ============================================================================
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
         AppConfig::new()
-            .title("rgui CRUD Example - Contact Manager (html! 声明式渲染)")
-            .window_size(820.0, 600.0),
+            .title("rgui — CRUD Contact Manager")
+            .window_size(800.0, 600.0),
     );
     app.register_defaults();
 
     let state = Arc::new(Mutex::new(AppState::new()));
 
-    // --- Register interactions ---
-
-    let s1 = Arc::clone(&state);
-    app.register_interaction(
-        WidgetId::from_u64(101),
-        Rect::new(LEFT + LABEL_W, INPUT_Y, INPUT_W, 28.0),
-        "edit_name",
-        move |_| {
-            let _s = s1.lock().unwrap();
-            println!("[Action] Clicked name input");
-        },
-    );
-
-    let s2 = Arc::clone(&state);
-    app.register_interaction(
-        WidgetId::from_u64(102),
-        Rect::new(LEFT + LABEL_W, INPUT_Y + 32.0, INPUT_W, 28.0),
-        "edit_email",
-        move |_| {
-            let _s = s2.lock().unwrap();
-            println!("[Action] Clicked email input");
-        },
-    );
-
-    let s3 = Arc::clone(&state);
-    app.register_interaction(
-        WidgetId::from_u64(103),
-        Rect::new(LEFT + LABEL_W, INPUT_Y + 64.0, INPUT_W, 28.0),
-        "edit_phone",
-        move |_| {
-            let _s = s3.lock().unwrap();
-            println!("[Action] Clicked phone input");
-        },
-    );
-
+    // ── Interaction registrations ──
     let s_add = Arc::clone(&state);
     app.register_interaction(
         WidgetId::from_u64(201),
         Rect::new(20.0, BUTTON_Y, 80.0, 32.0),
         "add",
         move |_| {
-            let mut guard = s_add.lock().unwrap_or_else(|e| e.into_inner());
-            guard.add_contact();
-            println!("Contact count: {}", guard.contact_count());
+            s_add.lock().unwrap().add_contact();
         },
     );
-
     let s_edit = Arc::clone(&state);
     app.register_interaction(
         WidgetId::from_u64(202),
         Rect::new(110.0, BUTTON_Y, 80.0, 32.0),
         "edit",
         move |_| {
-            let mut guard = s_edit.lock().unwrap_or_else(|e| e.into_inner());
-            guard.edit_selected();
+            s_edit.lock().unwrap().edit_selected();
         },
     );
-
     let s_del = Arc::clone(&state);
     app.register_interaction(
         WidgetId::from_u64(203),
         Rect::new(200.0, BUTTON_Y, 80.0, 32.0),
         "delete",
         move |_| {
-            let mut guard = s_del.lock().unwrap_or_else(|e| e.into_inner());
-            guard.delete_selected();
+            s_del.lock().unwrap().delete_selected();
         },
     );
-
     let s_clear = Arc::clone(&state);
     app.register_interaction(
         WidgetId::from_u64(204),
         Rect::new(290.0, BUTTON_Y, 100.0, 32.0),
         "clear",
         move |_| {
-            let mut guard = s_clear.lock().unwrap_or_else(|e| e.into_inner());
+            let mut guard = s_clear.lock().unwrap();
             guard.contacts.clear();
             guard.selected_index = None;
             guard.message = "All contacts cleared".into();
         },
     );
 
+    // Row selection interactions (up to 12 rows)
     for i in 0..12_usize {
         let s_row = Arc::clone(&state);
         let y = LIST_TOP + i as f64 * LIST_ROW_H;
         app.register_interaction(
             WidgetId::from_u64(300 + i as u64),
-            Rect::new(LEFT, y, 780.0, LIST_ROW_H),
+            Rect::new(LEFT, y, 760.0, LIST_ROW_H),
             "select_row",
             move |_| {
-                let mut guard = s_row.lock().unwrap_or_else(|e| e.into_inner());
-                if i < guard.contacts.len() {
-                    guard.select(i);
-                }
+                s_row.lock().unwrap().select(i);
             },
         );
     }
 
-    // --- View-scene builder with html! declarative syntax + manual paint layers ---
-
+    // ── Scene builder: html! form + manual contact list ──
     let scene_state = Arc::clone(&state);
     let paint_fn = default_paint_fn::<CrudMsg>();
     app.set_view_scene_builder(
-        move |_frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
+        move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
             let w = width as f64;
-            let h = height as f64;
+            let _h = height as f64;
             let guard = scene_state.lock().unwrap();
 
-            // html! declarative UI definition (demonstrates the syntax)
-            let mut _view: WidgetView<CrudMsg> = html! {
+            // --- Part 1: Form via html! declarative syntax ---
+            let mut form_view: WidgetView<CrudMsg> = html! {
                 <Column>
                     <Label text="Contact Manager" />
                     <Row>
@@ -310,107 +239,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 </Column>
             };
 
-            // --- Build scene: dynamic leaf components ---
+            let form_layout = compute_view_layout(&mut form_view, Size::new(w, 600.0));
+            let mut scene =
+                build_scene_from_view(&form_view, &form_layout, &paint_fn, frame, Some(tr));
+
+            // --- Part 2: Dynamic contact list via manual PaintLayerData ---
             let mut layers: Vec<PaintLayerData> = Vec::new();
 
-            // Title
-            let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
-            let mut title_ctx = PaintContext::new(title_bounds);
-            Label.paint(
-                &LabelState {
-                    text: "Contact Manager".into(),
-                },
-                title_bounds,
-                &mut title_ctx,
+            // Message line
+            let msg_bounds = Rect::new(LEFT, 188.0, 760.0, 20.0);
+            let mut msg_ctx = PaintContext::new(msg_bounds);
+            msg_ctx.draw_text(
+                &guard.message,
+                msg_bounds,
+                Color::WHITE.with_alpha(0.7),
+                13.0,
             );
             layers.push(PaintLayerData::new(
-                WidgetId::from_u64(900),
+                WidgetId::from_u64(500),
                 0,
-                title_bounds,
-                title_ctx.into_operations(),
+                msg_bounds,
+                msg_ctx.into_operations(),
             ));
 
-            // Input labels and values
-            let input_labels = ["Name:", "Email:", "Phone:"];
-            let input_values = [&guard.edit_name, &guard.edit_email, &guard.edit_phone];
-            for (i, lbl) in input_labels.iter().enumerate() {
-                let y = INPUT_Y + i as f64 * 32.0;
-                let lb = Rect::new(LEFT, y, LABEL_W, 24.0);
-                let mut lc = PaintContext::new(lb);
-                Label.paint(
-                    &LabelState {
-                        text: (*lbl).to_string(),
-                    },
-                    lb,
-                    &mut lc,
-                );
-                layers.push(PaintLayerData::new(
-                    WidgetId::from_u64(910 + i as u64),
-                    0,
-                    lb,
-                    lc.into_operations(),
-                ));
-
-                let vb = Rect::new(LEFT + LABEL_W, y, INPUT_W, 24.0);
-                let mut vc = PaintContext::new(vb);
-                let val = input_values[i];
-                let display = if val.is_empty() {
-                    "(click to input)"
-                } else {
-                    val
-                };
-                Label.paint(
-                    &LabelState {
-                        text: display.to_string(),
-                    },
-                    vb,
-                    &mut vc,
-                );
-                layers.push(PaintLayerData::new(
-                    WidgetId::from_u64(920 + i as u64),
-                    0,
-                    vb,
-                    vc.into_operations(),
-                ));
-            }
-
-            // Button row
-            let buttons = [
-                (201_u64, "Add", 20.0),
-                (202_u64, "Edit", 110.0),
-                (203_u64, "Delete", 200.0),
-                (204_u64, "Clear All", 290.0),
-            ];
-            for (id, label, x) in &buttons {
-                let bb = Rect::new(*x, BUTTON_Y, 80.0, 32.0);
-                let mut bc = PaintContext::new(bb);
-                Button.paint(&ButtonState::new((*label).to_string()), bb, &mut bc);
-                layers.push(PaintLayerData::new(
-                    WidgetId::from_u64(*id),
-                    1,
-                    bb,
-                    bc.into_operations(),
-                ));
-            }
-
-            // Contact list (up to 12 rows)
+            // Contact list rows
             for i in 0..12_usize {
                 let y = LIST_TOP + i as f64 * LIST_ROW_H;
-                let row_bounds = Rect::new(LEFT, y, 780.0, LIST_ROW_H);
-
+                let row_bounds = Rect::new(LEFT, y, 760.0, LIST_ROW_H);
                 if i < guard.contacts.len() {
                     let c = &guard.contacts[i];
                     let is_selected = guard.selected_index == Some(i);
                     let mut row_ctx = PaintContext::new(row_bounds);
-
                     if is_selected {
                         row_ctx.fill_rect(row_bounds, Color::new(0.15, 0.20, 0.35, 0.6), 4.0);
                     }
-
                     let info = format!("{}. {} | {} | {}", i + 1, c.name, c.email, c.phone);
                     row_ctx.draw_text(
                         &info,
-                        Rect::new(4.0, 2.0, 760.0, 24.0),
+                        Rect::new(4.0, 2.0, 752.0, 24.0),
                         Color::WHITE.with_alpha(0.9),
                         14.0,
                     );
@@ -423,38 +289,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            // Status message
-            let msg_bounds = Rect::new(20.0, h - 40.0, w - 40.0, 24.0);
-            let mut msg_ctx = PaintContext::new(msg_bounds);
-            msg_ctx.draw_text(
-                &guard.message,
-                msg_bounds,
-                Color::WHITE.with_alpha(0.6),
-                12.0,
-            );
-            layers.push(PaintLayerData::new(
-                WidgetId::from_u64(999),
-                5,
-                msg_bounds,
-                msg_ctx.into_operations(),
-            ));
-
             drop(guard);
 
-            // Also include the html! view's scene on top (demonstrates integration)
-            let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, Some(_tr));
-            // Compute layout for html! view and integrate with manual layers
-            let layout = compute_view_layout(&mut _view, Size::new(w, h));
-            let view_scene = build_scene_from_view(&_view, &layout, &paint_fn, _frame, Some(_tr));
-            scene.layers.extend(view_scene.layers);
+            // Merge manual layers into the html! scene
+            let list_scene = rgui::build_scene_from_paint_data(&layers, frame, Some(tr));
+            scene.layers.extend(list_scene.layers);
             scene
         },
     );
 
-    // Run the app
     println!("\n=== rgui CRUD Example (html! 声明式渲染) ===");
-    println!("Contact manager app started. UI declared with html! macro,");
-    println!("rendered via build_scene_from_view pipeline.");
+    println!("Contact manager app started.");
+    println!("Form rendered via html! + build_scene_from_view.");
+    println!("Dynamic contact list rendered via PaintLayerData.");
     println!();
     println!("Instructions:");
     println!("  1. Click [Add] -> Create new contact");
