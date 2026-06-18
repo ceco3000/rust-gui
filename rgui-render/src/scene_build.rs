@@ -10,6 +10,7 @@ use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
 use rgui_core::id::WidgetId;
 
+use crate::primitives::Transform;
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
 
 // ============================================================================
@@ -138,6 +139,17 @@ pub struct PaintLayerData {
     pub operations: Vec<PaintOp>,
     /// 是否标记为脏（需要重新编码到 Vello）。
     pub is_dirty: bool,
+    /// 裁剪矩形（可选）。
+    ///
+    /// 当设置时，该图层的绘制命令会被 `PushClip`/`PopClip` 包裹，
+    /// 裁剪到该矩形。用于 ScrollView 等需要裁剪子内容的容器。
+    pub clip_rect: Option<Rect>,
+    /// 滚动偏移量（可选）。
+    ///
+    /// 当设置时，该图层的绘制命令会被 `PushTransform(translate)`/`PopTransform`
+    /// 包裹。坐标 (dx, dy) 表示平移量——通常为 `(-scroll_x, -scroll_y)`。
+    /// 用于 ScrollView 对子内容的滚动偏移。
+    pub scroll_offset: Option<(f32, f32)>,
 }
 
 impl PaintLayerData {
@@ -150,6 +162,8 @@ impl PaintLayerData {
             bounds,
             operations,
             is_dirty: true,
+            clip_rect: None,
+            scroll_offset: None,
         }
     }
 }
@@ -180,10 +194,35 @@ pub fn build_scene_from_paint_data(
     let mut builder = SceneGraphBuilder::new(version);
 
     for layer in layers {
-        let mut commands = Vec::with_capacity(layer.operations.len());
+        let mut commands = Vec::with_capacity(
+            layer.operations.len()
+                + layer.clip_rect.is_some() as usize * 2
+                + layer.scroll_offset.is_some() as usize * 2,
+        );
+
+        // 先 PushClip（如果有）
+        if let Some(clip) = layer.clip_rect {
+            commands.push(DrawCommand::PushClip { rect: clip });
+        }
+        // 再 PushTransform（如果有）——注意平移方向为子内容偏移
+        if let Some((dx, dy)) = layer.scroll_offset {
+            commands.push(DrawCommand::PushTransform {
+                transform: Transform::translate(dx, dy),
+            });
+        }
+
         for op in &layer.operations {
             let cmd = paint_op_to_draw_command_inner(op, text_renderer);
             commands.push(cmd);
+        }
+
+        // 后 PopTransform（如果有）——与 Push 顺序相反
+        if layer.scroll_offset.is_some() {
+            commands.push(DrawCommand::PopTransform);
+        }
+        // 后 PopClip（如果有）
+        if layer.clip_rect.is_some() {
+            commands.push(DrawCommand::PopClip);
         }
 
         builder.build_layer(
@@ -400,5 +439,87 @@ mod tests {
         let layer = PaintLayerData::new(WidgetId::from_u64(1), 0, Rect::ZERO, vec![]);
         assert!(layer.is_dirty);
         assert_eq!(layer.widget_id, WidgetId::from_u64(1));
+    }
+
+    #[test]
+    fn paint_layer_data_clip_rect_defaults_none() {
+        let layer = PaintLayerData::new(WidgetId::from_u64(1), 0, Rect::ZERO, vec![]);
+        assert!(layer.clip_rect.is_none());
+        assert!(layer.scroll_offset.is_none());
+    }
+
+    #[test]
+    fn build_scene_with_clip_rect() {
+        let mut layer = PaintLayerData::new(
+            WidgetId::from_u64(1),
+            0,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+            vec![PaintOp::FillRect {
+                rect: Rect::new(0.0, 0.0, 500.0, 500.0),
+                color: Color::RED,
+                radius: 0.0,
+            }],
+        );
+        layer.clip_rect = Some(Rect::new(0.0, 0.0, 300.0, 200.0));
+
+        let scene = build_scene_from_paint_data(&[layer], 1, None);
+        assert_eq!(scene.layer_count(), 1);
+        let cmds = &scene.layers[0].commands;
+        // PushClip + FillRect + PopClip = 3 commands
+        assert_eq!(cmds.len(), 3);
+        assert!(matches!(cmds[0], DrawCommand::PushClip { .. }));
+        assert!(matches!(cmds[1], DrawCommand::FillRect { .. }));
+        assert!(matches!(cmds[2], DrawCommand::PopClip));
+    }
+
+    #[test]
+    fn build_scene_with_scroll_offset() {
+        let mut layer = PaintLayerData::new(
+            WidgetId::from_u64(1),
+            0,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+            vec![PaintOp::FillRect {
+                rect: Rect::new(0.0, 0.0, 500.0, 1000.0),
+                color: Color::BLUE,
+                radius: 0.0,
+            }],
+        );
+        layer.scroll_offset = Some((-10.0, -50.0));
+
+        let scene = build_scene_from_paint_data(&[layer], 1, None);
+        assert_eq!(scene.layer_count(), 1);
+        let cmds = &scene.layers[0].commands;
+        // PushTransform + FillRect + PopTransform = 3 commands
+        assert_eq!(cmds.len(), 3);
+        assert!(matches!(cmds[0], DrawCommand::PushTransform { .. }));
+        assert!(matches!(cmds[1], DrawCommand::FillRect { .. }));
+        assert!(matches!(cmds[2], DrawCommand::PopTransform));
+    }
+
+    #[test]
+    fn build_scene_with_both_clip_and_offset() {
+        let mut layer = PaintLayerData::new(
+            WidgetId::from_u64(1),
+            0,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+            vec![PaintOp::FillRect {
+                rect: Rect::new(0.0, 0.0, 500.0, 1000.0),
+                color: Color::GREEN,
+                radius: 0.0,
+            }],
+        );
+        layer.clip_rect = Some(Rect::new(0.0, 0.0, 300.0, 200.0));
+        layer.scroll_offset = Some((-10.0, -50.0));
+
+        let scene = build_scene_from_paint_data(&[layer], 1, None);
+        assert_eq!(scene.layer_count(), 1);
+        let cmds = &scene.layers[0].commands;
+        // PushClip + PushTransform + FillRect + PopTransform + PopClip = 5 commands
+        assert_eq!(cmds.len(), 5);
+        assert!(matches!(cmds[0], DrawCommand::PushClip { .. }));
+        assert!(matches!(cmds[1], DrawCommand::PushTransform { .. }));
+        assert!(matches!(cmds[2], DrawCommand::FillRect { .. }));
+        assert!(matches!(cmds[3], DrawCommand::PopTransform));
+        assert!(matches!(cmds[4], DrawCommand::PopClip));
     }
 }
