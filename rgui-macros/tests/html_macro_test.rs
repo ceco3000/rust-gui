@@ -142,3 +142,135 @@ fn h01_mixed_text_and_elements() {
     // 第三个子节点: Text("Footer Text")
     assert_eq!(view.children[2].widget_type, "Text");
 }
+
+// ============================================================================
+// H02: HTML 属性类型推断
+// ============================================================================
+
+/// 验收标准：`gap="8.0"` → Float(8.0)
+#[test]
+fn h02_float_type_inference() {
+    let view: WidgetView<TestMessage> = html! { <Column gap="8.0" /> };
+
+    match view.props.get("gap") {
+        Some(PropValue::Float(f)) => {
+            assert!(
+                (f.into_inner() - 8.0).abs() < f64::EPSILON,
+                "期望 Float(8.0)"
+            );
+        },
+        other => panic!("期望 PropValue::Float(8.0)，实际: {other:?}"),
+    }
+}
+
+/// 验收标准：`disabled="true"` → Bool(true)
+#[test]
+fn h02_bool_type_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button disabled="true" /> };
+
+    match view.props.get("disabled") {
+        Some(PropValue::Bool(true)) => {},
+        other => panic!("期望 PropValue::Bool(true)，实际: {other:?}"),
+    }
+}
+
+/// `disabled="false"` → Bool(false)
+#[test]
+fn h02_bool_false_type_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button disabled="false" /> };
+
+    match view.props.get("disabled") {
+        Some(PropValue::Bool(false)) => {},
+        other => panic!("期望 PropValue::Bool(false)，实际: {other:?}"),
+    }
+}
+
+/// 验收标准：`color="#FF0000"` → Color(1.0, 0.0, 0.0, 1.0)
+#[test]
+fn h02_color_hex6_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button color="#FF0000" /> };
+
+    match view.props.get("color") {
+        Some(PropValue::Color(c)) => {
+            assert!(
+                (c.r - 1.0).abs() < f64::EPSILON,
+                "r 期望 1.0，实际: {}",
+                c.r
+            );
+            assert!(c.g < f64::EPSILON, "g 期望 0.0，实际: {}", c.g);
+            assert!(c.b < f64::EPSILON, "b 期望 0.0，实际: {}", c.b);
+            assert!(
+                (c.a - 1.0).abs() < f64::EPSILON,
+                "a 期望 1.0，实际: {}",
+                c.a
+            );
+        },
+        other => panic!("期望 PropValue::Color，实际: {other:?}"),
+    }
+}
+
+/// `color="#3B82F6"` → Color（蓝色）
+#[test]
+fn h02_color_hex6_blue_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button color="#3B82F6" /> };
+
+    match view.props.get("color") {
+        Some(PropValue::Color(c)) => {
+            // #3B = 59/255 ≈ 0.231, #82 = 130/255 ≈ 0.510, #F6 = 246/255 ≈ 0.965
+            assert!((c.r - 59.0 / 255.0).abs() < 0.01);
+            assert!((c.g - 130.0 / 255.0).abs() < 0.01);
+            assert!((c.b - 246.0 / 255.0).abs() < 0.01);
+        },
+        other => panic!("期望 PropValue::Color，实际: {other:?}"),
+    }
+}
+
+/// `color="#FF000080"` → Color(1.0, 0.0, 0.0, ~0.5)
+#[test]
+fn h02_color_hex8_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button color="#FF000080" /> };
+
+    match view.props.get("color") {
+        Some(PropValue::Color(c)) => {
+            assert!(
+                (c.a - 128.0 / 255.0).abs() < 0.01,
+                "a 期望 ~0.5，实际: {}",
+                c.a
+            );
+        },
+        other => panic!("期望 PropValue::Color，实际: {other:?}"),
+    }
+}
+
+/// 验收标准：`label="Hi"` → Str("Hi")
+#[test]
+fn h02_str_type_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button label="Hi" /> };
+
+    match view.props.get("label") {
+        Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "Hi"),
+        other => panic!("期望 PropValue::Str(\"Hi\")，实际: {other:?}"),
+    }
+}
+
+/// 整数属性 → Int
+#[test]
+fn h02_int_type_inference() {
+    let view: WidgetView<TestMessage> = html! { <Button count="42" /> };
+
+    match view.props.get("count") {
+        Some(PropValue::Int(42)) => {},
+        other => panic!("期望 PropValue::Int(42)，实际: {other:?}"),
+    }
+}
+
+/// class 属性值应为 Str（不推断为 Int/Float）
+#[test]
+fn h02_class_attribute_stays_str() {
+    let view: WidgetView<TestMessage> = html! { <Button class="primary large" /> };
+
+    match view.props.get("class") {
+        Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "primary large"),
+        other => panic!("期望 PropValue::Str(\"primary large\")，实际: {other:?}"),
+    }
+}

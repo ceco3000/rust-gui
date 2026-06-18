@@ -21,3 +21,4 @@ proc-macro2 = "1"
 [dev-dependencies]
 rgui-core = { path = "../rgui-core" }
 serde = { version = "1", features = ["derive"] }
+ordered-float.workspace = true
