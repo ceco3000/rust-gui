@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut view: WidgetView<Msg> = html! {
                 <Center>
-                    <ProgressBar value="0.73" />
+                    <ProgressBar value="0.73" label="73%" />
                 </Center>
             };
 

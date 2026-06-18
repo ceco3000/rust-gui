@@ -122,9 +122,26 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                 "ProgressBar" => {
                     use rgui_components::progress_bar::{ProgressBar, ProgressBarState};
                     let value = get_f64(&view.props, "value").unwrap_or(0.5);
-                    let state = ProgressBarState::new(value);
+                    let label = get_str(&view.props, "label").unwrap_or("").to_string();
+                    let mut state = ProgressBarState::new(value);
+                    state.label = label;
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
                     rgui_core::traits::WidgetSpec::paint(&ProgressBar, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "RadioButton" => {
+                    use rgui_components::radio_button::{RadioButton, RadioButtonState};
+                    let label = get_str(&view.props, "label").unwrap_or("RadioButton");
+                    let selected = get_bool(&view.props, "selected").unwrap_or(false);
+                    let group = get_str(&view.props, "group").unwrap_or("default");
+                    let state = RadioButtonState {
+                        label: label.to_string(),
+                        selected,
+                        group: group.to_string(),
+                        ..RadioButtonState::default()
+                    };
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&RadioButton, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
                 "Divider" => {

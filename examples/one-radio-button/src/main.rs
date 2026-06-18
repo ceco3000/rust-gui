@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut view: WidgetView<Msg> = html! {
                 <Center>
-                    <RadioButton id="1" label="Option A" />
+                    <RadioButton id="1" label="Option A" selected="true" />
                 </Center>
             };
 
