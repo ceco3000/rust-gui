@@ -3,7 +3,10 @@
 //! 本示例绘制一个范围 0-100 的 Slider，默认值 50。
 
 use rgui::app::{App, AppConfig};
-use rgui::{Color, PaintContext, PaintLayerData, Rect, Slider, SliderState, WidgetId, WidgetSpec};
+use rgui::{
+    PaintContext, PaintLayerData, Rect, Slider, SliderState, WidgetId, WidgetSpec,
+    build_scene_from_paint_data,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
@@ -17,25 +20,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sl_bounds = Rect::new(50.0, 88.0, 200.0, 24.0);
     let sl_id = WidgetId::from_u64(1);
 
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
-
+    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
         let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // --- 背景 ---
-        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
-        bg_ctx.fill_rect(
-            Rect::new(0.0, 0.0, w, h),
-            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
-            0.0,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(0),
-            -1,
-            Rect::new(0.0, 0.0, w, h),
-            bg_ctx.into_operations(),
-        ));
 
         // --- Slider ---
         let mut sl_ctx = PaintContext::new(sl_bounds);
@@ -48,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             sl_ctx.into_operations(),
         ));
 
-        layers
+        build_scene_from_paint_data(&layers, frame, None)
     });
 
     println!("=== rgui Slider ===\n");

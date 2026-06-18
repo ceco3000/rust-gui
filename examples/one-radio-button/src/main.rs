@@ -5,7 +5,8 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::{
-    Color, PaintContext, PaintLayerData, RadioButton, RadioButtonState, Rect, WidgetId, WidgetSpec,
+    PaintContext, PaintLayerData, RadioButton, RadioButtonState, Rect, WidgetId, WidgetSpec,
+    build_scene_from_paint_data,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -29,26 +30,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    // 场景构建回调
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
-
+    // 视图场景构建回调
+    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
         let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // --- 背景 ---
-        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
-        bg_ctx.fill_rect(
-            Rect::new(0.0, 0.0, w, h),
-            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
-            0.0,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(0),
-            -1,
-            Rect::new(0.0, 0.0, w, h),
-            bg_ctx.into_operations(),
-        ));
 
         // --- 单选按钮（选中状态） ---
         let mut rb_ctx = PaintContext::new(rb_bounds);
@@ -62,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rb_ctx.into_operations(),
         ));
 
-        layers
+        build_scene_from_paint_data(&layers, frame, None)
     });
 
     println!("=== rgui 单 RadioButton 示例 ===\n");

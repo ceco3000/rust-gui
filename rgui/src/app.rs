@@ -7,8 +7,7 @@ use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
 use rgui_render::{
-    PaintLayerData, RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer,
-    VelloBackend, build_scene_from_paint_data,
+    RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
 };
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
@@ -23,18 +22,9 @@ use winit::window::WindowAttributes;
 /// 交互回调类型。
 pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 
-/// 场景构建回调类型。
-///
-/// 回调接收帧计数、窗口宽度、窗口高度（像素），返回 `PaintLayerData` 列表。
-/// 框架自动调用 `build_scene_from_paint_data` 将其转换为 SceneGraph，
-/// 并传入 `TextRenderer` 以启用真正的字形渲染。
-/// 在每帧 `RedrawRequested` 时调用。如果未设置，渲染循环使用空场景图。
-pub type SceneBuilder = Box<dyn FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send>;
-
 /// 视图场景构建回调类型。
 ///
 /// 回调接收帧计数、窗口宽度、窗口高度（像素），直接返回 `SceneGraph`。
-/// 与 `SceneBuilder` 互斥——设置 `ViewSceneBuilder` 后 `SceneBuilder` 被忽略。
 /// 用于 `html!` 宏 + `build_scene_from_view` 的声明式路径。
 pub type ViewSceneBuilder = Box<dyn FnMut(u64, u32, u32) -> SceneGraph + Send>;
 
@@ -108,9 +98,7 @@ pub struct App {
     focus: FocusManager,
     /// 交互区域：widget_id → (Rect, 消息名, 回调)
     interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
-    /// 可选的场景构建回调（每帧调用生成 SceneGraph）。
-    scene_builder: Option<SceneBuilder>,
-    /// 可选的视图场景构建回调（直接返回 SceneGraph，与 scene_builder 互斥）。
+    /// 可选的视图场景构建回调（直接返回 SceneGraph）。
     view_scene_builder: Option<ViewSceneBuilder>,
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
     /// 从 winit `window.scale_factor()` 读取，默认 1.0。
@@ -129,7 +117,6 @@ impl App {
             hit_tester: HitTester::new(),
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
-            scene_builder: None,
             view_scene_builder: None,
             scale_factor: 1.0,
         }
@@ -192,23 +179,10 @@ impl App {
             .insert(id, (bounds, action.into(), Box::new(cb)));
     }
 
-    /// 设置场景构建回调。
-    ///
-    /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
-    /// 返回 `Vec<PaintLayerData>`。框架自动将其转换为 SceneGraph
-    /// 并传入 `TextRenderer` 以启用字形渲染。
-    pub fn set_scene_builder(
-        &mut self,
-        builder: impl FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send + 'static,
-    ) {
-        self.scene_builder = Some(Box::new(builder));
-    }
-
     /// 设置视图场景构建回调（html! 声明式路径）。
     ///
     /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
-    /// 直接返回 `SceneGraph`。与 `set_scene_builder` 互斥——
-    /// 设置后 `scene_builder` 被忽略。
+    /// 直接返回 `SceneGraph`。
     ///
     /// 与 `build_scene_from_view` 配合使用，实现 WidgetView → SceneGraph 的端到端管线。
     pub fn set_view_scene_builder(
@@ -291,15 +265,12 @@ struct AppHandler {
     width: u32,
     /// 当前窗口高度（物理像素），用于构造 RenderParams。
     height: u32,
-    /// 场景构建回调（从 App 移入）。
-    scene_builder: Option<SceneBuilder>,
-    /// 视图场景构建回调（从 App 移入，与 scene_builder 互斥）。
+    /// 视图场景构建回调（从 App 移入）。
     view_scene_builder: Option<ViewSceneBuilder>,
 }
 
 impl AppHandler {
     fn new(mut app: App) -> Self {
-        let scene_builder = app.scene_builder.take();
         let view_scene_builder = app.view_scene_builder.take();
         Self {
             app,
@@ -312,7 +283,6 @@ impl AppHandler {
             scale_factor: 1.0,
             width: 0,
             height: 0,
-            scene_builder,
             view_scene_builder,
         }
     }
@@ -624,8 +594,7 @@ impl ApplicationHandler for AppHandler {
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
                     let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
-                    // 场景构建回调，带异常隔离（D1 §11.3）：
-                    // view_scene_builder（html! 声明式）优先于 scene_builder（PaintLayerData 手动）
+                    // 场景构建回调，带异常隔离（D1 §11.3）
                     let scene = if let Some(ref mut view_builder) = self.view_scene_builder {
                         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             view_builder(frame, logical_w as u32, logical_h as u32)
@@ -643,25 +612,6 @@ impl ApplicationHandler for AppHandler {
                                 SceneGraph::new(frame)
                             },
                         }
-                    } else if let Some(ref mut builder) = self.scene_builder {
-                        let layers =
-                            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                builder(frame, logical_w as u32, logical_h as u32)
-                            })) {
-                                Ok(layers) => layers,
-                                Err(e) => {
-                                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
-                                        *s
-                                    } else if let Some(s) = e.downcast_ref::<String>() {
-                                        s.as_str()
-                                    } else {
-                                        "unknown panic"
-                                    };
-                                    eprintln!("[rgui] 场景构建 panic (frame={frame}): {msg}");
-                                    Vec::new()
-                                },
-                            };
-                        build_scene_from_paint_data(&layers, frame, Some(&self.text_renderer))
                     } else {
                         SceneGraph::new(frame)
                     };

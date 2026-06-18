@@ -4,10 +4,7 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
-use rgui::{
-    AppMessage, Color, PaintContext, PaintLayerData, Rect, WidgetId, WidgetView,
-    build_scene_from_paint_data, build_scene_from_view, html,
-};
+use rgui::{AppMessage, Rect, WidgetId, WidgetView, build_scene_from_view, html};
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 enum Msg {
@@ -44,29 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             </Center>
         };
 
-        // Background layer
-        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
-        bg_ctx.fill_rect(
-            Rect::new(0.0, 0.0, w, h),
-            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
-            0.0,
-        );
-        let bg_layer = PaintLayerData::new(
-            WidgetId::from_u64(0),
-            -1,
-            Rect::new(0.0, 0.0, w, h),
-            bg_ctx.into_operations(),
-        );
-
-        let mut bg_scene = build_scene_from_paint_data(&[bg_layer], frame, None);
-
-        // Build SceneGraph from WidgetView tree
-        let view_scene =
-            build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None);
-
-        // Merge: background behind view layers
-        bg_scene.layers.extend(view_scene.layers);
-        bg_scene
+        // Build SceneGraph from WidgetView tree（背景由 RenderParams::clear_color 提供）
+        build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None)
     });
 
     println!("=== rgui Single Button (html! 声明式渲染) ===\n");

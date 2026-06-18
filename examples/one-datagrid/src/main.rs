@@ -5,8 +5,8 @@
 
 use rgui::app::{App, AppConfig};
 use rgui::{
-    Color, ColumnDef, DataGrid, DataGridState, PaintContext, PaintLayerData, Rect, WidgetId,
-    WidgetSpec,
+    ColumnDef, DataGrid, DataGridState, PaintContext, PaintLayerData, Rect, WidgetId, WidgetSpec,
+    build_scene_from_paint_data,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,25 +30,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_width: f64 = state.columns.iter().map(|c| c.width).sum();
     let grid_height = 28.0 + 3.0 * 24.0; // header + 3 rows
 
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
+    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
 
         let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // --- background ---
-        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
-        bg_ctx.fill_rect(
-            Rect::new(0.0, 0.0, w, h),
-            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
-            0.0,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(0),
-            -1,
-            Rect::new(0.0, 0.0, w, h),
-            bg_ctx.into_operations(),
-        ));
 
         // --- DataGrid (centered) ---
         let grid_bounds = Rect::new(
@@ -66,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             grid_ctx.into_operations(),
         ));
 
-        layers
+        build_scene_from_paint_data(&layers, frame, None)
     });
 
     println!("=== rgui DataGrid example ===\n");

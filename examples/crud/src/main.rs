@@ -309,22 +309,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             </Column>
         };
 
-        // --- Build scene: background + dynamic leaf components ---
+        // --- Build scene: dynamic leaf components ---
         let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // Background
-        let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
-        bg_ctx.fill_rect(
-            Rect::new(0.0, 0.0, w, h),
-            Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
-            0.0,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(0),
-            -1,
-            Rect::new(0.0, 0.0, w, h),
-            bg_ctx.into_operations(),
-        ));
 
         // Title
         let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
