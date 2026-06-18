@@ -2329,7 +2329,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-slider"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
 name = "one-switch"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+]
+
+[[package]]
+name = "one-textfield"
 version = "0.1.0"
 dependencies = [
  "rgui",
