@@ -1,4 +1,4 @@
-//! rgui 过程宏——ui! 声明式 UI 宏和派生宏。
+//! rgui 过程宏——html! HTML 声明式宏和派生宏。
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -6,6 +6,9 @@ use syn::{
     Ident, LitBool, LitFloat, LitInt, LitStr, Token, braced, parse::Parse, parse::ParseStream,
     parse_macro_input,
 };
+
+mod html_codegen;
+mod html_parser;
 
 // ========== AST 类型 ==========
 
@@ -128,6 +131,51 @@ fn gen_widget_def(wd: &WidgetDef) -> proc_macro2::TokenStream {
 pub fn ui(input: TokenStream) -> TokenStream {
     let wd = parse_macro_input!(input as WidgetDef);
     gen_widget_def(&wd).into()
+}
+
+// ========== html! 宏 ==========
+
+/// `html!` 过程宏——XML-like HTML 语法 → WidgetView builder 代码。
+///
+/// ## 基本语法
+///
+/// ```ignore
+/// use rgui::html;
+///
+/// let view: WidgetView<MyMessage> = html! {
+///     <Button label="Hi" />
+/// };
+/// ```
+///
+/// 展开为：
+/// ```ignore
+/// WidgetView::<MyMessage>::new("Button")
+///     .prop("label", PropValue::Str(Arc::from("Hi")))
+/// ```
+///
+/// ## 嵌套子元素
+///
+/// ```ignore
+/// html! {
+///     <Column gap="8.0">
+///         <Label text="Hello" />
+///         <Button label="Click" />
+///     </Column>
+/// }
+/// ```
+///
+/// ## 文本内容
+///
+/// `<Label>Hello</Label>` 自动生成 Text 子组件，等价于 `<Label text="Hello" />`。
+///
+/// 设计源自 D1 §13。
+#[proc_macro]
+pub fn html(input: TokenStream) -> TokenStream {
+    let input = proc_macro2::TokenStream::from(input);
+    match html_parser::parse_html(input) {
+        Ok(elements) => html_codegen::generate_widget_views(&elements).into(),
+        Err(e) => e.to_compile_error().into(),
+    }
 }
 
 // ========== derive(AppMessage) ==========
