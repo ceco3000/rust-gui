@@ -1,14 +1,14 @@
-//! rgui 计数器——使用 `html!` 声明式语法。
+//! rgui 计数器——使用 `html!` 声明式语法 + `build_scene_from_view` 渲染。
 //!
 //! 本示例演示 `html!` 宏构建 WidgetView 树，
-//! 并通过 `view_to_paint_layers` 桥接到渲染管线。
+//! 并通过 `build_scene_from_view` 直接渲染到 SceneGraph。
 
 use rgui::app::{App, AppConfig};
+use rgui::paint_factory::default_paint_fn;
 use rgui::{
-    AppMessage, Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData,
-    PropValue, Rect, WidgetId, WidgetSpec, WidgetView, html,
+    AppMessage, Color, PaintContext, PaintLayerData, Rect, WidgetId, WidgetView,
+    build_scene_from_paint_data, build_scene_from_view, html,
 };
-use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 // ============================================================================
@@ -22,71 +22,13 @@ enum CounterMsg {
 }
 
 // ============================================================================
-// WidgetView → PaintLayerData 桥接
-// ============================================================================
-
-fn view_to_paint_layers<M: AppMessage>(
-    view: &WidgetView<M>,
-    parent_bounds: Rect,
-) -> Vec<PaintLayerData> {
-    let mut layers = Vec::new();
-    let mut z = 0i32;
-    walk_view(view, parent_bounds, &mut layers, &mut z);
-    layers
-}
-
-fn get_prop_str(props: &BTreeMap<&'static str, PropValue>, key: &str) -> String {
-    props
-        .get(key)
-        .and_then(|v| match v {
-            PropValue::Str(s) => Some(s.as_ref().to_string()),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
-
-fn walk_view<M: AppMessage>(
-    view: &WidgetView<M>,
-    bounds: Rect,
-    layers: &mut Vec<PaintLayerData>,
-    z: &mut i32,
-) {
-    let widget_id = view.id.unwrap_or_default();
-    let mut ctx = PaintContext::new(bounds);
-
-    match view.widget_type {
-        "Button" => {
-            let label = get_prop_str(&view.props, "label");
-            Button.paint(&ButtonState::new(label), bounds, &mut ctx);
-        },
-        "Label" => {
-            let text = get_prop_str(&view.props, "text");
-            Label.paint(&LabelState { text }, bounds, &mut ctx);
-        },
-        "Column" | "Row" | "Container" | "Padding" | "Center" | "SizedBox" | "Expanded"
-        | "Card" | "Stack" => {},
-        _ => {},
-    }
-
-    let ops = ctx.into_operations();
-    if !ops.is_empty() {
-        layers.push(PaintLayerData::new(widget_id, *z, bounds, ops));
-        *z += 1;
-    }
-
-    for child in &view.children {
-        walk_view(child, bounds, layers, z);
-    }
-}
-
-// ============================================================================
 // 主函数
 // ============================================================================
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
         AppConfig::new()
-            .title("rgui — 计数器（html! 语法）")
+            .title("rgui — 计数器（html! 声明式渲染）")
             .window_size(400.0, 300.0),
     );
     app.register_defaults();
@@ -115,9 +57,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    // 场景构建回调——使用 html! 声明式 UI，桥接到渲染管线
+    // 视图场景构建回调——使用 html! 声明式 UI + build_scene_from_view 渲染
     let count_for_view = Arc::clone(&count);
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
+    let paint_fn = default_paint_fn();
+    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
         let cnt = *count_for_view.lock().unwrap();
@@ -134,30 +77,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             </Column>
         };
 
-        // 背景层
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+        // 背景层（使用 PaintLayerData 手动构建）
         let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
         bg_ctx.fill_rect(
             Rect::new(0.0, 0.0, w, h),
             Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
             0.0,
         );
-        layers.push(PaintLayerData::new(
+        let bg_layer = PaintLayerData::new(
             WidgetId::from_u64(0),
             -1,
             Rect::new(0.0, 0.0, w, h),
             bg_ctx.into_operations(),
-        ));
+        );
 
-        // 从 WidgetView 树生成组件绘制层
-        let view_layers = view_to_paint_layers(&view, Rect::new(0.0, 0.0, w, h));
-        layers.extend(view_layers);
+        let mut bg_scene = build_scene_from_paint_data(&[bg_layer], frame, None);
 
-        layers
+        // 从 WidgetView 树构建 SceneGraph
+        let view_scene =
+            build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None);
+
+        // 合并：背景层在前，视图层在后
+        bg_scene.layers.extend(view_scene.layers);
+        bg_scene
     });
 
-    println!("=== rgui 计数器（html! 声明式语法）===\n");
-    println!("UI 由 html! 宏声明，通过 view_to_paint_layers 桥接到渲染管线。");
+    println!("=== rgui 计数器（html! 声明式渲染）===\n");
+    println!("UI 由 html! 宏声明，通过 build_scene_from_view 直接渲染。");
     println!();
     println!("点击窗口按钮： [+1]  [重置]");
 

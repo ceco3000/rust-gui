@@ -31,6 +31,13 @@ pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 /// 在每帧 `RedrawRequested` 时调用。如果未设置，渲染循环使用空场景图。
 pub type SceneBuilder = Box<dyn FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send>;
 
+/// 视图场景构建回调类型。
+///
+/// 回调接收帧计数、窗口宽度、窗口高度（像素），直接返回 `SceneGraph`。
+/// 与 `SceneBuilder` 互斥——设置 `ViewSceneBuilder` 后 `SceneBuilder` 被忽略。
+/// 用于 `html!` 宏 + `build_scene_from_view` 的声明式路径。
+pub type ViewSceneBuilder = Box<dyn FnMut(u64, u32, u32) -> SceneGraph + Send>;
+
 #[allow(clippy::type_complexity)]
 /// tick() 布局回调。
 pub type LayoutCallback<'a> = Box<dyn FnOnce(&mut App) + 'a>;
@@ -103,6 +110,8 @@ pub struct App {
     interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
     /// 可选的场景构建回调（每帧调用生成 SceneGraph）。
     scene_builder: Option<SceneBuilder>,
+    /// 可选的视图场景构建回调（直接返回 SceneGraph，与 scene_builder 互斥）。
+    view_scene_builder: Option<ViewSceneBuilder>,
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
     /// 从 winit `window.scale_factor()` 读取，默认 1.0。
     pub(crate) scale_factor: f64,
@@ -121,6 +130,7 @@ impl App {
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
             scene_builder: None,
+            view_scene_builder: None,
             scale_factor: 1.0,
         }
     }
@@ -192,6 +202,20 @@ impl App {
         builder: impl FnMut(u64, u32, u32) -> Vec<PaintLayerData> + Send + 'static,
     ) {
         self.scene_builder = Some(Box::new(builder));
+    }
+
+    /// 设置视图场景构建回调（html! 声明式路径）。
+    ///
+    /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
+    /// 直接返回 `SceneGraph`。与 `set_scene_builder` 互斥——
+    /// 设置后 `scene_builder` 被忽略。
+    ///
+    /// 与 `build_scene_from_view` 配合使用，实现 WidgetView → SceneGraph 的端到端管线。
+    pub fn set_view_scene_builder(
+        &mut self,
+        builder: impl FnMut(u64, u32, u32) -> SceneGraph + Send + 'static,
+    ) {
+        self.view_scene_builder = Some(Box::new(builder));
     }
 
     /// 运行应用。
@@ -269,11 +293,14 @@ struct AppHandler {
     height: u32,
     /// 场景构建回调（从 App 移入）。
     scene_builder: Option<SceneBuilder>,
+    /// 视图场景构建回调（从 App 移入，与 scene_builder 互斥）。
+    view_scene_builder: Option<ViewSceneBuilder>,
 }
 
 impl AppHandler {
     fn new(mut app: App) -> Self {
         let scene_builder = app.scene_builder.take();
+        let view_scene_builder = app.view_scene_builder.take();
         Self {
             app,
             window: None,
@@ -286,6 +313,7 @@ impl AppHandler {
             width: 0,
             height: 0,
             scene_builder,
+            view_scene_builder,
         }
     }
 
@@ -597,8 +625,25 @@ impl ApplicationHandler for AppHandler {
                     let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
                     // 场景构建回调，带异常隔离（D1 §11.3）：
-                    // paint() panic → 跳过该组件，用空场景继续
-                    let scene = if let Some(ref mut builder) = self.scene_builder {
+                    // view_scene_builder（html! 声明式）优先于 scene_builder（PaintLayerData 手动）
+                    let scene = if let Some(ref mut view_builder) = self.view_scene_builder {
+                        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            view_builder(frame, logical_w as u32, logical_h as u32)
+                        })) {
+                            Ok(scene) => scene,
+                            Err(e) => {
+                                let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                                    *s
+                                } else if let Some(s) = e.downcast_ref::<String>() {
+                                    s.as_str()
+                                } else {
+                                    "unknown panic"
+                                };
+                                eprintln!("[rgui] 视图场景构建 panic (frame={frame}): {msg}");
+                                SceneGraph::new(frame)
+                            },
+                        }
+                    } else if let Some(ref mut builder) = self.scene_builder {
                         let layers =
                             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 builder(frame, logical_w as u32, logical_h as u32)

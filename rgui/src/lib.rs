@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod error_boundary;
+pub mod paint_factory;
 pub mod render;
 pub mod widget_node;
 

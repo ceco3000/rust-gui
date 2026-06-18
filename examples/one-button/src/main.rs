@@ -1,11 +1,12 @@
-//! rgui single-button example using `html!` declarative syntax.
+//! rgui single-button example using `html!` declarative syntax + `build_scene_from_view`.
 //!
-//! Demonstrates the simplest html! macro usage: a single button declarative UI.
+//! Demonstrates the simplest html! macro usage with the view-scene rendering pipeline.
 
 use rgui::app::{App, AppConfig};
+use rgui::paint_factory::default_paint_fn;
 use rgui::{
-    AppMessage, Button, ButtonState, Color, PaintContext, PaintLayerData, Rect, WidgetId,
-    WidgetSpec, WidgetView, html,
+    AppMessage, Color, PaintContext, PaintLayerData, Rect, WidgetId, WidgetView,
+    build_scene_from_paint_data, build_scene_from_view, html,
 };
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
@@ -16,7 +17,7 @@ enum Msg {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
         AppConfig::new()
-            .title("rgui - Single Button (html!)")
+            .title("rgui - Single Button (html! 声明式渲染)")
             .window_size(300.0, 200.0),
     );
     app.register_defaults();
@@ -27,52 +28,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Button clicked: {action}");
     });
 
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
+    let paint_fn = default_paint_fn();
+    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
 
-        if _frame == 0 {
+        if frame == 0 {
             println!("[Example] Frame 0 scene build: logical size {w}x{h}");
         }
 
         // html! declarative UI definition
-        let _view: WidgetView<Msg> = html! {
+        let view: WidgetView<Msg> = html! {
             <Center>
                 <Button id="1" label="OK" on:click={Msg::Clicked} />
             </Center>
         };
 
-        let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // Background
+        // Background layer
         let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
         bg_ctx.fill_rect(
             Rect::new(0.0, 0.0, w, h),
             Color::new(14.0 / 255.0, 18.0 / 255.0, 28.0 / 255.0, 1.0),
             0.0,
         );
-        layers.push(PaintLayerData::new(
+        let bg_layer = PaintLayerData::new(
             WidgetId::from_u64(0),
             -1,
             Rect::new(0.0, 0.0, w, h),
             bg_ctx.into_operations(),
-        ));
+        );
 
-        // OK Button
-        let mut btn_ctx = PaintContext::new(btn_bounds);
-        Button.paint(&ButtonState::new("OK"), btn_bounds, &mut btn_ctx);
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(1),
-            0,
-            btn_bounds,
-            btn_ctx.into_operations(),
-        ));
+        let mut bg_scene = build_scene_from_paint_data(&[bg_layer], frame, None);
 
-        layers
+        // Build SceneGraph from WidgetView tree
+        let view_scene =
+            build_scene_from_view(&view, Rect::new(0.0, 0.0, w, h), &paint_fn, frame, None);
+
+        // Merge: background behind view layers
+        bg_scene.layers.extend(view_scene.layers);
+        bg_scene
     });
 
-    println!("=== rgui Single Button (html! syntax) ===\n");
-    println!("UI defined by html! macro. Window: 300x200 (logical pixels)");
+    println!("=== rgui Single Button (html! 声明式渲染) ===\n");
+    println!("UI defined by html! macro, rendered via build_scene_from_view.");
+    println!("Window: 300x200 (logical pixels)");
     println!();
     println!("Click the [OK] button...");
 

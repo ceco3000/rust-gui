@@ -1,6 +1,7 @@
 //! # rgui CRUD Example - Contact Manager using `html!` declarative syntax
 //!
-//! Demonstrates CRUD operations with rgui framework using html! macro.
+//! Demonstrates CRUD operations with rgui framework using html! macro +
+//! `build_scene_from_view` rendering pipeline.
 //!
 //! ## Usage
 //!
@@ -9,10 +10,11 @@
 //! ```
 
 use rgui::app::{App, AppConfig};
+use rgui::paint_factory::default_paint_fn;
 use rgui::prelude::*;
 use rgui::{
     AppMessage, Button, ButtonState, Color, Label, LabelState, PaintContext, PaintLayerData, Rect,
-    WidgetId, WidgetView, html,
+    WidgetId, WidgetView, build_scene_from_view, html,
 };
 use std::sync::{Arc, Mutex};
 
@@ -168,7 +170,7 @@ const INPUT_W: f64 = 160.0;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
         AppConfig::new()
-            .title("rgui CRUD Example - Contact Manager (html!)")
+            .title("rgui CRUD Example - Contact Manager (html! 声明式渲染)")
             .window_size(820.0, 600.0),
     );
     app.register_defaults();
@@ -273,14 +275,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // --- Scene builder with html! declarative syntax ---
+    // --- View-scene builder with html! declarative syntax + manual paint layers ---
 
     let scene_state = Arc::clone(&state);
-    app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
+    let paint_fn = default_paint_fn();
+    app.set_view_scene_builder(move |_frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
         let guard = scene_state.lock().unwrap();
-        let mut layers: Vec<PaintLayerData> = Vec::new();
 
         // html! declarative UI definition (demonstrates the syntax)
         let _view: WidgetView<CrudMsg> = html! {
@@ -307,7 +309,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             </Column>
         };
 
-        // --- Background ---
+        // --- Build scene: background + dynamic leaf components ---
+        let mut layers: Vec<PaintLayerData> = Vec::new();
+
+        // Background
         let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
         bg_ctx.fill_rect(
             Rect::new(0.0, 0.0, w, h),
@@ -321,7 +326,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bg_ctx.into_operations(),
         ));
 
-        // --- Title ---
+        // Title
         let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
         let mut title_ctx = PaintContext::new(title_bounds);
         Label.paint(
@@ -338,7 +343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             title_ctx.into_operations(),
         ));
 
-        // --- Input labels ---
+        // Input labels and values
         let input_labels = ["Name:", "Email:", "Phone:"];
         let input_values = [&guard.edit_name, &guard.edit_email, &guard.edit_phone];
         for (i, lbl) in input_labels.iter().enumerate() {
@@ -347,7 +352,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut lc = PaintContext::new(lb);
             Label.paint(
                 &LabelState {
-                    text: lbl.to_string(),
+                    text: (*lbl).to_string(),
                 },
                 lb,
                 &mut lc,
@@ -382,7 +387,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
 
-        // --- Button row ---
+        // Button row
         let buttons = [
             (201_u64, "Add", 20.0),
             (202_u64, "Edit", 110.0),
@@ -392,7 +397,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for (id, label, x) in &buttons {
             let bb = Rect::new(*x, BUTTON_Y, 80.0, 32.0);
             let mut bc = PaintContext::new(bb);
-            Button.paint(&ButtonState::new(label.to_string()), bb, &mut bc);
+            Button.paint(&ButtonState::new((*label).to_string()), bb, &mut bc);
             layers.push(PaintLayerData::new(
                 WidgetId::from_u64(*id),
                 1,
@@ -401,7 +406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
 
-        // --- Contact list (up to 12 rows) ---
+        // Contact list (up to 12 rows)
         for i in 0..12_usize {
             let y = LIST_TOP + i as f64 * LIST_ROW_H;
             let row_bounds = Rect::new(LEFT, y, 780.0, LIST_ROW_H);
@@ -431,7 +436,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        // --- Status message ---
+        // Status message
         let msg_bounds = Rect::new(20.0, h - 40.0, w - 40.0, 24.0);
         let mut msg_ctx = PaintContext::new(msg_bounds);
         msg_ctx.draw_text(
@@ -448,12 +453,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
 
         drop(guard);
-        layers
+
+        // Also include the html! view's scene on top (demonstrates integration)
+        let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, None);
+        // Add structural view from html! (containers add no paint ops, so this is structural only)
+        let view_scene =
+            build_scene_from_view(&_view, Rect::new(0.0, 0.0, w, h), &paint_fn, _frame, None);
+        scene.layers.extend(view_scene.layers);
+        scene
     });
 
     // Run the app
-    println!("\n=== rgui CRUD Example (html! syntax) ===");
-    println!("Contact manager app started. UI declared with html! macro.");
+    println!("\n=== rgui CRUD Example (html! 声明式渲染) ===");
+    println!("Contact manager app started. UI declared with html! macro,");
+    println!("rendered via build_scene_from_view pipeline.");
     println!();
     println!("Instructions:");
     println!("  1. Click [Add] -> Create new contact");
