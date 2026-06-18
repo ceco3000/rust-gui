@@ -14,7 +14,9 @@
 
 ### 当前状态
 
-**设计阶段**——技术路线验证已全部通过（V1-V10），12 份设计文档（D0-D11）已完成初版。项目尚未开始编码，`docs/` 中的设计文档是当前唯一的工作产出。ECC 在当前阶段的任务是**审核、完善设计文档**，以及在设计确认后按文档进行编码实现。在用户明确指令开始编码前，不得擅自创建代码文件。
+**开发阶段**——阶段 0 核心基础设施已完成，审计补充任务 30/31（97%），1 项 ⏭️ P2。当前仅支持拉丁文字（Inter 嵌入字体），CJK 为 P2 跳过。
+
+**工作目录：** `/Users/chenchao/Documents/code/rust/RUST-GUI`
 
 ---
 
@@ -152,3 +154,29 @@ rgui (facade) ─ 重新导出全部公共 API
 | Rust 专属 | `~/.claude/rules/ecc/rust/` | 函数式编程优先、unsafe 严格准入、error handling、ownership | `**/*.rs` 文件 |
 
 **优先级**：Rust 专属规则覆盖通用规则中冲突的部分（例如 Rust 文件优先使用迭代器组合子而非通用规则中的「简洁优先」）。详细内容见各自规则文件，CLAUDE.md 不重复列举。
+
+---
+
+## 项目约定
+
+### 开发哲学
+
+- **先「有没有」再「好不好」**：最简单的实现优先，拒绝优化建议。能跑 > 优雅。
+- **禁止凭空发明设计哲学**：源码溯源，声明≠实现，字段存在≠被使用。
+
+### 文字渲染
+
+- 当前仅支持拉丁文字（Inter 嵌入字体）。CJK 为 ⏭️ P2（D12 M15，Vello 0.9 `draw_glyphs()` 单字体限制）。
+- 垂直居中：`baseline_y = bounds.y + (bounds.h + ascent) / 2`。Vello 坐标系 Y 轴向上。
+
+### Git 工作流
+
+- 工作流：`fetch → rebase → push`，禁止产生 merge commit
+- 提交前：`cargo check` 零错误 + 清理全部 `println!`
+- 修改配置文件前先说明目的并等待确认
+- `auto-dev` 循环停止后必须 `git status --short` 检查未提交代码
+
+### ECC 开发要求
+
+- 所有新功能/修改通过 ECC 子代理：`delegate_task` + `ecc-rust-rules`/`ecc-hooks`/`ecc/tdd-workflow`
+- 手动直接写文件仅限 CLAUDE.md 例外场景（注释/文档字符串/格式修复/编译错误/非新 API 测试）
