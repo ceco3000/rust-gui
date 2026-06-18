@@ -113,7 +113,7 @@ rgui (facade) ─ 重新导出全部公共 API
   ├─ rgui-platform ← 窗口、输入、IME、剪贴板
   ├─ rgui-a11y     ← 无障碍系统
   ├─ rgui-devtools ← 热重载、双进程通信
-  ├─ rgui-macros   ← 过程宏（ui!、derive）
+  ├─ rgui-macros   ← 过程宏（html!、derive）
   ├─ rgui-components ← 内置组件库
   └─ rgui-script   ← Rhai 脚本绑定（阶段 2 预留）
 ```

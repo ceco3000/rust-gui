@@ -380,7 +380,7 @@ App::set_theme(Theme::dark()) → 替换 ViewContext::theme → 标记所有 wid
 ```
 1. 框架默认样式（rgui-core 内置）
 2. 应用 .rgss 文件中的规则
-3. 组件 inline style（ui! 宏中的属性）
+3. 组件 inline style（html! 宏中的属性）
 4. 主题变量（var() 解析）
 5. !important 声明（最高）
 ```

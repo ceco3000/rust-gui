@@ -373,7 +373,7 @@ thiserror.workspace = true
 ```toml
 [package]
 name = "rgui-macros"
-description = "rgui 宏——ui! 宏、派生宏（WidgetSpec、AppMessage、PersistState）"
+description = "rgui 宏——html! 宏、派生宏（WidgetSpec、AppMessage、PersistState）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -578,7 +578,7 @@ echo "=== 全部发布完成 ==="
 | `rgui-platform` | 平台抽象——窗口、输入、IME | `window`, `input` |
 | `rgui-a11y` | 无障碍——AccessKit 集成 | `accessibility`, `a11y`, `wcag` |
 | `rgui-devtools` | 开发工具——热重载、快速重启 | `devtools`, `hot-reload` |
-| `rgui-macros` | 过程宏——ui!、派生宏 | `macro`, `derive`, `dsl` |
+| `rgui-macros` | 过程宏——html!、派生宏 | `macro`, `derive`, `dsl` |
 | `rgui-components` | 内置组件库 | `components`, `widgets` |
 | `rgui` | Rust GUI 框架（facade） | `desktop`, `cross-platform` |
 

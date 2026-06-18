@@ -539,7 +539,7 @@ pub trait WidgetSpec: Send + Sync + 'static {
 ```rust
 /// Rust 端的声明式视图 DSL
 fn app(state: &AppState) -> WidgetView<Message> {
-    ui! {
+    html! {
         <VBox spacing=12 padding=16 class="page">
             <HBox spacing=8>
                 <TextField placeholder="搜索..."

@@ -111,9 +111,9 @@
 | **rgui-platform** | 窗口管理、输入事件、IME、剪贴板、拖放 | `winit` | ✅ 平台相关 |
 | **rgui-a11y** | AccessibilityBackend trait、AccessKit 集成、无障碍树生成、焦点管理 | `accesskit`、`accesskit_winit` | ✅ 平台相关 |
 | **rgui-devtools** | 资源热重载 watcher、Rust 快速重启协议、双进程通信、状态恢复序列化 | `notify`、`serde_json`；内部依赖 `rgui-state`（快照协议）、`rgui-style`（.rgss 监控） | ❌ 纯 Rust |
-| **rgui-macros** | `ui!` 声明式宏、`#[derive(WidgetSpec)]`、`#[derive(AppMessage)]`、`#[derive(PersistState)]` | `syn`、`quote`、`proc-macro2` | ❌ 纯 Rust |
+| **rgui-macros** | `html!` 声明式宏、`#[derive(WidgetSpec)]`、`#[derive(AppMessage)]`、`#[derive(PersistState)]` | `syn`、`quote`、`proc-macro2` | ❌ 纯 Rust |
 | **rgui-components** | 内置组件库（Button、TextField、DataGrid、Form 等） | `rgui-core` | ❌ 纯 Rust |
-| **rgui** | Facade crate：重新导出所有公共 API、`ui!` 宏、`App` 启动器 | 所有上述 crate | ❌ 纯 Rust |
+| **rgui** | Facade crate：重新导出所有公共 API、`html!` 宏、`App` 启动器 | 所有上述 crate | ❌ 纯 Rust |
 | **rgui-script**（阶段 2 预留） | Rhai 绑定、脚本热重载、命令处理器注册 | `rhai` | ❌ 纯 Rust |
 
 > **layout-style 交互契约**：`rgui-style` 解析 `.rgss` 产生样式属性键值对（`BTreeMap<String, PropValue>`）；`rgui-layout` 从其中提取布局相关键（`display`、`flex-direction`、`gap`、`grid-template-columns` 等）→ 映射为 Taffy `Style`。两者通过 `LayoutStyle` 结构体交互（定义于 `rgui-core` 的 geometry 模块）。
@@ -445,8 +445,8 @@ pub use rgui_platform::*;
 pub use rgui_a11y::*;
 pub use rgui_style::*;
 
-// ui! 宏
-pub use rgui_macros::ui;
+// html! 宏
+pub use rgui_macros::html;
 
 // 应用启动器
 pub use app::{App, AppConfig};
@@ -508,7 +508,7 @@ pub enum PropValue {
     Map(BTreeMap<Arc<str>, PropValue>),
     /// 枚举值（如 variant: Primary）
     Enum(Arc<str>),
-    /// 回调值（用于 ui! 宏事件绑定，见 D5）
+    /// 回调值（用于 html! 宏事件绑定，见 D5）
     Callback(Callback),
 }
 ```
@@ -814,7 +814,7 @@ fn tick(&mut self) {
 | struct / enum | PascalCase | `WidgetView`、`PropValue`、`DrawCommand` |
 | function / method | snake_case | `dispatch_events()`、`compute_layout()` |
 | constant | SCREAMING_SNAKE_CASE | `MAX_WIDGET_DEPTH`、`DEFAULT_FONT_SIZE` |
-| macro | snake_case（小写） | `ui!`、`widget!` |
+| macro | snake_case（小写） | `html!`、`widget!` |
 | type alias | PascalCase | `WidgetId`、`TextureId` |
 
 ### 8.2 注释语言

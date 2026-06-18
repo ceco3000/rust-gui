@@ -145,7 +145,7 @@
 | MeasureContext + FontMetrics | §6.3 | C10 + R08a ✅ |
 | PaintContext | §6.4 | C10 + M01 ⚠️ |
 | AccessContext | §6.5 | C10 ✅ |
-| ui! 宏 | §7 | F03 ✅ |
+| html! 宏 | §7 | F03 ✅ |
 | #[derive(WidgetSpec)] | §8.1 | F04 ✅ |
 | #[derive(AppMessage)] | §8.2 | P10 ✅ |
 | #[derive(PersistState)] | §8.3 | S09 ✅ |
