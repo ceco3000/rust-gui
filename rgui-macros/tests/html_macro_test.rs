@@ -67,7 +67,8 @@ fn h01_deeply_nested() {
     assert_eq!(row.children[1].widget_type, "Label");
 }
 
-/// H08: 文本内容语法糖——`<Label>Hello</Label>` → `WidgetView::new("Label").child(WidgetView::new("Text").prop("text", "Hello"))`
+/// H08: 文本内容语法糖——`<Label>Hello</Label>` 等效 `<Label text="Hello" />`
+/// 两种写法生成的 WidgetView 完全相同。
 #[test]
 fn h08_text_content() {
     let view: WidgetView<TestMessage> = html! {
@@ -75,12 +76,51 @@ fn h08_text_content() {
     };
 
     assert_eq!(view.widget_type, "Label");
-    assert_eq!(view.children.len(), 1);
-    let text_child = &view.children[0];
-    assert_eq!(text_child.widget_type, "Text");
-    match text_child.props.get("text") {
+    // 文本内容应成为 text prop，而非子组件
+    assert_eq!(
+        view.children.len(),
+        0,
+        "文本内容应成为 text prop，不应有子组件"
+    );
+    match view.props.get("text") {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "Hello World"),
         other => panic!("期望 PropValue::Str(\"Hello World\")，实际: {other:?}"),
+    }
+}
+
+/// H08: 验证 `<Label>Hello</Label>` 和 `<Label text="Hello" />` 等价
+#[test]
+fn h08_equivalence() {
+    let view1: WidgetView<TestMessage> = html! {
+        <Label>Hello</Label>
+    };
+    let view2: WidgetView<TestMessage> = html! {
+        <Label text="Hello" />
+    };
+
+    assert_eq!(view1, view2, "两种写法应该生成完全相同的 WidgetView");
+
+    // 验证具体结构
+    assert_eq!(view1.widget_type, "Label");
+    assert_eq!(view1.children.len(), 0);
+    match view1.props.get("text") {
+        Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "Hello"),
+        other => panic!("期望 PropValue::Str(\"Hello\")，实际: {other:?}"),
+    }
+}
+
+/// H08: 当显式 text 属性和文本内容同时存在时，属性优先
+#[test]
+fn h08_explicit_text_wins() {
+    let view: WidgetView<TestMessage> = html! {
+        <Label text="explicit">content</Label>
+    };
+
+    assert_eq!(view.widget_type, "Label");
+    assert_eq!(view.children.len(), 0);
+    match view.props.get("text") {
+        Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "explicit"),
+        other => panic!("期望 PropValue::Str(\"explicit\")，实际: {other:?}"),
     }
 }
 

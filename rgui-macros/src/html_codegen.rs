@@ -169,13 +169,43 @@ fn generate_element(el: &HtmlElement) -> TokenStream {
         };
     }
 
+    // H08: 检查是否有显式的 "text" 属性
+    let has_explicit_text = el.attributes.iter().any(|a| a.name == "text");
+
+    // H08: 判断是否只有纯文本子节点（无元素子节点）
+    let has_element_children = el
+        .children
+        .iter()
+        .any(|c| matches!(c, HtmlChild::Element(_)));
+    let has_only_text_children =
+        !has_element_children && el.children.iter().any(|c| matches!(c, HtmlChild::Text(_)));
+
+    // H08: 从纯文本子节点提取文本内容（文本内容语法糖）
+    // 仅在无元素子节点且无显式 text 属性时生效
+    let text_content: Option<String> = if has_explicit_text || has_element_children {
+        None
+    } else {
+        el.children.iter().find_map(|c| match c {
+            HtmlChild::Text(t) => Some(t.clone()),
+            _ => None,
+        })
+    };
+
     // 分离普通属性和事件绑定
-    let prop_setters: Vec<_> = el
+    let mut prop_setters: Vec<_> = el
         .attributes
         .iter()
         .filter(|a| !is_event_binding(&a.name))
         .map(generate_prop_setter)
         .collect();
+
+    // H08: 将纯文本内容转为 text prop
+    if let Some(text) = &text_content {
+        let value_tokens = infer_prop_value_from_literal(text);
+        prop_setters.push(quote! {
+            __view = __view.prop("text", #value_tokens);
+        });
+    }
 
     let event_setters: Vec<_> = el
         .attributes
@@ -184,7 +214,14 @@ fn generate_element(el: &HtmlElement) -> TokenStream {
         .map(generate_event_binding)
         .collect();
 
-    let child_setters: Vec<_> = el.children.iter().map(generate_child_setter).collect();
+    // H08: 仅当有文本内容且无元素子节点时跳过文本子节点
+    // 混合内容（文本 + 元素）保留文本为 Text 子组件
+    let child_setters: Vec<_> = if has_only_text_children {
+        // 纯文本 → 已转为 text prop，跳过
+        Vec::new()
+    } else {
+        el.children.iter().map(generate_child_setter).collect()
+    };
 
     quote! {
         {
