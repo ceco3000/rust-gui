@@ -31,7 +31,7 @@ pub use id::{NodeHandle, WidgetId, WindowId};
 
 // 几何类型
 pub use geometry::{
-    AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
+    AlignContent, AlignItems, AlignSelf, Axis, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
     FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle, Point, Rect,
     Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
 };
@@ -70,9 +70,9 @@ pub mod prelude {
         UpdateContext, ViewContext,
     };
     pub use crate::geometry::{
-        AlignContent, AlignItems, AlignSelf, BoxConstraints, FlexBasis, FlexDirection, FlexWrap,
-        FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle, Point, Rect,
-        Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
+        AlignContent, AlignItems, AlignSelf, Axis, BoxConstraints, FlexBasis, FlexDirection,
+        FlexWrap, FontStyle, FontWeight, GridTrack, JustifyContent, LayoutDisplay, LayoutStyle,
+        Point, Rect, Size, TextAlign, TextOverflow, TextStyle, Visibility, VisualStyle, WhiteSpace,
     };
     pub use crate::id::{NodeHandle, WidgetId, WindowId};
     pub use crate::locale::Locale;

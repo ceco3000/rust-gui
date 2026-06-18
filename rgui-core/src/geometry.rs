@@ -338,7 +338,22 @@ impl fmt::Display for BoxConstraints {
 // 布局相关枚举
 // ============================================================================
 
-/// 布局显示类型。
+/// 轴向——描述方向为水平或垂直。
+///
+/// 用于 `rgui_components::Divider` 等组件。
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum Axis {
+    /// 水平方向。
+    Horizontal,
+    /// 垂直方向。
+    #[default]
+    Vertical,
+}
+
+// ============================================================================
+// LayoutDisplay
+// ============================================================================
 ///
 /// 对应 CSS `display` 属性，控制元素使用何种布局模式。
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Default)]

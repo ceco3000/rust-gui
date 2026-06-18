@@ -11,7 +11,7 @@ keywords = ["gui", "components", "widgets"]
 categories = ["gui"]
 
 [dependencies]
-rgui-core.workspace = true
+rgui-core = { workspace = true, features = ["serde"] }
 rgui-macros.workspace = true
 ordered-float.workspace = true
 serde.workspace = true
