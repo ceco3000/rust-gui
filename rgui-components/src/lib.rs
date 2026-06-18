@@ -19,6 +19,7 @@ pub mod row;
 pub mod scroll_view;
 pub mod sized_box;
 pub mod slider;
+pub mod stack;
 pub mod switch;
 pub mod text_field;
 
@@ -40,5 +41,6 @@ pub use row::{Row, RowMessage, RowState};
 pub use scroll_view::{ScrollPolicy, ScrollView, ScrollViewMessage, ScrollViewState};
 pub use sized_box::{SizedBox, SizedBoxMessage, SizedBoxState};
 pub use slider::{Slider, SliderMessage, SliderState};
+pub use stack::{Stack, StackMessage, StackState};
 pub use switch::{Switch, SwitchMessage, SwitchState};
 pub use text_field::{TextField, TextFieldMessage, TextFieldState};
