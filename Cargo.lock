@@ -2320,6 +2320,7 @@ name = "one-datagrid"
 version = "0.1.0"
 dependencies = [
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]

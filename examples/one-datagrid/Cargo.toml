@@ -7,3 +7,4 @@ license.workspace = true
 
 [dependencies]
 rgui = { path = "../../rgui" }
+rgui-core = { path = "../../rgui-core" }

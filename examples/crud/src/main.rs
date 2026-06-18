@@ -11,8 +11,8 @@
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
 use rgui::{
-    AppMessage, Color, PaintContext, PaintLayerData, Rect,
-    Size, WidgetId, WidgetView, build_scene_from_view, compute_view_layout, html,
+    AppMessage, Color, PaintContext, PaintLayerData, Rect, Size, WidgetId, WidgetView,
+    build_scene_from_view, compute_view_layout, html,
 };
 use std::sync::{Arc, Mutex};
 
