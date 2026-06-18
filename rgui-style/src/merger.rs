@@ -4,6 +4,7 @@
 
 use crate::theme::Theme;
 use rgui_core::view::PropValue;
+use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -56,7 +57,7 @@ impl StyleMerger {
             }
         }
 
-        // 第 4 层：解析 var() 引用（非 important）
+        // 第 4 层：解析 var() 引用（非 important）——递归解析 + 循环检测
         let var_prefix = "var(";
         let keys: Vec<Arc<str>> = result.keys().cloned().collect();
         for key in keys {
@@ -66,9 +67,14 @@ impl StyleMerger {
                         .trim_start_matches(var_prefix)
                         .trim_end_matches(')')
                         .trim();
-                    if let Some(resolved) = theme.var(var_name) {
-                        result.insert(key, resolved.clone());
+                    // 递归解析变量链，跟踪已访问变量以检测循环
+                    let mut visited = FxHashSet::default();
+                    if let Some(resolved) =
+                        Self::resolve_var_recursive(var_name, theme, &mut visited)
+                    {
+                        result.insert(key, resolved);
                     }
+                    // 循环或未定义：保留原始引用（降级）
                 }
             }
         }
@@ -97,6 +103,51 @@ impl StyleMerger {
 
         result
     }
+
+    // ========================================================================
+    // 变量解析辅助方法
+    // ========================================================================
+
+    /// 递归解析 CSS 变量引用，检测循环（D4 §10）。
+    ///
+    /// 遍历主题变量链（`--a: var(--b)` → `--b: var(--c)` → …），直到找到非 `var()` 的值。
+    /// 如果检测到循环引用（变量名已在 `visited` 中），返回 `None`，
+    /// 调用方应保留原始 `var()` 引用作为降级处理。
+    ///
+    /// # 参数
+    /// * `name` — 要解析的变量名（不含 `--` 前缀的键已在调用方处理）
+    /// * `theme` — 主题变量集合
+    /// * `visited` — 当前解析链中已访问的变量名集合（用于循环检测）
+    #[must_use]
+    fn resolve_var_recursive(
+        name: &str,
+        theme: &Theme,
+        visited: &mut FxHashSet<String>,
+    ) -> Option<PropValue> {
+        // 循环检测：如果变量已在当前解析链中，检测到循环
+        if !visited.insert(name.to_string()) {
+            return None;
+        }
+
+        // 查找变量值
+        let value = theme.var(name)?;
+
+        match value {
+            PropValue::Str(s) if s.starts_with("var(") => {
+                // 链式引用：提取内部变量名，递归解析
+                let nested_name = s.trim_start_matches("var(").trim_end_matches(')').trim();
+                let result = Self::resolve_var_recursive(nested_name, theme, visited);
+                // 递归返回后移除当前变量名（回溯，允许不同路径复用）
+                visited.remove(name);
+                result
+            },
+            other => {
+                // 非 var() 值：找到具体值
+                visited.remove(name);
+                Some(other.clone())
+            },
+        }
+    }
 }
 
 // ============================================================================
@@ -106,7 +157,7 @@ impl StyleMerger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::Theme;
+    use crate::theme::{ColorScheme, Theme};
 
     /// Helper: empty BTreeMap<Arc<str>, PropValue>
     fn empty_rgss_map() -> BTreeMap<Arc<str>, PropValue> {
@@ -319,5 +370,244 @@ mod tests {
             result.get("color").map(|v| format!("{v:?}")),
             Some(r#"Str("blue")"#.to_string())
         );
+    }
+
+    // ========================================================================
+    // M06: CSS 变量循环引用检测测试（D4 §10）
+    // ========================================================================
+
+    /// 简单变量解析：var(--color-primary) → #3B82F6
+    #[test]
+    fn var_resolution_simple() {
+        let mut default = BTreeMap::new();
+        default.insert("background-color", PropValue::str("var(--color-primary)"));
+
+        let theme = Theme::light();
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let bg = result.get("background-color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(bg, Some("#3B82F6"));
+    }
+
+    /// 链式变量解析：--a → --b → 具体值
+    #[test]
+    fn var_resolution_chained() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--a)"));
+
+        // 构建主题：--a: var(--b), --b: #ff0000
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--a", PropValue::str("var(--b)"));
+        theme.variables.insert("--b", PropValue::str("#ff0000"));
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(color, Some("#ff0000"));
+    }
+
+    /// 直接自循环：--x: var(--x) → 检测循环，保留原始引用
+    #[test]
+    fn var_cycle_direct_self_reference() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--x)"));
+
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--x", PropValue::str("var(--x)"));
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        // 循环检测：不应 panic，且 result 中 color 保持原始 var(--x) 引用（降级）
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        // 循环时保留原始引用作为降级
+        assert_eq!(color, Some("var(--x)"));
+    }
+
+    /// 间接循环：--a → --b → --a
+    #[test]
+    fn var_cycle_two_var_loop() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--a)"));
+
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--a", PropValue::str("var(--b)"));
+        theme.variables.insert("--b", PropValue::str("var(--a)"));
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        // 循环检测：a 已访问，遇到 b→var(--a) 时检测到循环
+        assert_eq!(color, Some("var(--a)"));
+    }
+
+    /// 三变量循环：--a → --b → --c → --a
+    #[test]
+    fn var_cycle_three_var_loop() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--a)"));
+
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--a", PropValue::str("var(--b)"));
+        theme.variables.insert("--b", PropValue::str("var(--c)"));
+        theme.variables.insert("--c", PropValue::str("var(--a)"));
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        // 循环检测：a→b→c→a 检测到循环
+        assert_eq!(color, Some("var(--a)"));
+    }
+
+    /// 深度链式解析（无循环）：4 层
+    #[test]
+    fn var_resolution_deep_chain() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--a)"));
+
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--a", PropValue::str("var(--b)"));
+        theme.variables.insert("--b", PropValue::str("var(--c)"));
+        theme.variables.insert("--c", PropValue::str("var(--d)"));
+        theme.variables.insert("--d", PropValue::str("#deep-value"));
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        assert_eq!(color, Some("#deep-value"));
+    }
+
+    /// 缺失变量：var(--nonexistent) → 保留原始引用（不崩溃）
+    #[test]
+    fn var_missing_variable_keeps_reference() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--nonexistent)"));
+
+        let theme = Theme::new("test", ColorScheme::Light);
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        // 未定义变量：保留原始 var() 引用
+        assert_eq!(color, Some("var(--nonexistent)"));
+    }
+
+    /// 部分链解析中断：--a → --b，--b 不存在 → 保留 --a 的引用
+    #[test]
+    fn var_broken_chain_keeps_reference() {
+        let mut default = BTreeMap::new();
+        default.insert("color", PropValue::str("var(--a)"));
+
+        let mut theme = Theme::new("test", ColorScheme::Light);
+        theme.variables.insert("--a", PropValue::str("var(--b)"));
+        // --b 未定义
+
+        let result = StyleMerger::merge(
+            &default,
+            &empty_rgss_map(),
+            &empty_rgss_important(),
+            &empty_inline_map(),
+            &empty_inline_important(),
+            &theme,
+        );
+
+        let color = result.get("color").and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(s.as_ref())
+            } else {
+                None
+            }
+        });
+        // 链中断：保留原始引用
+        assert_eq!(color, Some("var(--a)"));
     }
 }
