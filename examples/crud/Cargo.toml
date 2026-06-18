@@ -8,4 +8,6 @@ description = "rgui CRUD 入门示例——联系人管理应用"
 
 [dependencies]
 rgui = { path = "../../rgui" }
+rgui-core = { path = "../../rgui-core" }
+ordered-float.workspace = true
 serde = "1"

@@ -1,39 +1,50 @@
-//! rgui 单按钮示例——最简组件 paint() 演示。
+//! rgui single-button example using `html!` declarative syntax.
 //!
-//! 本示例仅绘制一个居中的 "OK" 按钮，用于验证 Button 组件的
-//! 背景 + 文本绘制是否正常工作。
+//! Demonstrates the simplest html! macro usage: a single button declarative UI.
 
 use rgui::app::{App, AppConfig};
-use rgui::{Button, ButtonState, Color, PaintContext, PaintLayerData, Rect, WidgetId, WidgetSpec};
+use rgui::{
+    AppMessage, Button, ButtonState, Color, PaintContext, PaintLayerData, Rect, WidgetId,
+    WidgetSpec, WidgetView, html,
+};
+
+#[derive(Debug, Clone, PartialEq, AppMessage)]
+enum Msg {
+    Clicked,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new(
         AppConfig::new()
-            .title("rgui — 单按钮（OK）")
+            .title("rgui - Single Button (html!)")
             .window_size(300.0, 200.0),
     );
     app.register_defaults();
 
-    // 按钮坐标：窗口 300×200 居中 (100×40 按钮)
     let btn_bounds = Rect::new(100.0, 80.0, 100.0, 40.0);
 
-    // 按钮交互
     app.register_interaction(WidgetId::from_u64(1), btn_bounds, "OK", move |action| {
-        println!("  按钮被点击: {action}");
+        println!("  Button clicked: {action}");
     });
 
-    // 场景构建回调——所有坐标为逻辑像素
     app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
 
         if _frame == 0 {
-            println!("[示例] 第 0 帧场景构建：逻辑尺寸 {w}×{h} ");
+            println!("[Example] Frame 0 scene build: logical size {w}x{h}");
         }
+
+        // html! declarative UI definition
+        let _view: WidgetView<Msg> = html! {
+            <Center>
+                <Button id="1" label="OK" on:click={Msg::Clicked} />
+            </Center>
+        };
 
         let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- 背景 ---
+        // Background
         let mut bg_ctx = PaintContext::new(Rect::new(0.0, 0.0, w, h));
         bg_ctx.fill_rect(
             Rect::new(0.0, 0.0, w, h),
@@ -47,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             bg_ctx.into_operations(),
         ));
 
-        // --- OK 按钮 ---
+        // OK Button
         let mut btn_ctx = PaintContext::new(btn_bounds);
         Button.paint(&ButtonState::new("OK"), btn_bounds, &mut btn_ctx);
         layers.push(PaintLayerData::new(
@@ -60,10 +71,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         layers
     });
 
-    println!("=== rgui 单按钮示例 ===\n");
-    println!("窗口配置: 300×200 (逻辑像素)");
-    println!("run() 启动后，控制台将打印 scale_factor 和物理尺寸。\n");
-    println!("点击窗口中的 [OK] 按钮...");
+    println!("=== rgui Single Button (html! syntax) ===\n");
+    println!("UI defined by html! macro. Window: 300x200 (logical pixels)");
+    println!();
+    println!("Click the [OK] button...");
 
     app.run()
 }
