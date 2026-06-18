@@ -41,8 +41,10 @@ use crate::error::DevToolsError;
 pub enum FileChangeKind {
     /// 样式文件（`.rgss`）——第 1 层，< 200ms。
     Style,
-    /// 结构文件（`.rgui`）——第 2 层，< 1s。
+    /// 结构文件（`.rgui` / `.html`）——第 2 层，< 1s。
     Structure,
+    /// HTML 视图文件（`.html`）——声明式 UI 热重载。
+    Html,
     /// Rust 源文件（`.rs`）——第 3 层，2-5s。
     Rust,
     /// 其他文件类型（资源、配置等），当前不触发重载。
@@ -58,6 +60,7 @@ impl FileChangeKind {
             .map(|ext| match ext.to_ascii_lowercase().as_str() {
                 "rgss" => Self::Style,
                 "rgui" => Self::Structure,
+                "html" => Self::Html,
                 "rs" => Self::Rust,
                 _ => Self::Other,
             })
@@ -267,6 +270,18 @@ mod tests {
     fn test_kind_nested_rgss_path() {
         let kind = FileChangeKind::from_path(std::path::Path::new("styles/dark/theme.rgss"));
         assert_eq!(kind, FileChangeKind::Style);
+    }
+
+    #[test]
+    fn test_kind_html_from_html() {
+        let kind = FileChangeKind::from_path(std::path::Path::new("ui/app.html"));
+        assert_eq!(kind, FileChangeKind::Html);
+    }
+
+    #[test]
+    fn test_kind_html_from_nested_path() {
+        let kind = FileChangeKind::from_path(std::path::Path::new("pages/dashboard/index.html"));
+        assert_eq!(kind, FileChangeKind::Html);
     }
 
     // === FileWatcher 创建测试 ===

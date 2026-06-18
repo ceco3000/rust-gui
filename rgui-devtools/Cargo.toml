@@ -14,7 +14,7 @@ categories = ["gui", "development-tools"]
 default = ["notify", "serde_json"]
 notify = ["dep:notify"]
 serde_json = ["dep:serde_json"]
-html-hot-reload = ["dep:quick-xml"]
+html-hot-reload = ["dep:quick-xml", "notify"]
 
 [dependencies]
 rgui-core.workspace = true
