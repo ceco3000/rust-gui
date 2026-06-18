@@ -10,6 +10,7 @@ pub mod focus_indicator;
 pub mod font;
 pub mod font_metrics;
 pub mod glyph;
+pub mod path_tessellation;
 pub mod primitives;
 pub mod scene;
 pub mod scene_build;
@@ -34,7 +35,8 @@ pub use dirty::DirtyRegionTracker;
 pub use factory::{BackendType, RenderBackendFactory};
 pub use focus_indicator::FocusIndicator;
 pub use font_metrics::{font_metrics_cache, init_font_metrics};
-pub use glyph::GlyphAtlas;
+pub use glyph::{GlyphAtlas, GlyphCacheEntry, GlyphKey};
+pub use path_tessellation::PathTessellation;
 pub use primitives::{
     BlendMode, FillRule, GlyphData, GradientStop, ImageRepeat, LineCap, LineJoin, Paint,
     PathCommand, PathData, Stroke, Transform,

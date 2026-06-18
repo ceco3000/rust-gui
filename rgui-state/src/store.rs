@@ -48,15 +48,30 @@ impl Default for InstanceState {
 }
 
 // ============================================================================
-// RenderLayoutCache 占位类型
+// RenderLayoutCache — D2 §2.2
 // ============================================================================
 
 /// 渲染与布局缓存（D2 §2.2）。
 ///
-/// 占位类型——详细字段（Taffy 布局结果、字形 Atlas UV 等）
-/// 在 rgui-render 实现时补充。
+/// 框架运行时持有，为每个挂载组件维护一份。缓存 Taffy 布局结果、
+/// 字形 Atlas UV 坐标、路径细分数据和上次绘制颜色。
+///
+/// 生命周期：组件挂载 → 组件卸载。不参与序列化或快照。
 #[derive(Debug, Default)]
-pub struct RenderLayoutCache;
+#[allow(dead_code)]
+pub(crate) struct RenderLayoutCache {
+    /// 最近一次布局结果。
+    pub layout: Option<rgui_layout::LayoutResult>,
+
+    /// 字形逐字缓存（glyph key → atlas UV + 尺寸）。
+    pub glyph_cache: FxHashMap<rgui_render::GlyphKey, rgui_render::GlyphCacheEntry>,
+
+    /// 路径细分缓存（用于复杂 SVG 路径），阶段 2 前为占位类型。
+    pub path_tessellation: Option<rgui_render::PathTessellation>,
+
+    /// 最后一次绘制使用的颜色（用于脏检测优化）。
+    pub last_paint_color: Option<rgui_core::Color>,
+}
 
 // ============================================================================
 // Subscription 和 SubscriptionLifetime
@@ -1012,5 +1027,53 @@ mod tests {
         // 循环中的所有节点均应标记 dirty
         assert!(store.dirty_widgets().contains(&id_a));
         assert!(store.dirty_widgets().contains(&id_b));
+    }
+
+    // --- RenderLayoutCache ---
+
+    #[test]
+    fn render_layout_cache_default_is_empty() {
+        let cache = RenderLayoutCache::default();
+        assert!(cache.layout.is_none());
+        assert!(cache.glyph_cache.is_empty());
+        assert!(cache.path_tessellation.is_none());
+        assert!(cache.last_paint_color.is_none());
+    }
+
+    #[test]
+    fn render_layout_cache_path_tessellation_field() {
+        let mut cache = RenderLayoutCache::default();
+        let pt = rgui_render::PathTessellation::default();
+        cache.path_tessellation = Some(pt.clone());
+        assert!(cache.path_tessellation.is_some());
+        assert_eq!(
+            format!("{:?}", cache.path_tessellation.as_ref().unwrap()),
+            format!("{:?}", pt)
+        );
+    }
+
+    #[test]
+    fn render_layout_cache_layout_field() {
+        let mut cache = RenderLayoutCache::default();
+        let layout = rgui_layout::LayoutResult {
+            size: rgui_core::Size::new(100.0, 50.0),
+            position: rgui_core::Point::new(10.0, 20.0),
+        };
+        cache.layout = Some(layout.clone());
+        assert!(cache.layout.is_some());
+        let l = cache.layout.as_ref().unwrap();
+        assert_eq!(l.size.width, 100.0);
+        assert_eq!(l.size.height, 50.0);
+        assert_eq!(l.position.x, 10.0);
+        assert_eq!(l.position.y, 20.0);
+    }
+
+    #[test]
+    fn render_layout_cache_last_paint_color_field() {
+        let mut cache = RenderLayoutCache::default();
+        let color = rgui_core::Color::new(1.0, 0.0, 0.0, 1.0);
+        cache.last_paint_color = Some(color.clone());
+        assert!(cache.last_paint_color.is_some());
+        assert_eq!(cache.last_paint_color.as_ref().unwrap(), &color);
     }
 }

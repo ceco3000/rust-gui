@@ -12,6 +12,8 @@ categories = ["gui"]
 
 [dependencies]
 rgui-core.workspace = true
+rgui-render.workspace = true
+rgui-layout.workspace = true
 serde.workspace = true
 postcard.workspace = true
 rustc-hash.workspace = true

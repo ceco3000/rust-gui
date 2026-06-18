@@ -3075,6 +3075,8 @@ dependencies = [
  "erased-serde",
  "postcard",
  "rgui-core",
+ "rgui-layout",
+ "rgui-render",
  "rustc-hash 2.1.2",
  "serde",
  "thiserror 2.0.18",

@@ -5,5 +5,5 @@
 pub mod engine;
 pub mod mapping;
 
-pub use engine::LayoutEngine;
+pub use engine::{LayoutEngine, LayoutResult};
 pub use mapping::to_taffy_style;
