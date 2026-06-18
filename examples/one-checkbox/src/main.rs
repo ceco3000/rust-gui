@@ -49,26 +49,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let c = Arc::clone(&checked);
     let d = Arc::clone(&disabled);
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- CheckBox ---
-        let mut cb_ctx = PaintContext::new(cb_bounds);
-        let s = CheckBoxState {
-            checked: c.load(Ordering::Relaxed),
-            disabled: d.load(Ordering::Relaxed),
-            label: "I agree to the terms".into(),
-        };
-        CheckBox.paint(&s, cb_bounds, &mut cb_ctx);
-        layers.push(PaintLayerData::new(
-            cb_id,
-            0,
-            cb_bounds,
-            cb_ctx.into_operations(),
-        ));
+            // --- CheckBox ---
+            let mut cb_ctx = PaintContext::new(cb_bounds);
+            let s = CheckBoxState {
+                checked: c.load(Ordering::Relaxed),
+                disabled: d.load(Ordering::Relaxed),
+                label: "I agree to the terms".into(),
+            };
+            CheckBox.paint(&s, cb_bounds, &mut cb_ctx);
+            layers.push(PaintLayerData::new(
+                cb_id,
+                0,
+                cb_bounds,
+                cb_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui 单 CheckBox 示例 ===\n");
     println!("窗口配置: 300x200 (逻辑像素)");

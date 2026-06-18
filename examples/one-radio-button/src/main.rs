@@ -31,23 +31,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- 单选按钮（选中状态） ---
-        let mut rb_ctx = PaintContext::new(rb_bounds);
-        let mut state = RadioButtonState::new("Option A", "demo");
-        state.selected = true;
-        RadioButton.paint(&state, rb_bounds, &mut rb_ctx);
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(1),
-            0,
-            rb_bounds,
-            rb_ctx.into_operations(),
-        ));
+            // --- 单选按钮（选中状态） ---
+            let mut rb_ctx = PaintContext::new(rb_bounds);
+            let mut state = RadioButtonState::new("Option A", "demo");
+            state.selected = true;
+            RadioButton.paint(&state, rb_bounds, &mut rb_ctx);
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(1),
+                0,
+                rb_bounds,
+                rb_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui 单 RadioButton 示例 ===\n");
     println!("窗口中显示选中的单选按钮 \"Option A\"");

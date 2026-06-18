@@ -21,24 +21,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let label_bounds = Rect::new(60.0, 85.0, 180.0, 30.0);
 
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- 文本标签 ---
-        let mut label_ctx = PaintContext::new(label_bounds);
-        let state = LabelState {
-            text: "Hello, rgui!".into(),
-        };
-        Label.paint(&state, label_bounds, &mut label_ctx);
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(1),
-            0,
-            label_bounds,
-            label_ctx.into_operations(),
-        ));
+            // --- 文本标签 ---
+            let mut label_ctx = PaintContext::new(label_bounds);
+            let state = LabelState {
+                text: "Hello, rgui!".into(),
+            };
+            Label.paint(&state, label_bounds, &mut label_ctx);
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(1),
+                0,
+                label_bounds,
+                label_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui 单 Label 示例 ===\n");
     println!("窗口中显示 \"Hello, rgui!\" 文本标签");

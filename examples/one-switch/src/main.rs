@@ -42,26 +42,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let on = Arc::clone(&switch_on);
     let disabled = Arc::clone(&switch_disabled);
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- Switch ---
-        let mut switch_ctx = PaintContext::new(switch_bounds);
-        let s = SwitchState {
-            on: on.load(Ordering::Relaxed),
-            disabled: disabled.load(Ordering::Relaxed),
-            label: "WiFi".into(),
-        };
-        Switch.paint(&s, switch_bounds, &mut switch_ctx);
-        layers.push(PaintLayerData::new(
-            switch_id,
-            0,
-            switch_bounds,
-            switch_ctx.into_operations(),
-        ));
+            // --- Switch ---
+            let mut switch_ctx = PaintContext::new(switch_bounds);
+            let s = SwitchState {
+                on: on.load(Ordering::Relaxed),
+                disabled: disabled.load(Ordering::Relaxed),
+                label: "WiFi".into(),
+            };
+            Switch.paint(&s, switch_bounds, &mut switch_ctx);
+            layers.push(PaintLayerData::new(
+                switch_id,
+                0,
+                switch_bounds,
+                switch_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui 单 Switch 示例 ===\n");
     println!("窗口配置: 300×200 (逻辑像素)");

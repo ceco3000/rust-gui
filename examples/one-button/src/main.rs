@@ -28,25 +28,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let paint_fn = default_paint_fn::<Msg>();
-    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
+    app.set_view_scene_builder(
+        move |frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
 
-        if frame == 0 {
-            println!("[Example] Frame 0 scene build: logical size {w}x{h}");
-        }
+            if frame == 0 {
+                println!("[Example] Frame 0 scene build: logical size {w}x{h}");
+            }
 
-        // html! declarative UI definition
-        let mut view: WidgetView<Msg> = html! {
-            <Center>
-                <Button id="1" label="OK" on:click={Msg::Clicked} />
-            </Center>
-        };
+            // html! declarative UI definition
+            let mut view: WidgetView<Msg> = html! {
+                <Center>
+                    <Button id="1" label="OK" on:click={Msg::Clicked} />
+                </Center>
+            };
 
-        // Compute Taffy layout and build SceneGraph from WidgetView tree
-        let layout = compute_view_layout(&mut view, Size::new(w, h));
-        build_scene_from_view(&view, &layout, &paint_fn, frame, None)
-    });
+            // Compute Taffy layout and build SceneGraph from WidgetView tree
+            let layout = compute_view_layout(&mut view, Size::new(w, h));
+            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(_tr))
+        },
+    );
 
     println!("=== rgui Single Button (html! 声明式渲染) ===\n");
     println!("UI defined by html! macro, rendered via build_scene_from_view.");

@@ -21,23 +21,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pb_bounds = Rect::new(50.0, 85.0, 200.0, 30.0);
 
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- 进度条 73% ---
-        let mut pb_ctx = PaintContext::new(pb_bounds);
-        let mut state = ProgressBarState::new(0.73);
-        state.label = "73%".into();
-        ProgressBar.paint(&state, pb_bounds, &mut pb_ctx);
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(1),
-            0,
-            pb_bounds,
-            pb_ctx.into_operations(),
-        ));
+            // --- 进度条 73% ---
+            let mut pb_ctx = PaintContext::new(pb_bounds);
+            let mut state = ProgressBarState::new(0.73);
+            state.label = "73%".into();
+            ProgressBar.paint(&state, pb_bounds, &mut pb_ctx);
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(1),
+                0,
+                pb_bounds,
+                pb_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui 单 ProgressBar 示例 ===\n");
     println!("窗口中显示 73% 进度条");

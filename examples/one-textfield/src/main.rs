@@ -21,26 +21,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tf_id = WidgetId::from_u64(1);
 
     // 视图场景构建回调
-    app.set_view_scene_builder(move |frame: u64, _width: u32, _height: u32| {
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+    app.set_view_scene_builder(
+        move |frame: u64, _width: u32, _height: u32, _tr: &rgui::TextRenderer| {
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- TextField ---
-        let mut tf_ctx = PaintContext::new(tf_bounds);
-        // 显示占位符文本（无实际输入内容时）
-        let s = TextFieldState {
-            placeholder: "Enter text...".into(),
-            ..Default::default()
-        };
-        TextField.paint(&s, tf_bounds, &mut tf_ctx);
-        layers.push(PaintLayerData::new(
-            tf_id,
-            0,
-            tf_bounds,
-            tf_ctx.into_operations(),
-        ));
+            // --- TextField ---
+            let mut tf_ctx = PaintContext::new(tf_bounds);
+            // 显示占位符文本（无实际输入内容时）
+            let s = TextFieldState {
+                placeholder: "Enter text...".into(),
+                ..Default::default()
+            };
+            TextField.paint(&s, tf_bounds, &mut tf_ctx);
+            layers.push(PaintLayerData::new(
+                tf_id,
+                0,
+                tf_bounds,
+                tf_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui TextField ===\n");
     println!("窗口: 300x200 | 占位符: 'Enter text...'");

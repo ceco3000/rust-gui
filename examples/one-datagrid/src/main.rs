@@ -30,30 +30,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_width: f64 = state.columns.iter().map(|c| c.width).sum();
     let grid_height = 28.0 + 3.0 * 24.0; // header + 3 rows
 
-    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
+    app.set_view_scene_builder(
+        move |frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
 
-        let mut layers: Vec<PaintLayerData> = Vec::new();
+            let mut layers: Vec<PaintLayerData> = Vec::new();
 
-        // --- DataGrid (centered) ---
-        let grid_bounds = Rect::new(
-            (w - total_width) / 2.0,
-            (h - grid_height) / 2.0,
-            total_width,
-            grid_height,
-        );
-        let mut grid_ctx = PaintContext::new(grid_bounds);
-        DataGrid.paint(&state, grid_bounds, &mut grid_ctx);
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(1),
-            0,
-            grid_bounds,
-            grid_ctx.into_operations(),
-        ));
+            // --- DataGrid (centered) ---
+            let grid_bounds = Rect::new(
+                (w - total_width) / 2.0,
+                (h - grid_height) / 2.0,
+                total_width,
+                grid_height,
+            );
+            let mut grid_ctx = PaintContext::new(grid_bounds);
+            DataGrid.paint(&state, grid_bounds, &mut grid_ctx);
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(1),
+                0,
+                grid_bounds,
+                grid_ctx.into_operations(),
+            ));
 
-        build_scene_from_paint_data(&layers, frame, None)
-    });
+            build_scene_from_paint_data(&layers, frame, None)
+        },
+    );
 
     println!("=== rgui DataGrid example ===\n");
     println!("Window: 500×250 (logical pixels)");

@@ -59,29 +59,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 视图场景构建回调——使用 html! 声明式 UI + build_scene_from_view 渲染
     let count_for_view = Arc::clone(&count);
     let paint_fn = default_paint_fn::<CounterMsg>();
-    app.set_view_scene_builder(move |frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
-        let cnt = *count_for_view.lock().unwrap();
+    app.set_view_scene_builder(
+        move |frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
+            let cnt = *count_for_view.lock().unwrap();
 
-        // html! 声明式 UI 定义
-        let mut view: WidgetView<CounterMsg> = html! {
-            <Column>
-                <Label text="rgui 计数器演示" />
-                <Row gap="8.0">
-                    <Button id="1" label="+1" on:click={CounterMsg::Increment} />
-                    <Button id="2" label="重置" on:click={CounterMsg::Reset} />
-                </Row>
-                <Label text={format!("计数: {}", cnt)} />
-            </Column>
-        };
+            // html! 声明式 UI 定义
+            let mut view: WidgetView<CounterMsg> = html! {
+                <Column>
+                    <Label text="rgui 计数器演示" />
+                    <Row gap="8.0">
+                        <Button id="1" label="+1" on:click={CounterMsg::Increment} />
+                        <Button id="2" label="重置" on:click={CounterMsg::Reset} />
+                    </Row>
+                    <Label text={format!("计数: {}", cnt)} />
+                </Column>
+            };
 
-        // V01: 计算 Taffy 布局
-        let layout = compute_view_layout(&mut view, Size::new(w, h));
+            // V01: 计算 Taffy 布局
+            let layout = compute_view_layout(&mut view, Size::new(w, h));
 
-        // 从 WidgetView 树构建 SceneGraph（布局引擎提供每个 widget 的计算后位置）
-        build_scene_from_view(&view, &layout, &paint_fn, frame, None)
-    });
+            // 从 WidgetView 树构建 SceneGraph（布局引擎提供每个 widget 的计算后位置）
+            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(_tr))
+        },
+    );
 
     println!("=== rgui 计数器（html! 声明式渲染）===\n");
     println!("UI 由 html! 宏声明，通过 build_scene_from_view 直接渲染。");

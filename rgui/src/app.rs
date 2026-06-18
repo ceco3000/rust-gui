@@ -24,9 +24,9 @@ pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 
 /// 视图场景构建回调类型。
 ///
-/// 回调接收帧计数、窗口宽度、窗口高度（像素），直接返回 `SceneGraph`。
-/// 用于 `html!` 宏 + `build_scene_from_view` 的声明式路径。
-pub type ViewSceneBuilder = Box<dyn FnMut(u64, u32, u32) -> SceneGraph + Send>;
+/// 回调接收帧计数、窗口宽度、窗口高度（逻辑像素）和文本渲染器引用，
+/// 直接返回 `SceneGraph`。用于 `html!` 宏 + `build_scene_from_view` 的声明式路径。
+pub type ViewSceneBuilder = Box<dyn FnMut(u64, u32, u32, &TextRenderer) -> SceneGraph + Send>;
 
 #[allow(clippy::type_complexity)]
 /// tick() 布局回调。
@@ -187,7 +187,7 @@ impl App {
     /// 与 `build_scene_from_view` 配合使用，实现 WidgetView → SceneGraph 的端到端管线。
     pub fn set_view_scene_builder(
         &mut self,
-        builder: impl FnMut(u64, u32, u32) -> SceneGraph + Send + 'static,
+        builder: impl FnMut(u64, u32, u32, &TextRenderer) -> SceneGraph + Send + 'static,
     ) {
         self.view_scene_builder = Some(Box::new(builder));
     }
@@ -596,8 +596,9 @@ impl ApplicationHandler for AppHandler {
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
                     // 场景构建回调，带异常隔离（D1 §11.3）
                     let scene = if let Some(ref mut view_builder) = self.view_scene_builder {
+                        let text_renderer = &self.text_renderer;
                         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            view_builder(frame, logical_w as u32, logical_h as u32)
+                            view_builder(frame, logical_w as u32, logical_h as u32, text_renderer)
                         })) {
                             Ok(scene) => scene,
                             Err(e) => {

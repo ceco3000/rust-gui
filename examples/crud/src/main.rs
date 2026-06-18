@@ -279,175 +279,177 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let scene_state = Arc::clone(&state);
     let paint_fn = default_paint_fn::<CrudMsg>();
-    app.set_view_scene_builder(move |_frame: u64, width: u32, height: u32| {
-        let w = width as f64;
-        let h = height as f64;
-        let guard = scene_state.lock().unwrap();
+    app.set_view_scene_builder(
+        move |_frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
+            let w = width as f64;
+            let h = height as f64;
+            let guard = scene_state.lock().unwrap();
 
-        // html! declarative UI definition (demonstrates the syntax)
-        let mut _view: WidgetView<CrudMsg> = html! {
-            <Column>
-                <Label text="Contact Manager" />
-                <Row>
-                    <Column>
-                        <Label text="Name:" />
-                        <Label text="Email:" />
-                        <Label text="Phone:" />
-                    </Column>
-                    <Column>
-                        <TextField id="101" placeholder="Name" />
-                        <TextField id="102" placeholder="Email" />
-                        <TextField id="103" placeholder="Phone" />
-                    </Column>
-                </Row>
-                <Row gap="8.0">
-                    <Button id="201" label="Add" on:click={CrudMsg::Add} />
-                    <Button id="202" label="Edit" on:click={CrudMsg::Edit} />
-                    <Button id="203" label="Delete" on:click={CrudMsg::Delete} />
-                    <Button id="204" label="Clear All" on:click={CrudMsg::Clear} />
-                </Row>
-            </Column>
-        };
-
-        // --- Build scene: dynamic leaf components ---
-        let mut layers: Vec<PaintLayerData> = Vec::new();
-
-        // Title
-        let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
-        let mut title_ctx = PaintContext::new(title_bounds);
-        Label.paint(
-            &LabelState {
-                text: "Contact Manager".into(),
-            },
-            title_bounds,
-            &mut title_ctx,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(900),
-            0,
-            title_bounds,
-            title_ctx.into_operations(),
-        ));
-
-        // Input labels and values
-        let input_labels = ["Name:", "Email:", "Phone:"];
-        let input_values = [&guard.edit_name, &guard.edit_email, &guard.edit_phone];
-        for (i, lbl) in input_labels.iter().enumerate() {
-            let y = INPUT_Y + i as f64 * 32.0;
-            let lb = Rect::new(LEFT, y, LABEL_W, 24.0);
-            let mut lc = PaintContext::new(lb);
-            Label.paint(
-                &LabelState {
-                    text: (*lbl).to_string(),
-                },
-                lb,
-                &mut lc,
-            );
-            layers.push(PaintLayerData::new(
-                WidgetId::from_u64(910 + i as u64),
-                0,
-                lb,
-                lc.into_operations(),
-            ));
-
-            let vb = Rect::new(LEFT + LABEL_W, y, INPUT_W, 24.0);
-            let mut vc = PaintContext::new(vb);
-            let val = input_values[i];
-            let display = if val.is_empty() {
-                "(click to input)"
-            } else {
-                val
+            // html! declarative UI definition (demonstrates the syntax)
+            let mut _view: WidgetView<CrudMsg> = html! {
+                <Column>
+                    <Label text="Contact Manager" />
+                    <Row>
+                        <Column>
+                            <Label text="Name:" />
+                            <Label text="Email:" />
+                            <Label text="Phone:" />
+                        </Column>
+                        <Column>
+                            <TextField id="101" placeholder="Name" />
+                            <TextField id="102" placeholder="Email" />
+                            <TextField id="103" placeholder="Phone" />
+                        </Column>
+                    </Row>
+                    <Row gap="8.0">
+                        <Button id="201" label="Add" on:click={CrudMsg::Add} />
+                        <Button id="202" label="Edit" on:click={CrudMsg::Edit} />
+                        <Button id="203" label="Delete" on:click={CrudMsg::Delete} />
+                        <Button id="204" label="Clear All" on:click={CrudMsg::Clear} />
+                    </Row>
+                </Column>
             };
+
+            // --- Build scene: dynamic leaf components ---
+            let mut layers: Vec<PaintLayerData> = Vec::new();
+
+            // Title
+            let title_bounds = Rect::new(20.0, 10.0, w - 40.0, 30.0);
+            let mut title_ctx = PaintContext::new(title_bounds);
             Label.paint(
                 &LabelState {
-                    text: display.to_string(),
+                    text: "Contact Manager".into(),
                 },
-                vb,
-                &mut vc,
+                title_bounds,
+                &mut title_ctx,
             );
             layers.push(PaintLayerData::new(
-                WidgetId::from_u64(920 + i as u64),
+                WidgetId::from_u64(900),
                 0,
-                vb,
-                vc.into_operations(),
+                title_bounds,
+                title_ctx.into_operations(),
             ));
-        }
 
-        // Button row
-        let buttons = [
-            (201_u64, "Add", 20.0),
-            (202_u64, "Edit", 110.0),
-            (203_u64, "Delete", 200.0),
-            (204_u64, "Clear All", 290.0),
-        ];
-        for (id, label, x) in &buttons {
-            let bb = Rect::new(*x, BUTTON_Y, 80.0, 32.0);
-            let mut bc = PaintContext::new(bb);
-            Button.paint(&ButtonState::new((*label).to_string()), bb, &mut bc);
-            layers.push(PaintLayerData::new(
-                WidgetId::from_u64(*id),
-                1,
-                bb,
-                bc.into_operations(),
-            ));
-        }
-
-        // Contact list (up to 12 rows)
-        for i in 0..12_usize {
-            let y = LIST_TOP + i as f64 * LIST_ROW_H;
-            let row_bounds = Rect::new(LEFT, y, 780.0, LIST_ROW_H);
-
-            if i < guard.contacts.len() {
-                let c = &guard.contacts[i];
-                let is_selected = guard.selected_index == Some(i);
-                let mut row_ctx = PaintContext::new(row_bounds);
-
-                if is_selected {
-                    row_ctx.fill_rect(row_bounds, Color::new(0.15, 0.20, 0.35, 0.6), 4.0);
-                }
-
-                let info = format!("{}. {} | {} | {}", i + 1, c.name, c.email, c.phone);
-                row_ctx.draw_text(
-                    &info,
-                    Rect::new(4.0, 2.0, 760.0, 24.0),
-                    Color::WHITE.with_alpha(0.9),
-                    14.0,
+            // Input labels and values
+            let input_labels = ["Name:", "Email:", "Phone:"];
+            let input_values = [&guard.edit_name, &guard.edit_email, &guard.edit_phone];
+            for (i, lbl) in input_labels.iter().enumerate() {
+                let y = INPUT_Y + i as f64 * 32.0;
+                let lb = Rect::new(LEFT, y, LABEL_W, 24.0);
+                let mut lc = PaintContext::new(lb);
+                Label.paint(
+                    &LabelState {
+                        text: (*lbl).to_string(),
+                    },
+                    lb,
+                    &mut lc,
                 );
                 layers.push(PaintLayerData::new(
-                    WidgetId::from_u64(300 + i as u64),
-                    if is_selected { 2 } else { 0 },
-                    row_bounds,
-                    row_ctx.into_operations(),
+                    WidgetId::from_u64(910 + i as u64),
+                    0,
+                    lb,
+                    lc.into_operations(),
+                ));
+
+                let vb = Rect::new(LEFT + LABEL_W, y, INPUT_W, 24.0);
+                let mut vc = PaintContext::new(vb);
+                let val = input_values[i];
+                let display = if val.is_empty() {
+                    "(click to input)"
+                } else {
+                    val
+                };
+                Label.paint(
+                    &LabelState {
+                        text: display.to_string(),
+                    },
+                    vb,
+                    &mut vc,
+                );
+                layers.push(PaintLayerData::new(
+                    WidgetId::from_u64(920 + i as u64),
+                    0,
+                    vb,
+                    vc.into_operations(),
                 ));
             }
-        }
 
-        // Status message
-        let msg_bounds = Rect::new(20.0, h - 40.0, w - 40.0, 24.0);
-        let mut msg_ctx = PaintContext::new(msg_bounds);
-        msg_ctx.draw_text(
-            &guard.message,
-            msg_bounds,
-            Color::WHITE.with_alpha(0.6),
-            12.0,
-        );
-        layers.push(PaintLayerData::new(
-            WidgetId::from_u64(999),
-            5,
-            msg_bounds,
-            msg_ctx.into_operations(),
-        ));
+            // Button row
+            let buttons = [
+                (201_u64, "Add", 20.0),
+                (202_u64, "Edit", 110.0),
+                (203_u64, "Delete", 200.0),
+                (204_u64, "Clear All", 290.0),
+            ];
+            for (id, label, x) in &buttons {
+                let bb = Rect::new(*x, BUTTON_Y, 80.0, 32.0);
+                let mut bc = PaintContext::new(bb);
+                Button.paint(&ButtonState::new((*label).to_string()), bb, &mut bc);
+                layers.push(PaintLayerData::new(
+                    WidgetId::from_u64(*id),
+                    1,
+                    bb,
+                    bc.into_operations(),
+                ));
+            }
 
-        drop(guard);
+            // Contact list (up to 12 rows)
+            for i in 0..12_usize {
+                let y = LIST_TOP + i as f64 * LIST_ROW_H;
+                let row_bounds = Rect::new(LEFT, y, 780.0, LIST_ROW_H);
 
-        // Also include the html! view's scene on top (demonstrates integration)
-        let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, None);
-        // Compute layout for html! view and integrate with manual layers
-        let layout = compute_view_layout(&mut _view, Size::new(w, h));
-        let view_scene = build_scene_from_view(&_view, &layout, &paint_fn, _frame, None);
-        scene.layers.extend(view_scene.layers);
-        scene
-    });
+                if i < guard.contacts.len() {
+                    let c = &guard.contacts[i];
+                    let is_selected = guard.selected_index == Some(i);
+                    let mut row_ctx = PaintContext::new(row_bounds);
+
+                    if is_selected {
+                        row_ctx.fill_rect(row_bounds, Color::new(0.15, 0.20, 0.35, 0.6), 4.0);
+                    }
+
+                    let info = format!("{}. {} | {} | {}", i + 1, c.name, c.email, c.phone);
+                    row_ctx.draw_text(
+                        &info,
+                        Rect::new(4.0, 2.0, 760.0, 24.0),
+                        Color::WHITE.with_alpha(0.9),
+                        14.0,
+                    );
+                    layers.push(PaintLayerData::new(
+                        WidgetId::from_u64(300 + i as u64),
+                        if is_selected { 2 } else { 0 },
+                        row_bounds,
+                        row_ctx.into_operations(),
+                    ));
+                }
+            }
+
+            // Status message
+            let msg_bounds = Rect::new(20.0, h - 40.0, w - 40.0, 24.0);
+            let mut msg_ctx = PaintContext::new(msg_bounds);
+            msg_ctx.draw_text(
+                &guard.message,
+                msg_bounds,
+                Color::WHITE.with_alpha(0.6),
+                12.0,
+            );
+            layers.push(PaintLayerData::new(
+                WidgetId::from_u64(999),
+                5,
+                msg_bounds,
+                msg_ctx.into_operations(),
+            ));
+
+            drop(guard);
+
+            // Also include the html! view's scene on top (demonstrates integration)
+            let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, None);
+            // Compute layout for html! view and integrate with manual layers
+            let layout = compute_view_layout(&mut _view, Size::new(w, h));
+            let view_scene = build_scene_from_view(&_view, &layout, &paint_fn, _frame, Some(_tr));
+            scene.layers.extend(view_scene.layers);
+            scene
+        },
+    );
 
     // Run the app
     println!("\n=== rgui CRUD Example (html! 声明式渲染) ===");
