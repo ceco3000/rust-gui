@@ -22,10 +22,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  按钮被点击: {action}");
     });
 
-    // 场景构建回调
+    // 场景构建回调——所有坐标为逻辑像素
     app.set_scene_builder(move |_frame: u64, width: u32, height: u32| {
         let w = width as f64;
         let h = height as f64;
+
+        if _frame == 0 {
+            println!("[示例] 第 0 帧场景构建：逻辑尺寸 {w}×{h} ");
+        }
 
         let mut layers: Vec<PaintLayerData> = Vec::new();
 
@@ -57,6 +61,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     println!("=== rgui 单按钮示例 ===\n");
+    println!("窗口配置: 300×200 (逻辑像素)");
+    println!("run() 启动后，控制台将打印 scale_factor 和物理尺寸。\n");
     println!("点击窗口中的 [OK] 按钮...");
 
     app.run()

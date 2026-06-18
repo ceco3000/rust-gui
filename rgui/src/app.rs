@@ -103,6 +103,9 @@ pub struct App {
     interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
     /// 可选的场景构建回调（每帧调用生成 SceneGraph）。
     scene_builder: Option<SceneBuilder>,
+    /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
+    /// 从 winit `window.scale_factor()` 读取，默认 1.0。
+    pub(crate) scale_factor: f64,
 }
 
 impl App {
@@ -118,6 +121,7 @@ impl App {
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
             scene_builder: None,
+            scale_factor: 1.0,
         }
     }
 
@@ -139,6 +143,14 @@ impl App {
     #[must_use]
     pub fn window_id(&self) -> WindowId {
         self.window_id
+    }
+    /// 返回当前 DPI 缩放因子。
+    ///
+    /// 逻辑像素 × `scale_factor` = 物理像素。
+    /// 在普通 1× 显示器上为 1.0，Mac Retina 为 2.0，Windows 150% 缩放为 1.5。
+    #[must_use]
+    pub fn scale_factor(&self) -> f64 {
+        self.scale_factor
     }
     /// 注册内置组件（Button、Label、TextField）。
     pub fn register_defaults(&mut self) {
@@ -513,6 +525,7 @@ impl ApplicationHandler for AppHandler {
             let w = size.width;
             let h = size.height;
             self.scale_factor = window.scale_factor();
+            self.app.scale_factor = self.scale_factor;
             self.window = Some(Arc::clone(&window));
 
             match VelloBackend::new(Arc::clone(&window), w, h) {
@@ -526,6 +539,14 @@ impl ApplicationHandler for AppHandler {
             }
 
             println!("rgui 窗口已创建: {}", self.app.config.title);
+            println!(
+                "scale_factor = {:.2}，物理 {}×{} → 逻辑 {:.0}×{:.0}",
+                self.scale_factor,
+                self.width,
+                self.height,
+                self.width as f64 / self.scale_factor,
+                self.height as f64 / self.scale_factor
+            );
             println!("点击窗口中的按钮区域触发交互...");
         }
     }
@@ -645,6 +666,15 @@ impl ApplicationHandler for AppHandler {
                 ref mut inner_size_writer,
             } => {
                 self.scale_factor = scale_factor;
+                self.app.scale_factor = scale_factor;
+                println!(
+                    "[rgui] DPI 变化: scale_factor = {:.2}，物理 {}×{} → 逻辑 {:.0}×{:.0}",
+                    scale_factor,
+                    self.width,
+                    self.height,
+                    self.width as f64 / scale_factor,
+                    self.height as f64 / scale_factor
+                );
                 // 更新物理尺寸，winit 在 DPI 变化后返回新的物理尺寸
                 if let Some(window) = &self.window {
                     let new_size = window.inner_size();
