@@ -507,6 +507,7 @@ fn extract_taffy_style(
 /// | `ScrollView` | display: Flex, 100%×100% |
 /// | `Button` | min-height: 40px, min-width: 80px |
 /// | `DataGrid` | display: Flex, 100%×100%（数据密集型组件，默认填充可用空间） |
+/// | `ListView` | display: Flex, 100%×100%（可滚动列表，默认填充可用空间） |
 /// | `Label` | 无默认（自动适应内容） |
 /// | 其他叶子组件 | min-height: 40px |
 fn default_layout_for_type(widget_type: &str) -> taffy::Style {
@@ -577,15 +578,15 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
-        | "Image" | "ListView" => Style {
+        | "Image" => Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(80.0),
                 height: Dimension::Length(40.0),
             },
             ..Style::default()
         },
-        // ── 数据密集型组件——默认填充可用空间 ──
-        "DataGrid" => Style {
+        // ── 数据密集型/可滚动组件——默认填充可用空间 ──
+        "DataGrid" | "ListView" => Style {
             size: full_size,
             ..Style::default()
         },
@@ -1093,6 +1094,14 @@ mod tests {
     fn default_layout_datagrid_fills_available() {
         // DataGrid 默认 100%×100% 填充父容器（数据密集型组件）
         let style = default_layout_for_type("DataGrid");
+        assert_eq!(style.size.width, taffy::Dimension::Percent(1.0));
+        assert_eq!(style.size.height, taffy::Dimension::Percent(1.0));
+    }
+
+    #[test]
+    fn default_layout_listview_fills_available() {
+        // ListView 默认 100%×100% 填充父容器（可滚动列表）
+        let style = default_layout_for_type("ListView");
         assert_eq!(style.size.width, taffy::Dimension::Percent(1.0));
         assert_eq!(style.size.height, taffy::Dimension::Percent(1.0));
     }
