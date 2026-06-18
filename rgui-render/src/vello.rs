@@ -82,7 +82,7 @@ impl VelloBackend {
     /// # 错误
     ///
     /// - [`RenderError::SurfaceCreationFailed`] — 无法创建 wgpu surface。
-    /// - [`RenderError::RenderFailed`] — 无法创建 Vello 渲染器。
+    /// - [`RenderError::BackendUnavailable`] — 无法创建 Vello 渲染器。
     pub fn new(
         window: impl HasWindowHandle + HasDisplayHandle + Send + Sync + 'static,
         width: u32,
@@ -101,7 +101,9 @@ impl VelloBackend {
         let device_handle = &gpu.devices[surface.dev_id];
         let renderer =
             vello::Renderer::new(&device_handle.device, vello::RendererOptions::default())
-                .map_err(|e| RenderError::RenderFailed(format!("创建 Vello 渲染器失败: {e}")))?;
+                .map_err(|e| {
+                    RenderError::BackendUnavailable(format!("创建 Vello 渲染器失败: {e}"))
+                })?;
 
         Ok(Self {
             gpu,
@@ -226,26 +228,28 @@ impl VelloBackend {
                     antialiasing_method: vello::AaConfig::Area,
                 },
             )
-            .map_err(|e| RenderError::RenderFailed(format!("Vello 渲染失败: {e}")))?;
+            .map_err(|e| RenderError::BackendUnavailable(format!("Vello 渲染失败: {e}")))?;
 
         // 阶段 2: Blit RGBA target → BGRA surface
         let surface_texture = match self.surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(st)
             | wgpu::CurrentSurfaceTexture::Suboptimal(st) => st,
             wgpu::CurrentSurfaceTexture::Timeout => {
-                return Err(RenderError::RenderFailed("surface 纹理获取超时".into()));
+                return Err(RenderError::Timeout(5000));
             },
             wgpu::CurrentSurfaceTexture::Occluded => return Ok(()),
             wgpu::CurrentSurfaceTexture::Outdated => {
                 self.device_lost = true;
-                return Err(RenderError::RenderFailed("surface 配置已过期".into()));
+                return Err(RenderError::DeviceLost("surface 配置已过期".into()));
             },
             wgpu::CurrentSurfaceTexture::Lost => {
                 self.device_lost = true;
-                return Err(RenderError::RenderFailed("surface 已丢失".into()));
+                return Err(RenderError::DeviceLost("surface 已丢失".into()));
             },
             wgpu::CurrentSurfaceTexture::Validation => {
-                return Err(RenderError::RenderFailed("surface 验证错误".into()));
+                return Err(RenderError::SurfaceCreationFailed(
+                    "surface 验证错误".into(),
+                ));
             },
         };
 

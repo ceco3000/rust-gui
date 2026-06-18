@@ -94,7 +94,7 @@ impl SkiaBackend {
 
         let mut surface =
             skia_safe::surfaces::raster(&image_info, None, None::<&skia_safe::SurfaceProps>)
-                .ok_or_else(|| RenderError::RenderFailed("创建 Skia 光栅表面失败".into()))?;
+                .ok_or_else(|| RenderError::BackendUnavailable("创建 Skia 光栅表面失败".into()))?;
 
         let canvas = surface.canvas();
 
@@ -222,7 +222,9 @@ impl SkiaBackend {
         let mut pixel_buffer = vec![0u8; buffer_size];
 
         if !surface.read_pixels(&image_info, &mut pixel_buffer, row_bytes, (0, 0)) {
-            return Err(RenderError::RenderFailed("读取 Skia 像素数据失败".into()));
+            return Err(RenderError::BackendUnavailable(
+                "读取 Skia 像素数据失败".into(),
+            ));
         }
 
         self.pixels = pixel_buffer;

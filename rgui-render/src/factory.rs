@@ -56,7 +56,7 @@ impl BackendType {
 ///
 /// 1. **VelloBackend** — 需要 `vello-backend` feature（R05 实现）。
 /// 2. **SkiaBackend** — 需要 `skia-backend` feature。
-/// 3. 返回 [`RenderError::NoAvailableBackend`]。
+/// 3. 返回 [`RenderError::BackendUnavailable`]。
 ///
 /// # 示例
 ///
@@ -81,7 +81,7 @@ impl RenderBackendFactory {
     ///
     /// # 错误
     ///
-    /// - [`RenderError::NoAvailableBackend`] — 所有后端均不可用。
+    /// - [`RenderError::BackendUnavailable`] — 所有后端均不可用。
     #[cfg_attr(not(feature = "skia-backend"), allow(unused_variables))]
     pub fn create(params: &RenderParams) -> Result<Box<dyn RenderBackend>, RenderError> {
         #[cfg(feature = "skia-backend")]
@@ -93,7 +93,9 @@ impl RenderBackendFactory {
         #[cfg(not(feature = "skia-backend"))]
         {
             let _ = params;
-            Err(RenderError::NoAvailableBackend)
+            Err(RenderError::BackendUnavailable(
+                "no rendering backend available".into(),
+            ))
         }
     }
 
@@ -108,8 +110,8 @@ impl RenderBackendFactory {
     /// # 错误
     ///
     /// - [`RenderError::SurfaceCreationFailed`] — 无法创建 wgpu surface。
-    /// - [`RenderError::RenderFailed`] — 无法创建 Vello 渲染器。
-    /// - [`RenderError::UnsupportedBackend`] — `vello-backend` feature 未启用。
+    /// - [`RenderError::BackendUnavailable`] — 无法创建 Vello 渲染器。
+    /// - [`RenderError::BackendUnavailable`] — `vello-backend` feature 未启用。
     #[cfg(feature = "vello-backend")]
     pub fn create_vello(
         window: impl HasWindowHandle + HasDisplayHandle + Send + Sync + 'static,
@@ -128,7 +130,7 @@ impl RenderBackendFactory {
     ///
     /// # 错误
     ///
-    /// - [`RenderError::UnsupportedBackend`] — 指定后端未编译或未实现。
+    /// - [`RenderError::BackendUnavailable`] — 指定后端未编译或未实现。
     pub fn create_backend(
         backend_type: BackendType,
         _params: &RenderParams,
@@ -136,8 +138,9 @@ impl RenderBackendFactory {
         match backend_type {
             BackendType::Vello => {
                 // VelloBackend 需要窗口句柄，请使用 create_vello()
-                Err(RenderError::UnsupportedBackend(
-                    "VelloBackend requires a window; use RenderBackendFactory::create_vello()",
+                Err(RenderError::BackendUnavailable(
+                    "VelloBackend requires a window; use RenderBackendFactory::create_vello()"
+                        .into(),
                 ))
             },
             BackendType::Skia => {
@@ -147,8 +150,8 @@ impl RenderBackendFactory {
                     Ok(Box::new(backend))
                 }
                 #[cfg(not(feature = "skia-backend"))]
-                Err(RenderError::UnsupportedBackend(
-                    "skia-backend feature not enabled",
+                Err(RenderError::BackendUnavailable(
+                    "skia-backend feature not enabled".into(),
                 ))
             },
         }
@@ -236,15 +239,15 @@ mod tests {
             let backend = result.unwrap();
             assert_eq!(backend.backend_name(), "Skia (CPU)");
         } else {
-            // 无 skia-backend feature 时应返回 UnsupportedBackend
+            // 无 skia-backend feature 时应返回 BackendUnavailable
             match &result {
-                Err(RenderError::UnsupportedBackend(msg)) => {
+                Err(RenderError::BackendUnavailable(msg)) => {
                     assert!(
-                        msg.contains(&"skia-backend feature not enabled"),
+                        msg.contains("skia-backend feature not enabled"),
                         "unexpected error message: {msg}"
                     );
                 },
-                Err(other) => panic!("expected UnsupportedBackend, got: {other:?}"),
+                Err(other) => panic!("expected BackendUnavailable, got: {other:?}"),
                 Ok(_) => panic!("expected Err without skia-backend feature"),
             }
         }
@@ -296,13 +299,13 @@ mod tests {
         assert!(result.is_err());
 
         match &result {
-            Err(RenderError::UnsupportedBackend(msg)) => {
+            Err(RenderError::BackendUnavailable(msg)) => {
                 assert!(
                     msg.contains("create_vello"),
                     "error message should mention create_vello: {msg}"
                 );
             },
-            Err(other) => panic!("expected UnsupportedBackend, got: {other:?}"),
+            Err(other) => panic!("expected BackendUnavailable, got: {other:?}"),
             Ok(_) => panic!("expected Err for VelloBackend"),
         }
     }

@@ -5,7 +5,7 @@
 use crate::scene::SceneGraph;
 use crate::texture::{TextureData, TextureFormat, TextureId};
 
-/// 渲染错误类型。
+/// 渲染错误类型（D3 §5.1）。
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
     #[error("GPU 设备不可用")]
@@ -14,16 +14,12 @@ pub enum RenderError {
     SurfaceCreationFailed(String),
     #[error("着色器编译失败：{0}")]
     ShaderCompilationFailed(String),
-    #[error("渲染失败：{0}")]
-    RenderFailed(String),
-    #[error("纹理注册失败：{0}")]
-    TextureRegistrationFailed(String),
-    /// 无可用渲染后端（所有后端均不可用）。
-    #[error("无可用渲染后端")]
-    NoAvailableBackend,
-    /// 指定后端不可用（未编译或未实现）。
+    #[error("纹理内存不足")]
+    OutOfTextureMemory,
+    #[error("渲染超时（>{0}ms）")]
+    Timeout(u64),
     #[error("后端不可用：{0}")]
-    UnsupportedBackend(&'static str),
+    BackendUnavailable(String),
 }
 
 /// 渲染参数。
@@ -168,31 +164,25 @@ mod tests {
     }
 
     #[test]
-    fn render_error_render_failed_display() {
-        let err = RenderError::RenderFailed("超时".into());
+    fn render_error_out_of_texture_memory_display() {
+        let err = RenderError::OutOfTextureMemory;
         let msg = err.to_string();
-        assert!(msg.contains("渲染失败"));
+        assert!(msg.contains("纹理内存不足"));
     }
 
     #[test]
-    fn render_error_texture_registration_failed_display() {
-        let err = RenderError::TextureRegistrationFailed("格式不支持".into());
+    fn render_error_timeout_display() {
+        let err = RenderError::Timeout(5000);
         let msg = err.to_string();
-        assert!(msg.contains("纹理注册失败"));
+        assert!(msg.contains("渲染超时"));
+        assert!(msg.contains("5000"));
     }
 
     #[test]
-    fn render_error_no_available_backend_display() {
-        let err = RenderError::NoAvailableBackend;
-        let msg = err.to_string();
-        assert!(msg.contains("无可用渲染后端"));
-    }
-
-    #[test]
-    fn render_error_unsupported_backend_display() {
-        let err = RenderError::UnsupportedBackend("OpenGL");
+    fn render_error_backend_unavailable_display() {
+        let err = RenderError::BackendUnavailable("Vello 未编译".into());
         let msg = err.to_string();
         assert!(msg.contains("后端不可用"));
-        assert!(msg.contains("OpenGL"));
+        assert!(msg.contains("Vello 未编译"));
     }
 }
