@@ -690,7 +690,9 @@ dependencies = [
 name = "counter"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
  "serde",
 ]
 
@@ -774,7 +776,9 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 name = "crud"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
  "serde",
 ]
 
@@ -2297,7 +2301,9 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "one-button"
 version = "0.1.0"
 dependencies = [
+ "ordered-float 4.6.0",
  "rgui",
+ "rgui-core",
 ]
 
 [[package]]
