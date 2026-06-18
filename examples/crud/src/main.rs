@@ -442,7 +442,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             drop(guard);
 
             // Also include the html! view's scene on top (demonstrates integration)
-            let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, None);
+            let mut scene = rgui::build_scene_from_paint_data(&layers, _frame, Some(_tr));
             // Compute layout for html! view and integrate with manual layers
             let layout = compute_view_layout(&mut _view, Size::new(w, h));
             let view_scene = build_scene_from_view(&_view, &layout, &paint_fn, _frame, Some(_tr));

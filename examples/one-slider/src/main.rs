@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 sl_ctx.into_operations(),
             ));
 
-            build_scene_from_paint_data(&layers, frame, None)
+            build_scene_from_paint_data(&layers, frame, Some(_tr))
         },
     );
 
