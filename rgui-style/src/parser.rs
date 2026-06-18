@@ -362,11 +362,24 @@ fn parse_selector(chars: &[char], pos: &mut usize) -> Result<Selector, ParseErro
         return Err(ParseError::Syntax("空选择器".into()));
     }
 
-    // 类选择器 `.classname`
+    // 类选择器 `.classname[.classname2...]`
     if chars[*pos] == '.' {
         *pos += 1;
-        let name = parse_identifier(chars, pos);
-        return Ok(Selector::Class(name));
+        let first = parse_identifier(chars, pos);
+        let mut classes = vec![first];
+        // 检查是否还有 `.classname2` 形成复合类选择器
+        while *pos < chars.len() && chars[*pos] == '.' {
+            *pos += 1;
+            let name = parse_identifier(chars, pos);
+            if name.is_empty() {
+                return Err(ParseError::Syntax("类名不能为空".into()));
+            }
+            classes.push(name);
+        }
+        if classes.len() == 1 {
+            return Ok(Selector::Class(classes.into_iter().next().unwrap()));
+        }
+        return Ok(Selector::Classes(classes));
     }
 
     // ID 选择器 `#id`
@@ -582,6 +595,35 @@ mod tests {
         match &rules[0].selector {
             Selector::Class(c) => assert_eq!(c, "primary"),
             _ => panic!(),
+        }
+    }
+
+    /// H03: 解析复合类选择器 `.primary.large`
+    #[test]
+    fn parse_compound_class_selector() {
+        let rules = parse_rgss(".primary.large { opacity: 0.5; }").unwrap();
+        assert_eq!(rules.len(), 1);
+        match &rules[0].selector {
+            Selector::Classes(classes) => {
+                assert_eq!(classes.len(), 2);
+                assert_eq!(classes[0], "primary");
+                assert_eq!(classes[1], "large");
+            },
+            other => panic!("期望 Selector::Classes，实际: {other:?}"),
+        }
+    }
+
+    /// H03: 解析三重复合类选择器 `.a.b.c`
+    #[test]
+    fn parse_triple_compound_class_selector() {
+        let rules = parse_rgss(".a.b.c { color: red; }").unwrap();
+        assert_eq!(rules.len(), 1);
+        match &rules[0].selector {
+            Selector::Classes(classes) => {
+                assert_eq!(classes.len(), 3);
+                assert_eq!(classes, &["a", "b", "c"]);
+            },
+            other => panic!("期望 Selector::Classes，实际: {other:?}"),
         }
     }
 

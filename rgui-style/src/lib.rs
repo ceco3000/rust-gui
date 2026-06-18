@@ -18,6 +18,7 @@ pub use property_map::{
 };
 pub use selector::{
     CombinatorKind, MediaCondition, Selector, SelectorEngine, Specificity, StyleRule, breakpoints,
+    class_list_from_props,
 };
 pub use theme::{ColorScheme, Theme, ThemeVariables};
 

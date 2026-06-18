@@ -110,6 +110,8 @@ pub enum Selector {
     Type(String),
     /// 类选择器：`.page`
     Class(String),
+    /// 复合类选择器：`.primary.large`——匹配同时拥有所有指定类的元素
+    Classes(Vec<String>),
     /// ID 选择器：`#main-header`
     Id(String),
     /// 属性选择器：`[variant="primary"]`
@@ -131,6 +133,13 @@ impl Selector {
         match self {
             Self::Id(_) => Specificity::ID,
             Self::Class(_) | Self::Attribute { .. } | Self::PseudoClass(_) => Specificity::CLASS,
+            Self::Classes(classes) => {
+                if classes.is_empty() {
+                    Specificity::ZERO
+                } else {
+                    Specificity(0, classes.len() as u32, 0)
+                }
+            },
             Self::Type(_) => Specificity::TYPE,
             Self::Combinator {
                 ancestor,
@@ -162,6 +171,13 @@ impl Selector {
                 widget_type == t.as_str() || widget_type.ends_with(&format!("::{t}"))
             },
             Self::Class(c) => class_list.contains(&c.as_str()),
+            Self::Classes(classes) => {
+                // 复合类选择器：所有类都必须存在于 class_list 中
+                if classes.is_empty() {
+                    return false;
+                }
+                classes.iter().all(|c| class_list.contains(&c.as_str()))
+            },
             Self::Id(_id) => {
                 // ID 匹配需要 widget 的 stable_id，当前简化为检查属性
                 attr_map
@@ -201,6 +217,15 @@ impl Selector {
     #[must_use]
     pub fn class(name: impl Into<String>) -> Self {
         Self::Class(name.into())
+    }
+
+    /// 创建复合类选择器（如 `.primary.large`）。
+    ///
+    /// 匹配时要求元素拥有 ALL 指定的 CSS 类。
+    /// 空列表的复合选择器不匹配任何元素。
+    #[must_use]
+    pub fn classes(names: &[&str]) -> Self {
+        Self::Classes(names.iter().map(|s| s.to_string()).collect())
     }
 
     /// 创建后代组合器。
@@ -774,4 +799,173 @@ mod tests {
         assert_eq!(breakpoints::XL, 1280.0);
         assert_eq!(breakpoints::XXL, 1536.0);
     }
+
+    // ========================================================================
+    // H03: class 属性处理——复合类选择器 + class_list 提取
+    // ========================================================================
+
+    /// 验收标准：`class="primary large"` → `.primary` 匹配
+    #[test]
+    fn h03_single_class_primary_matches() {
+        let s = Selector::class("primary");
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        assert!(s.matches("Button", &class_refs, &[], &BTreeMap::new()));
+    }
+
+    /// 验收标准：`class="primary large"` → `.large` 匹配
+    #[test]
+    fn h03_single_class_large_matches() {
+        let s = Selector::class("large");
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        assert!(s.matches("Button", &class_refs, &[], &BTreeMap::new()));
+    }
+
+    /// 验收标准：`class="primary large"` → 复合选择器 `.primary.large` 匹配（全部类均存在）
+    #[test]
+    fn h03_compound_classes_matches() {
+        let s = Selector::classes(&["primary", "large"]);
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        assert!(s.matches("Button", &class_refs, &[], &BTreeMap::new()));
+    }
+
+    /// 复合选择器：部分类不匹配 → 不匹配
+    #[test]
+    fn h03_compound_classes_partial_no_match() {
+        let s = Selector::classes(&["primary", "other"]);
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        assert!(!s.matches("Button", &class_refs, &[], &BTreeMap::new()));
+    }
+
+    /// 复合选择器特异性 = 每个类 CLASS 特异性之和
+    #[test]
+    fn h03_compound_classes_specificity() {
+        // 两个类 → (0, 2, 0)
+        let s = Selector::classes(&["primary", "large"]);
+        assert_eq!(s.specificity(), Specificity(0, 2, 0));
+
+        // 三个类 → (0, 3, 0)
+        let s3 = Selector::classes(&["a", "b", "c"]);
+        assert_eq!(s3.specificity(), Specificity(0, 3, 0));
+
+        // 单个类 → (0, 1, 0)，与 Selector::Class 行为一致
+        let s1 = Selector::classes(&["primary"]);
+        assert_eq!(s1.specificity(), Specificity::CLASS);
+    }
+
+    /// 单类复合选择器行为等价于普通类选择器
+    #[test]
+    fn h03_compound_single_class_equiv() {
+        let s_compound = Selector::classes(&["primary"]);
+        let s_simple = Selector::class("primary");
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+
+        assert_eq!(s_compound.specificity(), s_simple.specificity());
+        assert_eq!(
+            s_compound.matches("Button", &class_refs, &[], &BTreeMap::new()),
+            s_simple.matches("Button", &class_refs, &[], &BTreeMap::new())
+        );
+    }
+
+    /// 空复合类选择器：解析不应产生空 Vec，但若产生则视为不匹配任何元素
+    #[test]
+    fn h03_empty_compound_classes_no_match() {
+        let s = Selector::classes(&[]);
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        assert!(!s.matches("Button", &class_refs, &[], &BTreeMap::new()));
+    }
+
+    /// 引擎级测试：类选择器通过引擎匹配
+    #[test]
+    fn h03_engine_class_matching() {
+        let mut engine = SelectorEngine::new();
+
+        engine.add_rule(StyleRule::new(Selector::class("primary"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("color"), PropValue::str("blue"));
+            m
+        }));
+
+        engine.add_rule(StyleRule::new(Selector::class("large"), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("font-size"), PropValue::str("24px"));
+            m
+        }));
+
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        let result = engine.match_widget("Button", &class_refs, &[], &BTreeMap::new());
+
+        assert!(result.contains_key("color"));
+        assert!(result.contains_key("font-size"));
+    }
+
+    /// 引擎级测试：复合类选择器通过引擎匹配
+    #[test]
+    fn h03_engine_compound_class_matching() {
+        let mut engine = SelectorEngine::new();
+
+        engine.add_rule(StyleRule::new(Selector::classes(&["primary", "large"]), {
+            let mut m = BTreeMap::new();
+            m.insert(Arc::from("border-radius"), PropValue::str("8px"));
+            m
+        }));
+
+        let class_list = class_list_from_props_str("primary large");
+        let class_refs: Vec<&str> = class_list.iter().map(|s| s.as_str()).collect();
+        let result = engine.match_widget("Button", &class_refs, &[], &BTreeMap::new());
+
+        assert!(result.contains_key("border-radius"));
+    }
+}
+
+/// 从 WidgetView.props 中提取 class 属性值并按空格拆分为类名列表。
+///
+/// 返回 `Vec<String>`——调用方可通过 `iter().map(|s| s.as_str()).collect()`
+/// 转换为 `Vec<&str>` 传入 `Selector::matches` 或 `SelectorEngine::match_widget`。
+///
+/// # 示例
+///
+/// ```
+/// use std::collections::BTreeMap;
+/// use rgui_core::view::PropValue;
+/// use rgui_style::class_list_from_props;
+/// let mut props = BTreeMap::new();
+/// props.insert("class", PropValue::Str(std::sync::Arc::from("primary large")));
+/// let classes: Vec<String> = class_list_from_props(&props);
+/// assert_eq!(classes, vec!["primary".to_string(), "large".to_string()]);
+/// ```
+#[must_use]
+pub fn class_list_from_props(props: &BTreeMap<&str, PropValue>) -> Vec<String> {
+    props
+        .get("class")
+        .and_then(|v| {
+            if let PropValue::Str(s) = v {
+                Some(
+                    s.split_whitespace()
+                        .filter(|c| !c.is_empty())
+                        .map(|c| c.to_string())
+                        .collect(),
+                )
+            } else {
+                None
+            }
+        })
+        .unwrap_or_default()
+}
+
+/// 测试辅助：从字符串字面量创建类列表切片。
+///
+/// 仅用于测试——将类名字符串按空格拆分，返回 `Vec<String>`。
+#[cfg(test)]
+fn class_list_from_props_str(class_str: &str) -> Vec<String> {
+    class_str
+        .split_whitespace()
+        .map(|s| s.to_string())
+        .collect()
 }
