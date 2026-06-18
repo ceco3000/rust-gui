@@ -9,6 +9,35 @@ use crate::html_parser::{HtmlAttribute, HtmlChild, HtmlElement, HtmlValue};
 use proc_macro2::TokenStream;
 use quote::quote;
 
+/// 事件名称 → message_name 映射表（D1 §13.5、D5 §13.3）。
+///
+/// 编译期硬编码，零运行时开销。
+const EVENT_TO_MESSAGE_NAME: &[(&str, &str)] = &[
+    ("on:click", "click"),
+    ("on:input", "text_changed"),
+    ("on:change", "value_changed"),
+    ("on:focus", "focus_in"),
+    ("on:blur", "focus_out"),
+    ("on:keydown", "key_down"),
+    ("on:scroll", "scroll_changed"),
+    ("on:submit", "submit"),
+];
+
+/// 检查属性名是否为事件绑定（`on:xxx` 前缀）。
+fn is_event_binding(name: &str) -> bool {
+    name.starts_with("on:")
+}
+
+/// 将事件属性名（如 `on:click`）映射为 message_name（如 `"click"`）。
+///
+/// 返回 `None` 表示未知事件名（宏在此时产生编译错误）。
+fn event_to_message_name(event_attr: &str) -> Option<&'static str> {
+    EVENT_TO_MESSAGE_NAME
+        .iter()
+        .find(|(k, _)| *k == event_attr)
+        .map(|(_, v)| *v)
+}
+
 /// 将 HTML 元素列表展开为 WidgetView builder 代码。
 ///
 /// 返回类型为 `WidgetView<M>`，`M` 由调用的上下文类型推断决定。
@@ -32,16 +61,75 @@ pub(crate) fn generate_widget_views(elements: &[HtmlElement]) -> TokenStream {
 /// 生成单个元素的 WidgetView 代码。
 fn generate_element(el: &HtmlElement) -> TokenStream {
     let widget_type = &el.tag_name;
-    let prop_setters: Vec<_> = el.attributes.iter().map(generate_prop_setter).collect();
+
+    // 分离普通属性和事件绑定
+    let prop_setters: Vec<_> = el
+        .attributes
+        .iter()
+        .filter(|a| !is_event_binding(&a.name))
+        .map(generate_prop_setter)
+        .collect();
+
+    let event_setters: Vec<_> = el
+        .attributes
+        .iter()
+        .filter(|a| is_event_binding(&a.name))
+        .map(generate_event_binding)
+        .collect();
+
     let child_setters: Vec<_> = el.children.iter().map(generate_child_setter).collect();
 
     quote! {
         {
             let mut __view = ::rgui_core::view::WidgetView::new(#widget_type);
             #( #prop_setters )*
+            #( #event_setters )*
             #( #child_setters )*
             __view
         }
+    }
+}
+
+/// 生成事件绑定代码（`on:event={handler}` → `.on(…, message_name, handler)`）。
+///
+/// 设计源自 D1 §13.5、D5 §13.2。
+fn generate_event_binding(attr: &HtmlAttribute) -> TokenStream {
+    let event_name = &attr.name; // e.g. "on:click"
+    let message_name = match event_to_message_name(event_name) {
+        Some(name) => name,
+        None => {
+            // 未知事件名在展开时产生编译错误
+            return quote! {
+                compile_error!(concat!("未知的事件绑定: `", #event_name, "`"));
+
+            };
+        },
+    };
+
+    match &attr.value {
+        HtmlValue::Expr(handler_expr) => {
+            // `on:click={Msg::Confirm}` → MessageHandler::Map(|_| Msg::Confirm)
+            quote! {
+                __view = __view.on(
+                    ::rgui_core::WidgetId::from_u64(0),
+                    Some(#message_name),
+                    ::rgui_core::view::MessageHandler::Map(
+                        ::std::sync::Arc::new(|_msg| #handler_expr)
+                    ),
+                );
+            }
+        },
+        HtmlValue::Str(_) => {
+            // 字符串值不适用于事件绑定
+            quote! {
+                compile_error!(concat!("事件绑定需要表达式 `{ }`，而非字符串字面量: `", #event_name, "=\"...\"`"));
+            }
+        },
+        HtmlValue::Bool => {
+            quote! {
+                compile_error!(concat!("事件绑定需要表达式 `{ }`，而非布尔标志: `", #event_name, "`"));
+            }
+        },
     }
 }
 
@@ -249,5 +337,67 @@ mod tests {
             code.contains("-") && code.contains("10"),
             "期望 -10，实际: {code}"
         );
+    }
+
+    // --- 事件绑定映射 ---
+
+    #[test]
+    fn event_to_message_name_click() {
+        assert_eq!(event_to_message_name("on:click"), Some("click"));
+    }
+
+    #[test]
+    fn event_to_message_name_input() {
+        assert_eq!(event_to_message_name("on:input"), Some("text_changed"));
+    }
+
+    #[test]
+    fn event_to_message_name_change() {
+        assert_eq!(event_to_message_name("on:change"), Some("value_changed"));
+    }
+
+    #[test]
+    fn event_to_message_name_focus() {
+        assert_eq!(event_to_message_name("on:focus"), Some("focus_in"));
+    }
+
+    #[test]
+    fn event_to_message_name_blur() {
+        assert_eq!(event_to_message_name("on:blur"), Some("focus_out"));
+    }
+
+    #[test]
+    fn event_to_message_name_keydown() {
+        assert_eq!(event_to_message_name("on:keydown"), Some("key_down"));
+    }
+
+    #[test]
+    fn event_to_message_name_scroll() {
+        assert_eq!(event_to_message_name("on:scroll"), Some("scroll_changed"));
+    }
+
+    #[test]
+    fn event_to_message_name_submit() {
+        assert_eq!(event_to_message_name("on:submit"), Some("submit"));
+    }
+
+    #[test]
+    fn event_to_message_name_unknown() {
+        assert_eq!(event_to_message_name("on:unknown"), None);
+    }
+
+    #[test]
+    fn is_event_binding_detects_on_prefix() {
+        assert!(is_event_binding("on:click"));
+        assert!(is_event_binding("on:input"));
+        assert!(is_event_binding("on:custom"));
+    }
+
+    #[test]
+    fn is_event_binding_rejects_regular_attrs() {
+        assert!(!is_event_binding("class"));
+        assert!(!is_event_binding("label"));
+        assert!(!is_event_binding("disabled"));
+        assert!(!is_event_binding("on")); // no colon
     }
 }

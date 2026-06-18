@@ -10,6 +10,9 @@ use rgui_macros::{AppMessage, html};
 #[allow(dead_code)]
 enum TestMessage {
     Click,
+    Confirm,
+    TextChanged(String),
+    ValueChanged(i32),
 }
 
 /// H01 验收标准：`<Button label="Hi" />` → WidgetView
@@ -273,4 +276,164 @@ fn h02_class_attribute_stays_str() {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "primary large"),
         other => panic!("期望 PropValue::Str(\"primary large\")，实际: {other:?}"),
     }
+}
+
+// ============================================================================
+// H04: `on:event` 事件绑定
+// ============================================================================
+
+/// H04 验收标准：`on:click={Msg::Confirm}` → message_bindings 包含正确绑定
+#[test]
+fn h04_on_click_event_binding() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button label="确认" on:click={TestMessage::Confirm} />
+    };
+
+    assert_eq!(view.widget_type, "Button");
+    // 普通属性不受影响
+    assert!(view.props.contains_key("label"));
+    // on:click 不进入 props
+    assert!(!view.props.contains_key("on:click"));
+    // 消息绑定
+    assert_eq!(view.message_bindings.len(), 1, "期望 1 个 message_binding");
+    let binding = &view.message_bindings[0];
+    assert_eq!(binding.message_name, Some("click"));
+}
+
+/// H04: `on:click` 的 message_name 映射为 "click"
+#[test]
+fn h04_on_click_message_name_is_click() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button on:click={TestMessage::Click} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("click"));
+}
+
+/// H04: `on:input` → message_name "text_changed"
+#[test]
+fn h04_on_input_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <TextField on:input={TestMessage::TextChanged(String::new())} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("text_changed"));
+}
+
+/// H04: `on:change` → message_name "value_changed"
+#[test]
+fn h04_on_change_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <Slider on:change={TestMessage::ValueChanged(0)} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("value_changed"));
+}
+
+/// H04: `on:focus` → message_name "focus_in"
+#[test]
+fn h04_on_focus_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button on:focus={TestMessage::Confirm} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("focus_in"));
+}
+
+/// H04: `on:blur` → message_name "focus_out"
+#[test]
+fn h04_on_blur_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button on:blur={TestMessage::Confirm} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("focus_out"));
+}
+
+/// H04: `on:keydown` → message_name "key_down"
+#[test]
+fn h04_on_keydown_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <TextField on:keydown={TestMessage::TextChanged(String::new())} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("key_down"));
+}
+
+/// H04: `on:scroll` → message_name "scroll_changed"
+#[test]
+fn h04_on_scroll_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <ScrollView on:scroll={TestMessage::Confirm} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(
+        view.message_bindings[0].message_name,
+        Some("scroll_changed")
+    );
+}
+
+/// H04: `on:submit` → message_name "submit"
+#[test]
+fn h04_on_submit_message_name() {
+    let view: WidgetView<TestMessage> = html! {
+        <TextField on:submit={TestMessage::Confirm} />
+    };
+
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("submit"));
+}
+
+/// H04: 多个事件绑定共存
+#[test]
+fn h04_multiple_event_bindings() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button
+            label="Multi"
+            on:click={TestMessage::Click}
+            on:focus={TestMessage::Confirm}
+        />
+    };
+
+    assert!(view.props.contains_key("label"));
+    assert_eq!(view.message_bindings.len(), 2);
+    assert_eq!(view.message_bindings[0].message_name, Some("click"));
+    assert_eq!(view.message_bindings[1].message_name, Some("focus_in"));
+}
+
+/// H04: 事件绑定与普通属性混合
+#[test]
+fn h04_event_binding_with_props() {
+    let view: WidgetView<TestMessage> = html! {
+        <Button label="Hi" class="primary" on:click={TestMessage::Click} />
+    };
+
+    assert_eq!(view.props.len(), 2);
+    assert!(view.props.contains_key("label"));
+    assert!(view.props.contains_key("class"));
+    assert!(!view.props.contains_key("on:click"));
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("click"));
+}
+
+/// H04: 事件绑定 + 子元素共存
+#[test]
+fn h04_event_binding_with_children() {
+    let view: WidgetView<TestMessage> = html! {
+        <Column on:click={TestMessage::Click}>
+            <Label text="Child" />
+        </Column>
+    };
+
+    assert_eq!(view.children.len(), 1);
+    assert_eq!(view.children[0].widget_type, "Label");
+    assert_eq!(view.message_bindings.len(), 1);
+    assert_eq!(view.message_bindings[0].message_name, Some("click"));
 }

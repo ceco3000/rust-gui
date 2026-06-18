@@ -239,7 +239,21 @@ impl HtmlParser {
     }
 
     fn parse_attribute(&mut self) -> Result<HtmlAttribute, syn::Error> {
-        let name = self.expect_ident()?;
+        let mut name = self.expect_ident()?;
+
+        // 处理 `on:event` 语法：将 `:ident` 追加到属性名
+        // 支持 XML 命名空间风格的属性名（如 `on:click`、`on:input`）
+        loop {
+            match self.peek() {
+                Some(TokenTree::Punct(p)) if p.as_char() == ':' => {
+                    self.advance(); // `:`
+                    let suffix = self.expect_ident()?;
+                    name.push(':');
+                    name.push_str(&suffix);
+                },
+                _ => break,
+            }
+        }
 
         // 检查是否有 `=`
         match self.peek() {
@@ -560,5 +574,29 @@ mod tests {
         assert_eq!(el.attributes[0].name, "label");
         assert_eq!(el.attributes[1].name, "class");
         assert_eq!(el.attributes[2].name, "disabled");
+    }
+
+    #[test]
+    fn parse_on_event_attribute() {
+        // `on:click={handler}` — 冒号分隔的属性名
+        let tokens = quote! { <Button on:click={TestMessage::Confirm} /> };
+        let elements = html_tokens(tokens);
+        let el = &elements[0];
+        assert_eq!(el.attributes.len(), 1);
+        assert_eq!(el.attributes[0].name, "on:click");
+        match &el.attributes[0].value {
+            HtmlValue::Expr(_) => {},
+            _ => panic!("期望表达式值"),
+        }
+    }
+
+    #[test]
+    fn parse_on_event_with_props() {
+        let tokens = quote! { <Button label="Hi" on:click={TestMessage::Click} /> };
+        let elements = html_tokens(tokens);
+        let el = &elements[0];
+        assert_eq!(el.attributes.len(), 2);
+        assert_eq!(el.attributes[0].name, "label");
+        assert_eq!(el.attributes[1].name, "on:click");
     }
 }
