@@ -24,7 +24,7 @@ pub enum RegistryError {
 
 /// Widget 注册表。
 ///
-/// 存储所有已注册 widget 的名称。`ui!` 宏在编译时
+/// 存储所有已注册 widget 的名称。`html!` 宏在编译时
 /// 验证引用的 widget 名称是否在注册表中。
 pub struct WidgetRegistry {
     names: FxHashSet<&'static str>,

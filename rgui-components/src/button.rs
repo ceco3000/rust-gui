@@ -57,7 +57,7 @@ pub enum ButtonMessage {
 
 /// Button 组件（unit struct）。
 ///
-/// 实现 [`WidgetSpec`] trait。可通过 `ui!` 宏在声明式 UI 中使用。
+/// 实现 [`WidgetSpec`] trait。可通过 `html!` 宏在声明式 UI 中使用。
 pub struct Button;
 impl WidgetSpec for Button {
     type State = ButtonState;

@@ -266,7 +266,7 @@ pub type PaintFn = Box<dyn Fn(&str, WidgetId, Rect) -> Vec<PaintOp> + Send + Syn
 ///
 /// # 参数
 ///
-/// - `root`: 根 WidgetView（通常由 `ui!` 宏生成）。
+/// - `root`: 根 WidgetView（通常由 `html!` 宏生成）。
 /// - `root_bounds`: 根 widget 的窗口边界矩形（通常为窗口尺寸）。
 /// - `paint_fn`: 为每个 widget 生成 PaintOp 的回调。
 /// - `version`: 场景图版本号。
