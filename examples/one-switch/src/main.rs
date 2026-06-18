@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut view: WidgetView<Msg> = html! {
                 <Center>
-                    <Switch id="1" checked={is_on} />
+                    <Switch id="1" label="WiFi" checked={is_on} />
                 </Center>
             };
 

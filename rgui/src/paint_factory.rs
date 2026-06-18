@@ -99,8 +99,10 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                 "Switch" => {
                     use rgui_components::switch::{Switch, SwitchState};
                     let on = get_bool(&view.props, "checked").unwrap_or(false);
+                    let label = get_str(&view.props, "label").unwrap_or("");
                     let state = SwitchState {
                         on,
+                        label: label.to_string(),
                         ..SwitchState::default()
                     };
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
