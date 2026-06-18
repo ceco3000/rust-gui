@@ -1,6 +1,6 @@
 [package]
 name = "rgui-macros"
-description = "rgui 宏——ui! 声明式宏、派生宏（WidgetSpec、AppMessage、PersistState）"
+description = "rgui 过程宏——html! HTML 声明式宏、派生宏（WidgetSpec、AppMessage、PersistState）"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -12,7 +12,6 @@ pub use rgui_a11y::*;
 pub use rgui_components::*;
 pub use rgui_core::*;
 pub use rgui_layout::*;
-pub use rgui_macros::ui;
 pub use rgui_platform::*;
 pub use rgui_render::*;
 pub use rgui_state::TestHarness;
