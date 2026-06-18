@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use rgui::app::{App, AppConfig};
 use rgui::{
-    AppMessage, ColumnDef, DataGrid, DataGridState, PaintFn, PaintOp, Rect, Size,
-    WidgetSpec, WidgetView, build_scene_from_view, compute_view_layout, html,
+    AppMessage, ColumnDef, DataGrid, DataGridState, PaintFn, PaintOp, Rect, Size, WidgetSpec,
+    WidgetView, build_scene_from_view, compute_view_layout, html,
 };
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
@@ -50,8 +50,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     state.add_row(vec!["Alice".into(), "30".into(), "New York".into()]);
     state.add_row(vec!["Bob".into(), "25".into(), "London".into()]);
     state.add_row(vec!["Charlie".into(), "35".into(), "Tokyo".into()]);
+    let total_width: f64 = state.columns.iter().map(|c| c.width).sum();
+    let grid_height = 28.0 + state.rows.len() as f64 * 24.0;
     let grid_state = Arc::new(state);
 
+    let pw = total_width;
+    let ph = grid_height;
     let paint_fn = datagrid_paint_fn::<Msg>(Arc::clone(&grid_state));
     app.set_view_scene_builder(
         move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
@@ -60,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             let mut view: WidgetView<Msg> = html! {
                 <Center>
-                    <DataGrid />
+                    <DataGrid width={pw} height={ph} />
                 </Center>
             };
 
