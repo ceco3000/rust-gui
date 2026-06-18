@@ -2,6 +2,7 @@
 #![allow(unused_imports)]
 
 pub mod button;
+pub mod center;
 pub mod check_box;
 pub mod column;
 pub mod container;
@@ -16,6 +17,7 @@ pub mod switch;
 pub mod text_field;
 
 pub use button::{Button, ButtonMessage, ButtonState};
+pub use center::{Center, CenterMessage, CenterState};
 pub use check_box::{CheckBox, CheckBoxMessage, CheckBoxState};
 pub use column::{Column, ColumnMessage, ColumnState};
 pub use container::{Container, ContainerMessage, ContainerState};
