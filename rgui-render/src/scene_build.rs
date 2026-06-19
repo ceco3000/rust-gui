@@ -348,8 +348,17 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
         commands.push(paint_op_to_draw_command_inner(op, text_renderer));
     }
 
-    builder.build_layer(widget_id, *z_index, bounds, commands, true);
-    *z_index += 1;
+    // 从 props 读取 z-index，未指定时回退到 DFS 顺序计数
+    let z = match view.props.get("z-index") {
+        Some(rgui_core::view::PropValue::Int(i)) => *i as i32,
+        _ => {
+            let z = *z_index;
+            *z_index += 1;
+            z
+        },
+    };
+
+    builder.build_layer(widget_id, z, bounds, commands, true);
 
     // 递归处理子节点——传递同一 layout_engine 引用
     for child in &view.children {
@@ -1699,5 +1708,92 @@ mod tests {
         let node_id = view.id.unwrap();
         let style = engine.get_layout(node_id).unwrap().style.clone();
         assert_eq!(style.position, taffy::Position::Relative);
+    }
+
+    // --- WTI02: z-index prop 读取 + SceneGraph layers 排序 ---
+
+    #[test]
+    fn z_index_from_prop_sets_layer_z() {
+        // 指定 z-index 的 widget 应使用 props 中的值
+        let mut view =
+            make_view("Container", vec![]).prop("z-index", rgui_core::view::PropValue::Int(5));
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+        assert_eq!(scene.layer_count(), 1);
+        assert_eq!(scene.layers[0].z_index, 5);
+    }
+
+    #[test]
+    fn z_index_default_increment_for_no_prop() {
+        // 无 z-index prop 的 widget 继续使用 DFS 顺序递增计数
+        let mut view = make_view("Column", vec![make_label("A"), make_label("B")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+        assert_eq!(scene.layer_count(), 3);
+        // Column(DFS=0), Label A(DFS=1), Label B(DFS=2)
+        let zs: Vec<i32> = scene.layers.iter().map(|l| l.z_index).collect();
+        assert!(zs.contains(&0));
+        assert!(zs.contains(&1));
+        assert!(zs.contains(&2));
+    }
+
+    #[test]
+    fn z_index_sorting_with_props() {
+        // 多个带不同 z-index 的 widget——SceneGraph 应按 z_index 升序排列
+        // 构造树: Column(无 z-index, DFS=0) → [Label A(z-index=10), Label B(无, DFS=1)]
+        let mut view = make_view(
+            "Column",
+            vec![
+                make_label("Top").prop("z-index", rgui_core::view::PropValue::Int(10)),
+                make_label("Bottom"),
+            ],
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+        assert_eq!(scene.layer_count(), 3);
+
+        // SceneGraphBuilder::finish() sorts by z_index
+        // Label B(DFS=1) < Column(DFS=0) → wait, Column also gets DFS=0
+        // Let's be precise:
+        // Column: no z-index prop → DFS counter 0 → z_index=0
+        // Label Top: z-index prop Int(10) → z_index=10
+        // Label Bottom: no z-index prop → DFS counter 1 → z_index=1
+        // Sorted: 0(Column), 1(Label Bottom), 10(Label Top)
+        let zs: Vec<i32> = scene.layers.iter().map(|l| l.z_index).collect();
+        assert_eq!(zs, vec![0, 1, 10]);
+    }
+
+    #[test]
+    fn z_index_with_mixed_props_and_defaults() {
+        // 混合场景：部分 widget 指定 z-index，部分使用默认 DFS 顺序
+        // Row(无, DFS=0) → [Label A(z-index=100), Label B(无, DFS=1), Label C(z-index=-5)]
+        let mut view = make_view(
+            "Row",
+            vec![
+                make_label("A").prop("z-index", rgui_core::view::PropValue::Int(100)),
+                make_label("B"),
+                make_label("C").prop("z-index", rgui_core::view::PropValue::Int(-5)),
+            ],
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+        assert_eq!(scene.layer_count(), 4);
+
+        // Row: DFS=0, Label A: z-index=100, Label B: DFS=1, Label C: z-index=-5
+        // Sorted: -5(Label C), 0(Row), 1(Label B), 100(Label A)
+        let zs: Vec<i32> = scene.layers.iter().map(|l| l.z_index).collect();
+        assert_eq!(zs, vec![-5, 0, 1, 100]);
     }
 }
