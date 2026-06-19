@@ -157,6 +157,33 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaSpinner, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaCopyButton" => {
+                    use rgui_components::wa_copy_button::{WaCopyButton, WaCopyButtonState};
+                    let mut state = WaCopyButtonState::new("");
+                    if let Some(v) = get_str(&view.props, "value") {
+                        state.value = v.to_string();
+                    }
+                    if let Some(l) = get_str(&view.props, "copy_label") {
+                        state.copy_label = l.to_string();
+                    }
+                    if let Some(l) = get_str(&view.props, "success_label") {
+                        state.success_label = l.to_string();
+                    }
+                    if let Some(l) = get_str(&view.props, "error_label") {
+                        state.error_label = l.to_string();
+                    }
+                    if let Some(disabled) = view.props.get("disabled") {
+                        if let PropValue::Bool(b) = disabled {
+                            state.disabled = *b;
+                        }
+                    }
+                    if let Some(s) = get_str(&view.props, "status") {
+                        state.status = s.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaCopyButton, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
