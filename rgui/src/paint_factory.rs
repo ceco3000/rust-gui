@@ -384,6 +384,84 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaDropdownItem, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaPopup" => {
+                    use rgui_components::wa_popup::{WaPopup, WaPopupState};
+                    let mut state = WaPopupState::new();
+                    if let Some(PropValue::Bool(a)) = view.props.get("active") {
+                        state.active = *a;
+                    }
+                    if let Some(p) = get_str(&view.props, "placement") {
+                        state.placement = p.to_string();
+                    }
+                    if let Some(PropValue::Float(d)) = view.props.get("distance") {
+                        state.distance = d.0;
+                    }
+                    if let Some(PropValue::Float(s)) = view.props.get("skidding") {
+                        state.skidding = s.0;
+                    }
+                    if let Some(PropValue::Bool(a)) = view.props.get("arrow") {
+                        state.arrow = *a;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaPopup, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaPopover" => {
+                    use rgui_components::wa_popover::{WaPopover, WaPopoverState};
+                    let mut state = WaPopoverState::new();
+                    if let Some(p) = get_str(&view.props, "placement") {
+                        state.placement = p.to_string();
+                    }
+                    if let Some(PropValue::Bool(o)) = view.props.get("open") {
+                        state.open = *o;
+                    }
+                    if let Some(PropValue::Float(d)) = view.props.get("distance") {
+                        state.distance = d.0;
+                    }
+                    if let Some(PropValue::Float(s)) = view.props.get("skidding") {
+                        state.skidding = s.0;
+                    }
+                    if let Some(PropValue::Bool(w)) = view.props.get("without-arrow") {
+                        state.without_arrow = *w;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaPopover, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaTooltip" => {
+                    use rgui_components::wa_tooltip::{WaTooltip, WaTooltipState};
+                    let mut state = WaTooltipState::new();
+                    if let Some(p) = get_str(&view.props, "placement") {
+                        state.placement = p.to_string();
+                    }
+                    if let Some(PropValue::Bool(o)) = view.props.get("open") {
+                        state.open = *o;
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(PropValue::Float(d)) = view.props.get("distance") {
+                        state.distance = d.0;
+                    }
+                    if let Some(PropValue::Float(s)) = view.props.get("skidding") {
+                        state.skidding = s.0;
+                    }
+                    if let Some(PropValue::Float(sd)) = view.props.get("show-delay") {
+                        state.show_delay = sd.0;
+                    }
+                    if let Some(PropValue::Float(hd)) = view.props.get("hide-delay") {
+                        state.hide_delay = hd.0;
+                    }
+                    if let Some(t) = get_str(&view.props, "trigger") {
+                        state.trigger = t.to_string();
+                    }
+                    if let Some(PropValue::Bool(w)) = view.props.get("without-arrow") {
+                        state.without_arrow = *w;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaTooltip, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaProgressBar" => {
                     use rgui_components::wa_progress_bar::{WaProgressBar, WaProgressBarState};
                     let mut state = WaProgressBarState::new();
