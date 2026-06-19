@@ -553,7 +553,9 @@ impl AppHandler {
             #[cfg(feature = "devtools")]
             if let Some(ref mut registry) = self.command_registry {
                 if let Some((_, action, _)) = self.app.interactions.get(&hit_id) {
-                    match registry.call_fn::<()>(action, ()) {
+                    // 防御：移除 onclick="..." 中可能携带的 () 后缀
+                    let fn_name = action.strip_suffix("()").unwrap_or(action);
+                    match registry.call_fn::<()>(fn_name, ()) {
                         Ok(()) => {
                             // Rhai 函数执行成功，事件已消费
                             self.app.events.push(Event::MouseDown {

@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     println!("=== rgui .rgui + .rhai 按钮示例 ===\n");
-    println!("UI: ui.rgui  →  <Button label=\"Click Me\" onclick=\"handle_click()\"/>");
+    println!("UI: ui.rgui  →  <Button label=\"Click Me\" onclick=\"handle_click\"/>");
     println!("脚本: handlers.rhai  →  fn handle_click() {{ print(\"...\"); }}");
     println!();
     println!("点击按钮 → Rhai 脚本执行 → 终端输出：");
