@@ -14,7 +14,7 @@ description = "rgui Rhai scripting engine integration"
 
 [dependencies]
 rgui-core.workspace = true
-rhai = "1"
+rhai = { version = "1", features = ["internals", "sync"] }
 serde = { workspace = true, optional = true }
 
 [features]

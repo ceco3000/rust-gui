@@ -19,6 +19,8 @@
 //! assert_eq!(result, 3);
 //! ```
 
+mod command;
 mod engine;
 
+pub use command::CommandRegistry;
 pub use engine::ScriptEngine;
