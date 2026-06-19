@@ -40,6 +40,18 @@ pub fn to_taffy_justify_content(css_value: &str) -> JustifyContent {
     }
 }
 
+/// CSS position → Taffy Position。
+///
+/// Taffy 默认值为 `Position::Relative`。仅 `"absolute"` 映射为 `Position::Absolute`，
+/// 其他值（`static`、`relative`）保持 Taffy 默认。
+#[must_use]
+pub fn to_taffy_position(css_value: &str) -> Position {
+    match css_value {
+        "absolute" => Position::Absolute,
+        _ => Position::default(),
+    }
+}
+
 /// CSS align-items → Taffy AlignItems。
 #[must_use]
 pub fn to_taffy_align_items(css_value: &str) -> AlignItems {
@@ -252,6 +264,26 @@ mod tests {
     #[test]
     fn display_default() {
         assert_eq!(to_taffy_display("unknown"), Display::Block);
+    }
+
+    #[test]
+    fn position_absolute() {
+        assert_eq!(to_taffy_position("absolute"), Position::Absolute);
+    }
+
+    #[test]
+    fn position_default_for_static() {
+        assert_eq!(to_taffy_position("static"), Position::Relative);
+    }
+
+    #[test]
+    fn position_default_for_relative() {
+        assert_eq!(to_taffy_position("relative"), Position::Relative);
+    }
+
+    #[test]
+    fn position_default_for_unknown() {
+        assert_eq!(to_taffy_position("unknown"), Position::Relative);
     }
 
     #[test]

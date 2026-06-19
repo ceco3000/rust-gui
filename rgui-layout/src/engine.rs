@@ -29,6 +29,8 @@ pub struct LayoutResult {
 pub struct CachedLayout {
     pub result: LayoutResult,
     pub children: Vec<LayoutResult>,
+    /// 创建节点时传入的 Taffy Style（含 props 映射后的值）。
+    pub style: Style,
 }
 
 /// 布局引擎——核心 Taffy 封装。
@@ -108,11 +110,13 @@ impl LayoutEngine {
                         size: Size::new(layout.size.width as f64, layout.size.height as f64),
                         position: Point::new(layout.location.x as f64, layout.location.y as f64),
                     };
+                    let style = self.tree.style(node.0).unwrap_or(&Style::default()).clone();
                     self.cache.insert(
                         widget_id,
                         CachedLayout {
                             result,
                             children: Vec::new(),
+                            style,
                         },
                     );
                 },

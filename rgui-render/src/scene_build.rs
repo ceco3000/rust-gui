@@ -460,6 +460,9 @@ fn extract_taffy_style(
     if let Some(d) = get_str("display") {
         style.display = rgui_layout::mapping::to_taffy_display(d);
     }
+    if let Some(pos) = get_str("position") {
+        style.position = rgui_layout::mapping::to_taffy_position(pos);
+    }
     if let Some(w) = get_f32("width") {
         style.size.width = taffy::Dimension::Length(w);
     }
@@ -547,7 +550,10 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(widget_type, "WaButton" | "WaTab" | "WaBreadcrumbItem" | "Label") {
+    if matches!(
+        widget_type,
+        "WaButton" | "WaTab" | "WaBreadcrumbItem" | "Label"
+    ) {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
@@ -691,7 +697,8 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
-        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "WaComparison" | "WaCarousel" | "Stack" => Style {
+        | "WaTabGroup" | "WaAnimation" | "WaButtonGroup" | "WaSplitPanel" | "WaComparison"
+        | "WaCarousel" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()
@@ -1633,5 +1640,64 @@ mod tests {
             "height should be 100, got {}",
             center_layout.result.size.height
         );
+    }
+
+    // --- WTI01: position prop 映射 ---
+
+    #[test]
+    fn position_absolute_maps_to_taffy_absolute() {
+        // RED→GREEN: position="absolute" 映射为 Taffy Position::Absolute
+        let mut view = make_view("Container", vec![]).prop(
+            "position",
+            rgui_core::view::PropValue::Str(std::sync::Arc::from("absolute")),
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        let node_id = view.id.unwrap();
+        let style = engine.get_layout(node_id).unwrap().style.clone();
+        assert_eq!(style.position, taffy::Position::Absolute);
+    }
+
+    #[test]
+    fn position_static_defaults_to_relative() {
+        // position="static" 保持 Taffy 默认 Position::Relative
+        let mut view = make_view("Container", vec![]).prop(
+            "position",
+            rgui_core::view::PropValue::Str(std::sync::Arc::from("static")),
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        let node_id = view.id.unwrap();
+        let style = engine.get_layout(node_id).unwrap().style.clone();
+        assert_eq!(style.position, taffy::Position::Relative);
+    }
+
+    #[test]
+    fn position_relative_maps_to_relative() {
+        // position="relative" → Taffy Position::Relative
+        let mut view = make_view("Container", vec![]).prop(
+            "position",
+            rgui_core::view::PropValue::Str(std::sync::Arc::from("relative")),
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        let node_id = view.id.unwrap();
+        let style = engine.get_layout(node_id).unwrap().style.clone();
+        assert_eq!(style.position, taffy::Position::Relative);
+    }
+
+    #[test]
+    fn no_position_prop_defaults_to_relative() {
+        // 无 position prop → Taffy 默认 Position::Relative
+        let mut view = make_view("Container", vec![]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        let node_id = view.id.unwrap();
+        let style = engine.get_layout(node_id).unwrap().style.clone();
+        assert_eq!(style.position, taffy::Position::Relative);
     }
 }
