@@ -16,3 +16,6 @@ target/
 
 # ECC 自动开发输出
 tools/
+
+# Hermes Agent 运行时目录
+.hermes/
