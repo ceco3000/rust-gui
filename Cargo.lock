@@ -2395,6 +2395,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-rgui-button"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+ "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
+]
+
+[[package]]
 name = "one-slider"
 version = "0.1.0"
 dependencies = [
