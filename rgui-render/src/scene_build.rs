@@ -502,7 +502,7 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(widget_type, "Button" | "WaButton" | "Label") {
+    if matches!(widget_type, "WaButton" | "Label") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
@@ -512,7 +512,7 @@ fn extract_taffy_style(
                 let em_height: f32 = 1.196;
 
                 // WaButton 字体大小由 paint() 统一控制: h × 0.44
-                let paint_font_ratio: f32 = if widget_type == "WaButton" { 0.44 } else { 0.8 };
+                let paint_font_ratio: f32 = 0.44;
 
                 // ── 高度 ──
                 let final_height: f32 = if has_explicit_height {
@@ -526,8 +526,6 @@ fn extract_taffy_style(
                     let text_height_px = font_size_from_min * em_height;
                     let pad_v: f32 = if widget_type == "WaButton" {
                         16.0
-                    } else if widget_type == "Button" {
-                        12.0
                     } else {
                         4.0
                     };
@@ -542,7 +540,7 @@ fn extract_taffy_style(
                     let font_size = final_height * paint_font_ratio;
                     let content_width: f32 = if let Some(tr) = text_renderer {
                         let text_px = tr.measure_text(text, font_size);
-                        let pad_w: f32 = if matches!(widget_type, "Button" | "WaButton") {
+                        let pad_w: f32 = if widget_type == "WaButton" {
                             32.0
                         } else {
                             8.0
@@ -550,7 +548,7 @@ fn extract_taffy_style(
                         text_px + pad_w
                     } else {
                         let char_count = text.chars().count().max(1) as f32;
-                        let pad_w: f32 = if matches!(widget_type, "Button" | "WaButton") {
+                        let pad_w: f32 = if widget_type == "WaButton" {
                             32.0
                         } else {
                             8.0
@@ -602,10 +600,6 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
     let full_width_auto_height = taffy::geometry::Size {
         width: Dimension::Percent(1.0),
         height: Dimension::Auto,
-    };
-    let button_min_size = taffy::geometry::Size {
-        width: Dimension::Length(80.0),
-        height: Dimension::Length(40.0),
     };
     let wa_button_min_size = taffy::geometry::Size {
         width: Dimension::Length(80.0),
@@ -659,10 +653,6 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
-        "Button" => Style {
-            min_size: button_min_size,
-            ..Style::default()
-        },
         "WaButton" => Style {
             min_size: wa_button_min_size,
             ..Style::default()
@@ -924,9 +914,9 @@ mod tests {
             .prop("text", rgui_core::view::PropValue::str(text))
     }
 
-    /// 辅助函数：创建带 label 属性的 Button WidgetView。
+    /// 辅助函数：创建带 label 属性的 WaButton WidgetView。
     fn make_button(label: &str) -> rgui_core::view::WidgetView<TestMsg> {
-        rgui_core::view::WidgetView::new("Button")
+        rgui_core::view::WidgetView::new("WaButton")
             .prop("label", rgui_core::view::PropValue::str(label))
     }
 
@@ -1025,7 +1015,7 @@ mod tests {
             "长按钮 ({long_width}px) 应比短按钮 ({short_width}px) 更宽"
         );
 
-        // 高度：内容驱动，至少 40px
+        // 高度：内容驱动，至少 36px（WaButton min_size）
         let short_height = eng_short
             .get_layout(short.id.unwrap())
             .unwrap()
@@ -1033,8 +1023,8 @@ mod tests {
             .size
             .height;
         assert!(
-            short_height >= 40.0,
-            "按钮高度应 ≥ 40px，实际 {short_height}"
+            short_height >= 36.0,
+            "按钮高度应 ≥ 36px，实际 {short_height}"
         );
     }
 
@@ -1208,11 +1198,11 @@ mod tests {
     }
 
     #[test]
-    fn default_layout_button_has_minimum_size() {
-        let style = default_layout_for_type("Button");
-        // Button 默认有最小尺寸 80×40（而非固定尺寸，允许内容撑宽）
+    fn default_layout_wa_button_has_minimum_size() {
+        let style = default_layout_for_type("WaButton");
+        // WaButton 默认有最小尺寸 80×36
         assert_eq!(style.min_size.width, taffy::Dimension::Length(80.0));
-        assert_eq!(style.min_size.height, taffy::Dimension::Length(40.0));
+        assert_eq!(style.min_size.height, taffy::Dimension::Length(36.0));
     }
 
     #[test]

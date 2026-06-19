@@ -31,7 +31,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
         move |view: &rgui_core::view::WidgetView<M>, bounds: Rect| -> Vec<PaintOp> {
             match view.widget_type {
                 // ── WA 翻译组件 ──
-                "WaButton" | "Button" => {
+                "WaButton" => {
                     use rgui_components::wa_button::{WaButton, WaButtonState};
                     let label = get_str(&view.props, "label").unwrap_or("");
                     let state = WaButtonState::new(label);
@@ -96,24 +96,5 @@ mod tests {
         let view = WidgetView::<TestMsg>::new("Unknown");
         let ops = paint_fn(&view, Rect::new(0.0, 0.0, 100.0, 40.0));
         assert!(ops.is_empty());
-    }
-
-    #[test]
-    fn button_type_produces_paint_ops() {
-        // 验证 "Button" widget_type（.rgui 常用名）也能正确绘制
-        let paint_fn = default_paint_fn::<TestMsg>();
-        let view = WidgetView::<TestMsg>::new("Button").prop("label", PropValue::str("Click Me"));
-        let ops = paint_fn(&view, Rect::new(10.0, 20.0, 120.0, 40.0));
-        assert!(!ops.is_empty(), "Button 应产生绘制操作，实际得到 0 个");
-        let has_fill = ops.iter().any(|op| matches!(op, PaintOp::FillRect { .. }));
-        assert!(
-            has_fill,
-            "Button 应包含 FillRect（背景），实际 ops: {ops:?}"
-        );
-        let has_text = ops.iter().any(|op| matches!(op, PaintOp::DrawText { .. }));
-        assert!(
-            has_text,
-            "Button 应包含 DrawText（文字），实际 ops: {ops:?}"
-        );
     }
 }
