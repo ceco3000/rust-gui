@@ -485,6 +485,27 @@ fn extract_taffy_style(
         };
     }
 
+    // 第三步：内容驱动尺寸——Button/Label 根据文字内容计算宽度
+    if matches!(widget_type, "Button" | "Label") {
+        // 仅当用户未显式设置 width 时才根据内容计算
+        let has_explicit_width = props.get("width").is_some();
+        if !has_explicit_width {
+            if let Some(text) = get_str("label").or(get_str("text")) {
+                // 文字宽度估算：字符数 × 字体大小 × 宽高比系数
+                let char_count = text.chars().count().max(1) as f32;
+                let font_size_est: f32 = 14.0; // 与 Button::paint 和 Label 默认一致
+                let text_width = char_count * font_size_est * 0.6;
+                let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
+                let content_width = text_width + padding;
+                let min_w = match style.min_size.width {
+                    taffy::Dimension::Length(w) => w,
+                    _ => 0.0,
+                };
+                style.size.width = taffy::Dimension::Length(content_width.max(min_w));
+            }
+        }
+    }
+
     style
 }
 
@@ -574,7 +595,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         },
         // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
         "Button" => Style {
-            size: button_min_size,
+            min_size: button_min_size,
             ..Style::default()
         },
         "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
@@ -899,6 +920,40 @@ mod tests {
         assert!(layout.result.position.y >= 0.0);
     }
 
+    #[test]
+    fn button_width_grows_with_label_text() {
+        // RED: 短文字按钮应有最小宽度，长文字按钮应更宽
+        let mut short = make_button("OK");
+        let mut long = make_button("Click Me — A Very Long Label");
+
+        let eng_short = compute_view_layout(&mut short, Size::new(800.0, 600.0));
+        let eng_long = compute_view_layout(&mut long, Size::new(800.0, 600.0));
+
+        let short_width = eng_short
+            .get_layout(short.id.unwrap())
+            .unwrap()
+            .result
+            .size
+            .width;
+        let long_width = eng_long
+            .get_layout(long.id.unwrap())
+            .unwrap()
+            .result
+            .size
+            .width;
+
+        // 短文字按钮至少 80px（最小宽度）
+        assert!(
+            short_width >= 80.0,
+            "短文字按钮宽度应 >= 80px，实际 {short_width}"
+        );
+        // 长文字按钮应比短文字按钮明显更宽
+        assert!(
+            long_width > short_width + 20.0,
+            "长文字按钮 ({long_width}px) 应比短文字 ({short_width}px) 更宽"
+        );
+    }
+
     // --- build_scene_from_view + layout engine (V03) ---
 
     /// 简单的 paint_fn：返回空 Vec（仅测试 bounds 传递）。
@@ -1071,9 +1126,9 @@ mod tests {
     #[test]
     fn default_layout_button_has_minimum_size() {
         let style = default_layout_for_type("Button");
-        // Button 默认有最小尺寸 80×40
-        assert_eq!(style.size.width, taffy::Dimension::Length(80.0));
-        assert_eq!(style.size.height, taffy::Dimension::Length(40.0));
+        // Button 默认有最小尺寸 80×40（而非固定尺寸，允许内容撑宽）
+        assert_eq!(style.min_size.width, taffy::Dimension::Length(80.0));
+        assert_eq!(style.min_size.height, taffy::Dimension::Length(40.0));
     }
 
     #[test]
