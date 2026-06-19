@@ -134,6 +134,11 @@ pub struct App {
     /// Widget 实例更新处理器（WidgetSpec 路径）。
     /// 如果存在，handle_click 优先通过此处理器调用 update()，再根据 EventResult 决定是否回调旧路径。
     widget_instances: FxHashMap<WidgetId, WidgetUpdateHandler>,
+    /// 弹层 widget 集合（WTI03：点击外部关闭）。
+    ///
+    /// 当命中测试未命中任何 widget 且此集合非空时，
+    /// handle_click 向全部弹层发送 Close 事件。
+    overlay_ids: std::collections::HashSet<WidgetId>,
     /// 可选的视图场景构建回调（直接返回 SceneGraph）。
     view_scene_builder: Option<ViewSceneBuilder>,
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
@@ -160,6 +165,7 @@ impl App {
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
             widget_instances: FxHashMap::new(),
+            overlay_ids: std::collections::HashSet::new(),
             view_scene_builder: None,
             scale_factor: 1.0,
             #[cfg(feature = "devtools")]
@@ -242,6 +248,27 @@ impl App {
         handler: impl FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send + 'static,
     ) {
         self.widget_instances.insert(id, Box::new(handler));
+    }
+
+    /// 标记 widget 为弹层组件（WTI03：点击外部关闭）。
+    ///
+    /// 当命中测试未命中任何 widget 且存在被标记为弹层的组件时，
+    /// `handle_click` 自动向全部弹层发送 `Event::Close`。
+    ///
+    /// 调用方（组件翻译或布局引擎）在注册可交互区域后调用此方法。
+    pub fn mark_as_overlay(&mut self, id: WidgetId) {
+        self.overlay_ids.insert(id);
+    }
+
+    /// 移除弹层标记（例如弹层关闭时）。
+    pub fn unmark_overlay(&mut self, id: WidgetId) {
+        self.overlay_ids.remove(&id);
+    }
+
+    /// 检查 widget 是否为弹层。
+    #[must_use]
+    pub fn is_overlay(&self, id: WidgetId) -> bool {
+        self.overlay_ids.contains(&id)
     }
 
     /// 设置视图场景构建回调（html! 声明式路径）。
@@ -591,6 +618,30 @@ impl AppHandler {
                     eprintln!("[rgui] 交互回调 panic (widget={hit_id:?}, action={action}): {msg}");
                 }
                 // 记录事件
+                self.app.events.push(Event::MouseDown {
+                    position,
+                    button: MouseButton::Left,
+                    modifiers: Modifiers::new(),
+                });
+            }
+        } else {
+            // WTI03：命中测试未命中 → 检查弹层 → 发送 Close 事件
+            if !self.app.overlay_ids.is_empty() {
+                // 收集弹层 ID 列表（避免迭代时借用冲突）
+                let overlay_ids: Vec<WidgetId> =
+                    self.app.overlay_ids.iter().copied().collect();
+                for id in overlay_ids {
+                    // 通过 WidgetSpec 实例处理器发送 close 动作
+                    if let Some(handler) = self.app.widget_instances.get_mut(&id) {
+                        let mut update_ctx = UpdateContext::new();
+                        let _result = handler("close", &mut update_ctx);
+                    }
+                    // 同时推送 Close 事件到队列（供后续处理）
+                    self.app.events.push(Event::Close {
+                        widget_id: Some(id),
+                    });
+                }
+                // 记录点击事件
                 self.app.events.push(Event::MouseDown {
                     position,
                     button: MouseButton::Left,
@@ -1296,6 +1347,254 @@ mod tests {
 
         assert!(!old_called.load(Ordering::SeqCst));
         assert_eq!(handler.app.event_count(), 0);
+    }
+
+    // ========================================================================
+    // WTI03: 点击外部关闭弹层
+    // ========================================================================
+
+    #[test]
+    fn hit_miss_no_overlay_no_close_event() {
+        // 点击空白区域，无线程弹层 → 无事发生
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let close_called = Arc::new(AtomicBool::new(false));
+        let close_called_clone = Arc::clone(&close_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {});
+        app.register_widget_instance(widget_id, move |action, _ctx| {
+            if action == "close" {
+                close_called_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+
+        let mut handler = AppHandler::new(app);
+        // 点击在 widget 外部，但 widget 未被标记为弹层
+        handler.handle_click(Point::new(200.0, 200.0));
+
+        // close 回调不应被调用（widget 未标记为弹层）
+        assert!(!close_called.load(Ordering::SeqCst));
+        // 无 Close 事件
+        assert!(
+            !handler
+                .app
+                .events()
+                .iter()
+                .any(|e| matches!(e, Event::Close { .. }))
+        );
+    }
+
+    #[test]
+    fn hit_miss_with_overlay_sends_close_event() {
+        // 点击空白区域，存在弹层 → 发送 Close 事件
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let close_called = Arc::new(AtomicBool::new(false));
+        let close_called_clone = Arc::clone(&close_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {});
+        app.register_widget_instance(widget_id, move |action, _ctx| {
+            if action == "close" {
+                close_called_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+        // 标记为弹层
+        app.mark_as_overlay(widget_id);
+
+        let mut handler = AppHandler::new(app);
+        // 点击在 widget 外部
+        handler.handle_click(Point::new(200.0, 200.0));
+
+        // close 回调应被调用
+        assert!(close_called.load(Ordering::SeqCst), "弹层应收到 close 回调");
+        // 应有 Close 事件
+        let close_events: Vec<_> = handler
+            .app
+            .events()
+            .iter()
+            .filter(|e| matches!(e, Event::Close { .. }))
+            .collect();
+        assert!(!close_events.is_empty(), "应有 Close 事件");
+        // Close 事件应指向正确的 widget
+        assert!(
+            close_events
+                .iter()
+                .any(|e| matches!(e, Event::Close { widget_id: Some(id) } if *id == widget_id)),
+            "Close 事件应指向弹层 widget"
+        );
+    }
+
+    #[test]
+    fn hit_on_widget_does_not_close_overlay() {
+        // 点击命中 widget → 不关闭弹层
+        let mut app = App::new(AppConfig::default());
+        let overlay_id = WidgetId::from_u64(1);
+        let overlay_bounds = Rect::new(10.0, 10.0, 200.0, 200.0);
+        let other_id = WidgetId::from_u64(2);
+        let other_bounds = Rect::new(250.0, 250.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let close_called = Arc::new(AtomicBool::new(false));
+        let close_called_clone = Arc::clone(&close_called);
+
+        // 注册弹层
+        app.register_interaction(overlay_id, overlay_bounds, "click", move |_| {});
+        app.register_widget_instance(overlay_id, move |action, _ctx| {
+            if action == "close" {
+                close_called_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+        app.mark_as_overlay(overlay_id);
+
+        // 注册另一个 widget
+        let other_clicked = Arc::new(AtomicBool::new(false));
+        let other_clicked_clone = Arc::clone(&other_clicked);
+        app.register_interaction(other_id, other_bounds, "click", move |_| {
+            other_clicked_clone.store(true, Ordering::SeqCst);
+        });
+
+        let mut handler = AppHandler::new(app);
+        // 点击命中 other widget（非弹层区域）
+        handler.handle_click(Point::new(300.0, 270.0));
+
+        // 弹层不应收到 close 回调
+        assert!(!close_called.load(Ordering::SeqCst), "点击命中 widget 不应关闭弹层");
+        // other widget 应收到 click 回调
+        assert!(other_clicked.load(Ordering::SeqCst), "other widget 应收到 click 回调");
+    }
+
+    #[test]
+    fn multiple_overlays_all_get_close_events() {
+        // 多个弹层 → 全部收到 Close 事件
+        let mut app = App::new(AppConfig::default());
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let overlay1_closed = Arc::new(AtomicBool::new(false));
+        let overlay1_closed_clone = Arc::clone(&overlay1_closed);
+        let id1 = WidgetId::from_u64(1);
+        app.register_interaction(id1, Rect::new(0.0, 0.0, 100.0, 100.0), "click", |_| {});
+        app.register_widget_instance(id1, move |action, _ctx| {
+            if action == "close" {
+                overlay1_closed_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+        app.mark_as_overlay(id1);
+
+        let overlay2_closed = Arc::new(AtomicBool::new(false));
+        let overlay2_closed_clone = Arc::clone(&overlay2_closed);
+        let id2 = WidgetId::from_u64(2);
+        app.register_interaction(id2, Rect::new(0.0, 0.0, 80.0, 80.0), "click", |_| {});
+        app.register_widget_instance(id2, move |action, _ctx| {
+            if action == "close" {
+                overlay2_closed_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+        app.mark_as_overlay(id2);
+
+        let mut handler = AppHandler::new(app);
+        // 点击在弹层外部
+        handler.handle_click(Point::new(500.0, 500.0));
+
+        assert!(
+            overlay1_closed.load(Ordering::SeqCst),
+            "弹层 1 应收到 close 回调"
+        );
+        assert!(
+            overlay2_closed.load(Ordering::SeqCst),
+            "弹层 2 应收到 close 回调"
+        );
+
+        // 两个 Close 事件
+        let close_count = handler
+            .app
+            .events()
+            .iter()
+            .filter(|e| matches!(e, Event::Close { .. }))
+            .count();
+        assert_eq!(close_count, 2, "应有 2 个 Close 事件");
+    }
+
+    #[test]
+    fn unmark_overlay_stops_close_behavior() {
+        // 取消弹层标记后，点击外部不再发送 Close
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let close_called = Arc::new(AtomicBool::new(false));
+        let close_called_clone = Arc::clone(&close_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {});
+        app.register_widget_instance(widget_id, move |action, _ctx| {
+            if action == "close" {
+                close_called_clone.store(true, Ordering::SeqCst);
+                return EventResult::Handled;
+            }
+            EventResult::Continue(action.to_string())
+        });
+        app.mark_as_overlay(widget_id);
+
+        // 验证标记已生效
+        assert!(app.is_overlay(widget_id));
+
+        // 取消标记
+        app.unmark_overlay(widget_id);
+        assert!(!app.is_overlay(widget_id));
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(200.0, 200.0));
+
+        assert!(!close_called.load(Ordering::SeqCst), "取消标记后不应再发送 close");
+    }
+
+    #[test]
+    fn close_event_has_correct_widget_id() {
+        // Close 事件的 widget_id 字段正确
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(42);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        app.register_interaction(widget_id, bounds, "click", |_| {});
+        app.register_widget_instance(widget_id, |_, _| EventResult::Handled);
+        app.mark_as_overlay(widget_id);
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(200.0, 200.0));
+
+        // 检查 Close 事件
+        let close_events: Vec<&Event> = handler
+            .app
+            .events()
+            .iter()
+            .filter(|e| matches!(e, Event::Close { .. }))
+            .collect();
+        assert_eq!(close_events.len(), 1);
+        assert_eq!(
+            *close_events[0],
+            Event::Close {
+                widget_id: Some(widget_id)
+            }
+        );
     }
 
     // ========================================================================

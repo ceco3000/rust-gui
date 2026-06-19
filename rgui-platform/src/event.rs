@@ -11,7 +11,7 @@ use rgui_style::theme::ColorScheme;
 // ============================================================================
 
 /// 框架统一事件类型（D5 §2.1）。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     MouseDown {
         position: Point,
@@ -93,6 +93,15 @@ pub enum Event {
         color_scheme: ColorScheme,
     },
     CloseRequested,
+
+    /// 关闭弹层组件（WTI03：点击外部关闭）。
+    ///
+    /// 当命中测试未命中任何 widget，且存在弹层组件时，
+    /// 框架发送此事件通知弹层执行关闭逻辑。
+    Close {
+        /// 目标弹层 widget ID（None 表示关闭全部弹层）。
+        widget_id: Option<WidgetId>,
+    },
 }
 
 // ============================================================================
