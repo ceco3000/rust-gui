@@ -1,0 +1,25 @@
+[package]
+name = "rgui-script"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+description = "rgui Rhai scripting engine integration"
+
+[dependencies]
+rgui-core.workspace = true
+rhai = "1"
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "rhai/serde"]
+
+[lints]
+workspace = true

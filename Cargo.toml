@@ -24,6 +24,7 @@ members = [
     "rgui-macros",
     "rgui-components",
     "rgui",
+    "rgui-script",
     "examples/*",
 ]
 
@@ -52,6 +53,7 @@ rgui-a11y = { path = "rgui-a11y", version = "0.1.0" }
 rgui-devtools = { path = "rgui-devtools", version = "0.1.0" }
 rgui-macros = { path = "rgui-macros", version = "0.1.0" }
 rgui-components = { path = "rgui-components", version = "0.1.0" }
+rgui-script = { path = "rgui-script", version = "0.1.0" }
 
 # 外部依赖——渲染
 wgpu = "29"
