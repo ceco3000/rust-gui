@@ -489,38 +489,51 @@ fn extract_taffy_style(
         };
     }
 
-    // 第三步：内容驱动尺寸——Button/Label 根据文字内容计算宽度
+    // 第三步：内容驱动尺寸——Button/Label 根据文字内容计算宽度和高度
     if matches!(widget_type, "Button" | "Label") {
-        // 仅当用户未显式设置 width 时才根据内容计算
         let has_explicit_width = props.get("width").is_some();
-        if !has_explicit_width {
+        let has_explicit_height = props.get("height").is_some();
+
+        if !has_explicit_width || !has_explicit_height {
             if let Some(text) = get_str("label").or(get_str("text")) {
-                let height: f32 = match props.get("height") {
-                    Some(PropValue::Float(f)) => f.0 as f32,
-                    Some(PropValue::Int(i)) => *i as f32,
-                    _ => match style.min_size.height {
-                        taffy::Dimension::Length(h) => h,
-                        _ => 32.0,
-                    },
-                };
-                let font_size = height * 0.8; // 对齐 Button::paint
-                let content_width: f32 = if let Some(tr) = text_renderer {
-                    // 精确测量：TextRenderer::measure_text 塑形但不光栅化
-                    let text_px = tr.measure_text(text, font_size);
-                    let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
-                    text_px + padding
+                // Inter Regular: ascent=0.969, descent=-0.227 → em_height=1.196
+                let em_height: f32 = 1.196;
+
+                // ── 高度 ──
+                let final_height: f32 = if has_explicit_height {
+                    get_f32("height").unwrap_or(40.0)
                 } else {
-                    // 系数回退（无 TextRenderer 时）
-                    let char_count = text.chars().count().max(1) as f32;
-                    let text_width = char_count * font_size * 0.6;
-                    let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
-                    text_width + padding
+                    let min_h = match style.min_size.height {
+                        taffy::Dimension::Length(h) => h,
+                        _ => 40.0,
+                    };
+                    let font_size_from_min = min_h * 0.8;
+                    let text_height_px = font_size_from_min * em_height;
+                    let pad_v: f32 = if widget_type == "Button" { 12.0 } else { 4.0 };
+                    let content_h = text_height_px + pad_v;
+                    let h = content_h.max(min_h);
+                    style.size.height = taffy::Dimension::Length(h);
+                    h
                 };
-                let min_w = match style.min_size.width {
-                    taffy::Dimension::Length(w) => w,
-                    _ => 0.0,
-                };
-                style.size.width = taffy::Dimension::Length(content_width.max(min_w));
+
+                // ── 宽度 ──
+                if !has_explicit_width {
+                    let font_size = final_height * 0.8;
+                    let content_width: f32 = if let Some(tr) = text_renderer {
+                        let text_px = tr.measure_text(text, font_size);
+                        let pad_w: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
+                        text_px + pad_w
+                    } else {
+                        let char_count = text.chars().count().max(1) as f32;
+                        let pad_w: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
+                        char_count * font_size * 0.6 + pad_w
+                    };
+                    let min_w = match style.min_size.width {
+                        taffy::Dimension::Length(w) => w,
+                        _ => 80.0,
+                    };
+                    style.size.width = taffy::Dimension::Length(content_width.max(min_w));
+                }
             }
         }
     }
@@ -968,6 +981,18 @@ mod tests {
         assert!(
             long_width > short_width + 10.0,
             "长按钮 ({long_width}px) 应比短按钮 ({short_width}px) 更宽"
+        );
+
+        // 高度：内容驱动，至少 40px
+        let short_height = eng_short
+            .get_layout(short.id.unwrap())
+            .unwrap()
+            .result
+            .size
+            .height;
+        assert!(
+            short_height >= 40.0,
+            "按钮高度应 ≥ 40px，实际 {short_height}"
         );
     }
 
