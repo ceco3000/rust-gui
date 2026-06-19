@@ -487,6 +487,24 @@ fn extract_taffy_style(
             };
         }
     }
+    // WaSplitPanel 使用 orientation 控制面板排列方向
+    if widget_type == "WaSplitPanel" {
+        if let Some(orientation) = get_str("orientation") {
+            style.flex_direction = match orientation {
+                "vertical" => taffy::FlexDirection::Column,
+                _ => taffy::FlexDirection::Row,
+            };
+        }
+    }
+    // WaButtonGroup 使用 orientation 控制按钮排列方向
+    if widget_type == "WaButtonGroup" {
+        if let Some(orientation) = get_str("orientation") {
+            style.flex_direction = match orientation {
+                "horizontal" => taffy::FlexDirection::Row,
+                _ => taffy::FlexDirection::Column,
+            };
+        }
+    }
     if let Some(jc) = get_str("justify-content") {
         style.justify_content = Some(rgui_layout::mapping::to_taffy_justify_content(jc));
     }
@@ -664,8 +682,14 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
-        | "WaTabGroup" | "Stack" => Style {
+        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "Stack" => Style {
             display: Display::Flex,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        "WaAccordion" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
             size: full_width_auto_height,
             ..Style::default()
         },
@@ -717,6 +741,17 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(44.0),
                 height: Dimension::Length(24.0),
+            },
+            ..Style::default()
+        },
+        // WaAccordionItem：标题栏 44px 最小高度，宽度由父容器 Accordion（flex column）驱动
+        "WaAccordionItem" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            size: full_width_auto_height,
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(200.0),
+                height: Dimension::Length(44.0),
             },
             ..Style::default()
         },

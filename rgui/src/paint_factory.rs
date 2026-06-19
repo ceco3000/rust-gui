@@ -270,6 +270,25 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaSkeleton, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaSplitPanel" => {
+                    use rgui_components::wa_split_panel::{WaSplitPanel, WaSplitPanelState};
+                    let mut state = WaSplitPanelState::new();
+                    if let Some(orientation) = get_str(&view.props, "orientation") {
+                        state.orientation = orientation.to_string();
+                    }
+                    if let Some(PropValue::Float(v)) = view.props.get("position") {
+                        state.position = v.0;
+                    }
+                    if let Some(PropValue::Bool(b)) = view.props.get("disabled") {
+                        state.disabled = *b;
+                    }
+                    if let Some(PropValue::Str(s)) = view.props.get("primary") {
+                        state.primary = Some(s.to_string());
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaSplitPanel, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaProgressBar" => {
                     use rgui_components::wa_progress_bar::{WaProgressBar, WaProgressBarState};
                     let mut state = WaProgressBarState::new();
@@ -717,10 +736,39 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaCopyButton, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaAccordionItem" => {
+                    use rgui_components::wa_accordion_item::{WaAccordionItem, WaAccordionItemState};
+                    let mut state = WaAccordionItemState::new();
+                    if let Some(l) = get_str(&view.props, "label") {
+                        state.label = l.to_string();
+                    }
+                    if let Some(expanded) = view.props.get("expanded") {
+                        if let PropValue::Bool(b) = expanded {
+                            state.expanded = *b;
+                        }
+                    }
+                    if let Some(disabled) = view.props.get("disabled") {
+                        if let PropValue::Bool(b) = disabled {
+                            state.disabled = *b;
+                        }
+                    }
+                    if let Some(ip) = get_str(&view.props, "icon-placement") {
+                        state.icon_placement = ip.to_string();
+                    }
+                    if let Some(a) = get_str(&view.props, "appearance") {
+                        state.appearance = a.to_string();
+                    }
+                    if let Some(hl) = get_str(&view.props, "heading-level") {
+                        state.heading_level = hl.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaAccordionItem, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
-                | "Card" | "Stack" | "ScrollView" | "ListView" => Vec::new(),
+                | "Card" | "Stack" | "ScrollView" | "ListView" | "WaButtonGroup" | "WaAccordion" => Vec::new(),
 
                 // ── 未翻译 / 未知 ──
                 unknown => {
