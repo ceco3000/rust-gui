@@ -31,7 +31,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
         move |view: &rgui_core::view::WidgetView<M>, bounds: Rect| -> Vec<PaintOp> {
             match view.widget_type {
                 // ── WA 翻译组件 ──
-                "WaButton" => {
+                "WaButton" | "Button" => {
                     use rgui_components::wa_button::{WaButton, WaButtonState};
                     let label = get_str(&view.props, "label").unwrap_or("");
                     let state = WaButtonState::new(label);
