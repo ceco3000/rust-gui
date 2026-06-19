@@ -491,9 +491,18 @@ fn extract_taffy_style(
         let has_explicit_width = props.get("width").is_some();
         if !has_explicit_width {
             if let Some(text) = get_str("label").or(get_str("text")) {
-                // 文字宽度估算：字符数 × 字体大小 × 宽高比系数
+                // 文字宽度估算：字符数 × 字体大小 × 宽高比系数 (0.6)
+                // 字体大小与 Button::paint 一致：height × 0.8
                 let char_count = text.chars().count().max(1) as f32;
-                let font_size_est: f32 = 14.0; // 与 Button::paint 和 Label 默认一致
+                let height: f32 = match props.get("height") {
+                    Some(PropValue::Float(f)) => f.0 as f32,
+                    Some(PropValue::Int(i)) => *i as f32,
+                    _ => match style.min_size.height {
+                        taffy::Dimension::Length(h) => h,
+                        _ => 32.0, // fallback 默认高度
+                    },
+                };
+                let font_size_est = height * 0.8;
                 let text_width = char_count * font_size_est * 0.6;
                 let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
                 let content_width = text_width + padding;
