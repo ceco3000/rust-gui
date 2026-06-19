@@ -638,7 +638,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             size: full_width_auto_height,
             ..Style::default()
         },
-        "Container" | "Card" | "WaCard" | "Stack" => Style {
+        "Container" | "Card" | "WaCard" | "WaDetails" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()

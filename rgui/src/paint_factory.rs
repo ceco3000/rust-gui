@@ -76,6 +76,32 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaCard, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaDetails" => {
+                    use rgui_components::wa_details::{WaDetails, WaDetailsState};
+                    let mut state = WaDetailsState::new();
+                    if let Some(open) = view.props.get("open") {
+                        if let PropValue::Bool(b) = open {
+                            state.open = *b;
+                        }
+                    }
+                    if let Some(summary) = get_str(&view.props, "summary") {
+                        state.summary = summary.to_string();
+                    }
+                    if let Some(app) = get_str(&view.props, "appearance") {
+                        state.appearance = app.to_string();
+                    }
+                    if let Some(ip) = get_str(&view.props, "icon_placement") {
+                        state.icon_placement = ip.to_string();
+                    }
+                    if let Some(disabled) = view.props.get("disabled") {
+                        if let PropValue::Bool(b) = disabled {
+                            state.disabled = *b;
+                        }
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDetails, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 "WaIcon" => {
                     use rgui_components::wa_icon::{WaIcon, WaIconState};

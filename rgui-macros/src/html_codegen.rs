@@ -20,6 +20,7 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     "WaBreadcrumbItem",
     "WaButton",
     "WaCard",
+    "WaDetails",
     "WaDivider",
     "WaIcon",
     "WaSpinner",
