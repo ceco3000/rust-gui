@@ -236,9 +236,7 @@ fn parse_element_with_children(
     reader: &mut Reader<&[u8]>,
     start: quick_xml::events::BytesStart<'_>,
 ) -> Result<RguiElement, RguiParseError> {
-    let tag_name = String::from_utf8_lossy(start.name().as_ref())
-        .to_lowercase()
-        .to_string();
+    let tag_name = String::from_utf8_lossy(start.name().as_ref()).to_string();
     let attributes = parse_attributes(&start);
 
     let mut children = Vec::new();
@@ -259,7 +257,7 @@ fn parse_element_with_children(
             Ok(Event::End(e)) => {
                 let name_ref = e.name();
                 let end_tag = String::from_utf8_lossy(name_ref.as_ref()).to_lowercase();
-                if end_tag != tag_name {
+                if end_tag != tag_name.to_lowercase() {
                     return Err(parse_error_msg(
                         reader,
                         format!("闭合标签不匹配：期望 `</{tag_name}>`，但找到 `</{end_tag}>`"),
@@ -297,9 +295,7 @@ fn parse_element_with_children(
 
 /// 解析自闭合标签（`<tag attr="val" />`）。
 fn parse_self_closing(e: quick_xml::events::BytesStart<'_>) -> Result<RguiElement, RguiParseError> {
-    let tag_name = String::from_utf8_lossy(e.name().as_ref())
-        .to_lowercase()
-        .to_string();
+    let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
     let attributes = parse_attributes(&e);
 
     Ok(RguiElement {
@@ -622,7 +618,7 @@ mod tests {
     #[test]
     fn parse_simple_self_closing() {
         let view = parse_rgui_str::<TestMsg>(r#"<Button label="Save"/>"#).unwrap();
-        assert_eq!(view.widget_type, "button");
+        assert_eq!(view.widget_type, "Button");
         assert_eq!(
             view.props.get("label"),
             Some(&PropValue::Str(Arc::from("Save")))
@@ -631,12 +627,13 @@ mod tests {
 
     #[test]
     fn parse_tag_name_case_insensitive() {
+        // 标签名大小写不敏感——end tag 匹配忽略大小写，但 widget_type 保留原始大小写
         let view1 = parse_rgui_str::<TestMsg>(r#"<BUTTON label="A"/>"#).unwrap();
         let view2 = parse_rgui_str::<TestMsg>(r#"<button label="A"/>"#).unwrap();
         let view3 = parse_rgui_str::<TestMsg>(r#"<Button label="A"/>"#).unwrap();
-        assert_eq!(view1.widget_type, "button");
-        assert_eq!(view1.widget_type, view2.widget_type);
-        assert_eq!(view1.widget_type, view3.widget_type);
+        assert_eq!(view1.widget_type, "BUTTON");
+        assert_eq!(view2.widget_type, "button");
+        assert_eq!(view3.widget_type, "Button");
     }
 
     #[test]
@@ -644,10 +641,10 @@ mod tests {
         let view =
             parse_rgui_str::<TestMsg>(r#"<Column spacing="12"><Label text="Hello"/></Column>"#)
                 .unwrap();
-        assert_eq!(view.widget_type, "column");
+        assert_eq!(view.widget_type, "Column");
         assert_eq!(view.props.get("spacing"), Some(&PropValue::Int(12)));
         assert_eq!(view.children.len(), 1);
-        assert_eq!(view.children[0].widget_type, "label");
+        assert_eq!(view.children[0].widget_type, "Label");
     }
 
     #[test]
@@ -780,10 +777,10 @@ mod tests {
             r#"<Column><Row><Button label="A"/><Button label="B"/></Row></Column>"#,
         )
         .unwrap();
-        assert_eq!(view.widget_type, "column");
+        assert_eq!(view.widget_type, "Column");
         assert_eq!(view.children.len(), 1);
         let row = &view.children[0];
-        assert_eq!(row.widget_type, "row");
+        assert_eq!(row.widget_type, "Row");
         assert_eq!(row.children.len(), 2);
     }
 
@@ -834,7 +831,7 @@ mod tests {
     #[test]
     fn parse_with_comments() {
         let view = parse_rgui_str::<TestMsg>("<!-- comment --><Button label=\"OK\"/>").unwrap();
-        assert_eq!(view.widget_type, "button");
+        assert_eq!(view.widget_type, "Button");
     }
 
     // --- login.rgui 完整示例 ---
@@ -854,7 +851,7 @@ mod tests {
 </Column>"#,
         )
         .unwrap();
-        assert_eq!(view.widget_type, "column");
+        assert_eq!(view.widget_type, "Column");
         assert_eq!(view.children.len(), 5);
         // 确认 id 属性被识别（作为 prop 存储）
         let text_field = &view.children[1];
