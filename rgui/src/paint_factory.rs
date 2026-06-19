@@ -9,6 +9,7 @@
 use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
 use rgui_core::traits::AppMessage;
+use rgui_core::view::PropValue;
 use rgui_render::PaintFn;
 
 /// 创建默认的 PaintFn。
@@ -31,6 +32,24 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
         move |view: &rgui_core::view::WidgetView<M>, bounds: Rect| -> Vec<PaintOp> {
             match view.widget_type {
                 // ── WA 翻译组件 ──
+                "WaBadge" => {
+                    use rgui_components::wa_badge::{WaBadge, WaBadgeState};
+                    let mut state = WaBadgeState::new();
+                    if let Some(v) = get_str(&view.props, "variant") {
+                        state.variant = v.to_string();
+                    }
+                    if let Some(a) = get_str(&view.props, "appearance") {
+                        state.appearance = a.to_string();
+                    }
+                    if let Some(pill) = view.props.get("pill") {
+                        if let PropValue::Bool(b) = pill {
+                            state.pill = *b;
+                        }
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaBadge, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaButton" => {
                     use rgui_components::wa_button::{WaButton, WaButtonState};
                     let label = get_str(&view.props, "label").unwrap_or("");

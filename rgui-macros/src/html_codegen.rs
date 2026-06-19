@@ -14,6 +14,7 @@ use quote::quote;
 /// 用于在编译期验证 `html!` 宏中的标签名，并提供拼写建议。
 const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
+    "WaBadge",
     "WaButton",
     "WaCard",
     "WaDivider",

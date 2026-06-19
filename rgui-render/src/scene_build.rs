@@ -641,6 +641,13 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
+        "WaBadge" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(20.0),
+                height: Dimension::Length(16.0),
+            },
+            ..Style::default()
+        },
         "WaIcon" => Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(16.0),
