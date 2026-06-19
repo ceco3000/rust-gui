@@ -102,6 +102,98 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaCheckbox, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaCheckboxGroup" => {
+                    use rgui_components::wa_checkbox_group::{WaCheckboxGroup, WaCheckboxGroupState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaCheckboxGroupState::new(label);
+                    if let Some(h) = get_str(&view.props, "hint") {
+                        state.hint = h.to_string();
+                    }
+                    if let Some(o) = get_str(&view.props, "orientation") {
+                        state.orientation = o.to_string();
+                    }
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(PropValue::Bool(r)) = view.props.get("required") {
+                        state.required = *r;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaCheckboxGroup, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaRadio" => {
+                    use rgui_components::wa_radio::{WaRadio, WaRadioState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaRadioState::new(label);
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(PropValue::Bool(c)) = view.props.get("checked") {
+                        state.checked = *c;
+                    }
+                    if let Some(v) = get_str(&view.props, "value") {
+                        state.value = v.to_string();
+                    }
+                    if let Some(a) = get_str(&view.props, "appearance") {
+                        state.appearance = a.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaRadio, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaRadioGroup" => {
+                    use rgui_components::wa_radio_group::{WaRadioGroup, WaRadioGroupState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaRadioGroupState::new(label);
+                    if let Some(h) = get_str(&view.props, "hint") {
+                        state.hint = h.to_string();
+                    }
+                    if let Some(o) = get_str(&view.props, "orientation") {
+                        state.orientation = o.to_string();
+                    }
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(PropValue::Bool(r)) = view.props.get("required") {
+                        state.required = *r;
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(v) = get_str(&view.props, "value") {
+                        state.value = v.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaRadioGroup, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaSwitch" => {
+                    use rgui_components::wa_switch::{WaSwitch, WaSwitchState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaSwitchState::new(label);
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(PropValue::Bool(c)) = view.props.get("checked") {
+                        state.checked = *c;
+                    }
+                    if let Some(PropValue::Bool(r)) = view.props.get("required") {
+                        state.required = *r;
+                    }
+                    if let Some(h) = get_str(&view.props, "hint") {
+                        state.hint = h.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaSwitch, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaDetails" => {
                     use rgui_components::wa_details::{WaDetails, WaDetailsState};
                     let mut state = WaDetailsState::new();

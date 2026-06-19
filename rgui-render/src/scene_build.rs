@@ -469,6 +469,24 @@ fn extract_taffy_style(
     if let Some(fd) = get_str("flex-direction") {
         style.flex_direction = rgui_layout::mapping::to_taffy_flex_direction(fd);
     }
+    // WaCheckboxGroup 使用 orientation 而非 flex-direction
+    if widget_type == "WaCheckboxGroup" {
+        if let Some(orientation) = get_str("orientation") {
+            style.flex_direction = match orientation {
+                "horizontal" => taffy::FlexDirection::Row,
+                _ => taffy::FlexDirection::Column,
+            };
+        }
+    }
+    // WaRadioGroup 同理
+    if widget_type == "WaRadioGroup" {
+        if let Some(orientation) = get_str("orientation") {
+            style.flex_direction = match orientation {
+                "horizontal" => taffy::FlexDirection::Row,
+                _ => taffy::FlexDirection::Column,
+            };
+        }
+    }
     if let Some(jc) = get_str("justify-content") {
         style.justify_content = Some(rgui_layout::mapping::to_taffy_justify_content(jc));
     }
@@ -638,7 +656,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             size: full_width_auto_height,
             ..Style::default()
         },
-        "Container" | "Card" | "WaCard" | "WaDetails" | "Stack" => Style {
+        "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()
@@ -711,6 +729,20 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         "WaCheckbox" => Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(24.0),
+                height: Dimension::Length(24.0),
+            },
+            ..Style::default()
+        },
+        "WaRadio" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(24.0),
+                height: Dimension::Length(24.0),
+            },
+            ..Style::default()
+        },
+        "WaSwitch" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(48.0),
                 height: Dimension::Length(24.0),
             },
             ..Style::default()
