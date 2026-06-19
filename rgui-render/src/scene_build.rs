@@ -691,12 +691,19 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
-        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "WaCarousel" | "Stack" => Style {
+        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "WaComparison" | "WaCarousel" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()
         },
         "WaAccordion" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        // WaTree：flex column 容器，容纳多个 WaTreeItem 子节点
+        "WaTree" => Style {
             display: Display::Flex,
             flex_direction: FlexDirection::Column,
             size: full_width_auto_height,
@@ -761,6 +768,17 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(200.0),
                 height: Dimension::Length(44.0),
+            },
+            ..Style::default()
+        },
+        // WaTreeItem：树节点行，最小高度 36px，宽度由父容器驱动
+        "WaTreeItem" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Row,
+            size: full_width_auto_height,
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(100.0),
+                height: Dimension::Length(36.0),
             },
             ..Style::default()
         },
@@ -931,6 +949,30 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(0.0),
                 height: Dimension::Length(2.0),
+            },
+            ..Style::default()
+        },
+        // WaFormatBytes：内联文本组件，由 measure() 返回内容驱动尺寸
+        "WaFormatBytes" | "WaFormatDate" | "WaFormatNumber" | "WaRelativeTime" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Length(20.0),
+            },
+            ..Style::default()
+        },
+        // WaAnimatedImage：占位图片区域，默认 320×240
+        "WaAnimatedImage" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(320.0),
+                height: Dimension::Length(240.0),
+            },
+            ..Style::default()
+        },
+        // WaQrCode：方形二维码，尺寸由 size prop 决定，默认 128×128
+        "WaQrCode" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(128.0),
+                height: Dimension::Length(128.0),
             },
             ..Style::default()
         },

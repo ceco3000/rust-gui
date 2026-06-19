@@ -289,6 +289,16 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaSplitPanel, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaComparison" => {
+                    use rgui_components::wa_comparison::{WaComparison, WaComparisonState};
+                    let mut state = WaComparisonState::new();
+                    if let Some(PropValue::Float(v)) = view.props.get("position") {
+                        state.position = v.0;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaComparison, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaProgressBar" => {
                     use rgui_components::wa_progress_bar::{WaProgressBar, WaProgressBarState};
                     let mut state = WaProgressBarState::new();
@@ -766,6 +776,192 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     ctx.into_operations()
                 },
 
+                "WaFormatBytes" => {
+                    use rgui_components::wa_format_bytes::{
+                        WaFormatBytes, WaFormatBytesState,
+                    };
+                    let mut state = WaFormatBytesState::new();
+                    if let Some(PropValue::Float(v)) = view.props.get("value") {
+                        state.value = v.0;
+                    }
+                    if let Some(u) = get_str(&view.props, "unit") {
+                        state.unit = u.to_string();
+                    }
+                    if let Some(d) = get_str(&view.props, "display") {
+                        state.display = d.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaFormatBytes,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
+                "WaFormatDate" => {
+                    use rgui_components::wa_format_date::{
+                        WaFormatDate, WaFormatDateState,
+                    };
+                    let mut state = WaFormatDateState::new();
+                    if let Some(d) = get_str(&view.props, "date") {
+                        state.date = d.to_string();
+                    }
+                    if let Some(w) = get_str(&view.props, "weekday") {
+                        state.weekday = w.to_string();
+                    }
+                    if let Some(e) = get_str(&view.props, "era") {
+                        state.era = e.to_string();
+                    }
+                    if let Some(y) = get_str(&view.props, "year") {
+                        state.year = y.to_string();
+                    }
+                    if let Some(m) = get_str(&view.props, "month") {
+                        state.month = m.to_string();
+                    }
+                    if let Some(d) = get_str(&view.props, "day") {
+                        state.day = d.to_string();
+                    }
+                    if let Some(h) = get_str(&view.props, "hour") {
+                        state.hour = h.to_string();
+                    }
+                    if let Some(mi) = get_str(&view.props, "minute") {
+                        state.minute = mi.to_string();
+                    }
+                    if let Some(s) = get_str(&view.props, "second") {
+                        state.second = s.to_string();
+                    }
+                    if let Some(tzn) = get_str(&view.props, "time-zone-name") {
+                        state.time_zone_name = tzn.to_string();
+                    }
+                    if let Some(tz) = get_str(&view.props, "time-zone") {
+                        state.time_zone = tz.to_string();
+                    }
+                    if let Some(hf) = get_str(&view.props, "hour-format") {
+                        state.hour_format = hf.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaFormatDate,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
+                "WaFormatNumber" => {
+                    use rgui_components::wa_format_number::{
+                        WaFormatNumber, WaFormatNumberState,
+                    };
+                    let mut state = WaFormatNumberState::new();
+                    if let Some(PropValue::Float(v)) = view.props.get("value") {
+                        state.value = v.0;
+                    }
+                    if let Some(s) = get_str(&view.props, "style") {
+                        state.style = s.to_string();
+                    }
+                    if let Some(PropValue::Bool(wg)) = view.props.get("without_grouping") {
+                        state.without_grouping = *wg;
+                    }
+                    if let Some(c) = get_str(&view.props, "currency") {
+                        state.currency = c.to_string();
+                    }
+                    if let Some(cd) = get_str(&view.props, "currency_display") {
+                        state.currency_display = cd.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaFormatNumber,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
+                "WaRelativeTime" => {
+                    use rgui_components::wa_relative_time::{
+                        WaRelativeTime, WaRelativeTimeState,
+                    };
+                    let mut state = WaRelativeTimeState::new();
+                    if let Some(d) = get_str(&view.props, "date") {
+                        state.date = d.to_string();
+                    }
+                    if let Some(f) = get_str(&view.props, "format") {
+                        state.format = f.to_string();
+                    }
+                    if let Some(n) = get_str(&view.props, "numeric") {
+                        state.numeric = n.to_string();
+                    }
+                    if let Some(PropValue::Bool(s)) = view.props.get("sync") {
+                        state.sync = *s;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaRelativeTime,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
+                "WaAnimatedImage" => {
+                    use rgui_components::wa_animated_image::{
+                        WaAnimatedImage, WaAnimatedImageState,
+                    };
+                    let mut state = WaAnimatedImageState::new();
+                    if let Some(v) = get_str(&view.props, "src") {
+                        state.src = v.to_string();
+                    }
+                    if let Some(v) = get_str(&view.props, "alt") {
+                        state.alt = v.to_string();
+                    }
+                    if let Some(PropValue::Bool(p)) = view.props.get("play") {
+                        state.play = *p;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaAnimatedImage,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
+                "WaQrCode" => {
+                    use rgui_components::wa_qr_code::{
+                        WaQrCode, WaQrCodeState,
+                    };
+                    let mut state = WaQrCodeState::new();
+                    if let Some(v) = get_str(&view.props, "value") {
+                        state.value = v.to_string();
+                    }
+                    if let Some(l) = get_str(&view.props, "label") {
+                        state.label = l.to_string();
+                    }
+                    if let Some(PropValue::Float(s)) = view.props.get("size") {
+                        state.size = s.0;
+                    }
+                    if let Some(PropValue::Float(r)) = view.props.get("radius") {
+                        state.radius = r.0;
+                    }
+                    if let Some(ec) = get_str(&view.props, "error-correction") {
+                        state.error_correction = ec.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaQrCode,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
+                    ctx.into_operations()
+                },
+
                 "WaCarousel" => {
                     use rgui_components::wa_carousel::{WaCarousel, WaCarouselState};
                     let mut state = WaCarouselState::new();
@@ -807,10 +1003,66 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     ctx.into_operations()
                 },
 
+                "WaTreeItem" => {
+                    use rgui_components::wa_tree_item::{WaTreeItem, WaTreeItemState};
+                    let mut state = WaTreeItemState::new();
+                    if let Some(l) = get_str(&view.props, "label") {
+                        state.label = l.to_string();
+                    }
+                    if let Some(expanded) = view.props.get("expanded") {
+                        if let PropValue::Bool(b) = expanded {
+                            state.expanded = *b;
+                        }
+                    }
+                    if let Some(selected) = view.props.get("selected") {
+                        if let PropValue::Bool(b) = selected {
+                            state.selected = *b;
+                        }
+                    }
+                    if let Some(disabled) = view.props.get("disabled") {
+                        if let PropValue::Bool(b) = disabled {
+                            state.disabled = *b;
+                        }
+                    }
+                    if let Some(lazy) = view.props.get("lazy") {
+                        if let PropValue::Bool(b) = lazy {
+                            state.lazy = *b;
+                        }
+                    }
+                    if let Some(indeterminate) = view.props.get("indeterminate") {
+                        if let PropValue::Bool(b) = indeterminate {
+                            state.indeterminate = *b;
+                        }
+                    }
+                    if let Some(is_leaf) = view.props.get("is-leaf") {
+                        if let PropValue::Bool(b) = is_leaf {
+                            state.is_leaf = *b;
+                        }
+                    }
+                    if let Some(loading) = view.props.get("loading") {
+                        if let PropValue::Bool(b) = loading {
+                            state.loading = *b;
+                        }
+                    }
+                    if let Some(selectable) = view.props.get("selectable") {
+                        if let PropValue::Bool(b) = selectable {
+                            state.selectable = *b;
+                        }
+                    }
+                    if let Some(depth) = view.props.get("depth") {
+                        if let PropValue::Int(d) = depth {
+                            state.depth = *d as u32;
+                        }
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaTreeItem, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
                 | "Card" | "Stack" | "ScrollView" | "ListView" | "WaButtonGroup" | "WaAccordion"
-                | "WaCarouselItem" => Vec::new(),
+                | "WaCarouselItem" | "WaTree" => Vec::new(),
 
                 // ── 未翻译 / 未知 ──
                 unknown => {
