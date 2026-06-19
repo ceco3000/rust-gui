@@ -55,5 +55,7 @@ pub mod html_hot_reload;
 #[cfg(feature = "html-hot-reload")]
 pub mod html_reload;
 pub mod ipc;
+#[cfg(feature = "html-hot-reload")]
+pub mod rgui_parser;
 #[cfg(feature = "notify")]
 pub mod watcher;
