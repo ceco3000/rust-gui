@@ -47,6 +47,16 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaDivider, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaCard" => {
+                    use rgui_components::wa_card::{WaCard, WaCardState};
+                    let mut state = WaCardState::new();
+                    if let Some(app) = get_str(&view.props, "appearance") {
+                        state.appearance = app.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaCard, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
