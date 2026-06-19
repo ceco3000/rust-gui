@@ -121,8 +121,10 @@ impl<M: AppMessage> HtmlHotReload<M> {
     ) -> Result<Self, HtmlHotReloadError> {
         let html_path = html_path.as_ref().to_path_buf();
         // 规范化路径以匹配 notify 事件路径（macOS 上 /tmp → /private/tmp）
-        let canonical_html_path =
-            std::fs::canonicalize(&html_path).unwrap_or_else(|_| html_path.clone());
+        let canonical_html_path = std::fs::canonicalize(&html_path).unwrap_or_else(|e| {
+            eprintln!("[rgui] HtmlHotReload: canonicalize({html_path:?}) 失败: {e}，使用原始路径");
+            html_path.clone()
+        });
         let watcher = FileWatcher::new(config)?;
         let current_view = parse_html_file_from_path(&html_path)?;
         Ok(Self {

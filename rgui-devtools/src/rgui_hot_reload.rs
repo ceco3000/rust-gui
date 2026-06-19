@@ -121,8 +121,10 @@ impl<M: AppMessage> RguiHotReload<M> {
     ) -> Result<Self, RguiHotReloadError> {
         let rgui_path = rgui_path.as_ref().to_path_buf();
         // 规范化路径以匹配 notify 事件路径（macOS 上 /tmp → /private/tmp）
-        let canonical_rgui_path =
-            std::fs::canonicalize(&rgui_path).unwrap_or_else(|_| rgui_path.clone());
+        let canonical_rgui_path = std::fs::canonicalize(&rgui_path).unwrap_or_else(|e| {
+            eprintln!("[rgui] RguiHotReload: canonicalize({rgui_path:?}) 失败: {e}，使用原始路径");
+            rgui_path.clone()
+        });
         let watcher = FileWatcher::new(config)?;
         let current_view = parse_rgui_file_from_path(&rgui_path)?;
         Ok(Self {

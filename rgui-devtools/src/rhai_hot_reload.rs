@@ -137,7 +137,12 @@ impl RhaiHotReload {
         self.registry.register_script(&source)?;
 
         // 规范化路径以匹配 notify 事件路径
-        let canonical = std::fs::canonicalize(&source_path).unwrap_or_else(|_| source_path.clone());
+        let canonical = std::fs::canonicalize(&source_path).unwrap_or_else(|e| {
+            eprintln!(
+                "[rgui] RhaiHotReload: canonicalize({source_path:?}) 失败: {e}，使用原始路径"
+            );
+            source_path.clone()
+        });
 
         self.watched_scripts
             .insert(source_path.clone(), canonical.clone());
