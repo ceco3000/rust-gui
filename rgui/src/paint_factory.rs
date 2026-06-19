@@ -58,6 +58,21 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     ctx.into_operations()
                 },
 
+                "WaIcon" => {
+                    use rgui_components::wa_icon::{WaIcon, WaIconState};
+                    let name = get_str(&view.props, "name").unwrap_or("");
+                    let mut state = WaIconState::new(name);
+                    if let Some(label) = get_str(&view.props, "label") {
+                        state.label = label.to_string();
+                    }
+                    if let Some(size) = get_str(&view.props, "size") {
+                        state.size = size.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaIcon, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
                 | "Card" | "Stack" | "ScrollView" | "ListView" => Vec::new(),
