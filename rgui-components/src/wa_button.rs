@@ -99,11 +99,10 @@ impl WidgetSpec for WaButton {
     }
 
     fn measure(&self, state: &Self::State, c: BoxConstraints, _: &MeasureContext) -> Size {
-        // 文字宽度估算 + 最小 80×36
         let char_count = state.label.chars().count().max(1) as f64;
-        let tw = char_count * 14.0 * 0.6;
+        let tw = (char_count * 14.0 * 0.6 + 32.0).max(80.0);
         Size::new(
-            (tw + 32.0).max(80.0).clamp(c.min_width, c.max_width),
+            tw.clamp(c.min_width, c.max_width),
             36_f64.clamp(c.min_height, c.max_height),
         )
     }
@@ -140,7 +139,7 @@ impl WidgetSpec for WaButton {
             bounds.size.width - pad * 2.0,
             bounds.size.height,
         );
-        let font_size = (bounds.size.height as f32 * 0.5).max(12.0);
+        let font_size = (bounds.size.height as f32 * 0.44).max(12.0);
         ctx.draw_text(&state.label, text_bounds, text_color, font_size);
     }
 

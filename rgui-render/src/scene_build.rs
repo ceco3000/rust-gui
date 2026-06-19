@@ -501,7 +501,7 @@ fn extract_taffy_style(
         };
     }
 
-    // 第三步：内容驱动尺寸——Button/Label 根据文字内容计算宽度和高度
+    // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
     if matches!(widget_type, "Button" | "WaButton" | "Label") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
@@ -511,6 +511,9 @@ fn extract_taffy_style(
                 // Inter Regular: ascent=0.969, descent=-0.227 → em_height=1.196
                 let em_height: f32 = 1.196;
 
+                // WaButton 字体大小由 paint() 统一控制: h × 0.44
+                let paint_font_ratio: f32 = if widget_type == "WaButton" { 0.44 } else { 0.8 };
+
                 // ── 高度 ──
                 let final_height: f32 = if has_explicit_height {
                     get_f32("height").unwrap_or(40.0)
@@ -519,9 +522,11 @@ fn extract_taffy_style(
                         taffy::Dimension::Length(h) => h,
                         _ => 40.0,
                     };
-                    let font_size_from_min = min_h * 0.8;
+                    let font_size_from_min = min_h * paint_font_ratio;
                     let text_height_px = font_size_from_min * em_height;
-                    let pad_v: f32 = if matches!(widget_type, "Button" | "WaButton") {
+                    let pad_v: f32 = if widget_type == "WaButton" {
+                        16.0
+                    } else if widget_type == "Button" {
                         12.0
                     } else {
                         4.0
@@ -534,7 +539,7 @@ fn extract_taffy_style(
 
                 // ── 宽度 ──
                 if !has_explicit_width {
-                    let font_size = final_height * 0.8;
+                    let font_size = final_height * paint_font_ratio;
                     let content_width: f32 = if let Some(tr) = text_renderer {
                         let text_px = tr.measure_text(text, font_size);
                         let pad_w: f32 = if matches!(widget_type, "Button" | "WaButton") {
@@ -602,6 +607,10 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         width: Dimension::Length(80.0),
         height: Dimension::Length(40.0),
     };
+    let wa_button_min_size = taffy::geometry::Size {
+        width: Dimension::Length(80.0),
+        height: Dimension::Length(36.0),
+    };
 
     match widget_type {
         // ── 布局容器 ──
@@ -650,8 +659,12 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
-        "Button" | "WaButton" => Style {
+        "Button" => Style {
             min_size: button_min_size,
+            ..Style::default()
+        },
+        "WaButton" => Style {
+            min_size: wa_button_min_size,
             ..Style::default()
         },
         "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
