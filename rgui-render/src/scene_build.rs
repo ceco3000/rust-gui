@@ -708,6 +708,13 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             ..Style::default()
         },
+        "WaCheckbox" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(24.0),
+                height: Dimension::Length(24.0),
+            },
+            ..Style::default()
+        },
         "WaCopyButton" => Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(32.0),

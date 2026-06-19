@@ -76,6 +76,32 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaCard, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaCheckbox" => {
+                    use rgui_components::wa_checkbox::{WaCheckbox, WaCheckboxState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaCheckboxState::new(label);
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(PropValue::Bool(c)) = view.props.get("checked") {
+                        state.checked = *c;
+                    }
+                    if let Some(PropValue::Bool(i)) = view.props.get("indeterminate") {
+                        state.indeterminate = *i;
+                    }
+                    if let Some(PropValue::Bool(r)) = view.props.get("required") {
+                        state.required = *r;
+                    }
+                    if let Some(h) = get_str(&view.props, "hint") {
+                        state.hint = h.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaCheckbox, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaDetails" => {
                     use rgui_components::wa_details::{WaDetails, WaDetailsState};
                     let mut state = WaDetailsState::new();
