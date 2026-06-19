@@ -467,11 +467,23 @@ struct AppHandler {
     height: u32,
     /// 视图场景构建回调（从 App 移入）。
     view_scene_builder: Option<ViewSceneBuilder>,
+    /// Rhai 命令处理器注册表（从 App .take() 移入）。
+    /// handle_click 中用于路由事件到 Rhai 脚本函数。
+    #[cfg(feature = "devtools")]
+    command_registry: Option<rgui_script::CommandRegistry>,
+    /// Rhai 脚本热重载管理器（从 App .take() 移入）。
+    /// 每帧调用 check_and_reload() 检测 .rhai 文件变更。
+    #[cfg(feature = "devtools")]
+    rhai_hot_reload: Option<rgui_devtools::rhai_hot_reload::RhaiHotReload>,
 }
 
 impl AppHandler {
     fn new(mut app: App) -> Self {
         let view_scene_builder = app.view_scene_builder.take();
+        #[cfg(feature = "devtools")]
+        let command_registry = app.command_registry.take();
+        #[cfg(feature = "devtools")]
+        let rhai_hot_reload = app.rhai_hot_reload.take();
         Self {
             app,
             window: None,
@@ -484,6 +496,10 @@ impl AppHandler {
             width: 0,
             height: 0,
             view_scene_builder,
+            #[cfg(feature = "devtools")]
+            command_registry,
+            #[cfg(feature = "devtools")]
+            rhai_hot_reload,
         }
     }
 
@@ -514,8 +530,31 @@ impl AppHandler {
                         return;
                     },
                     EventResult::Continue(_msg) => {
-                        // 继续传播——fall through 到旧回调路径
+                        // 继续传播——fall through 到 Rhai 路由和旧回调路径
                     },
+                }
+            }
+
+            // Rhai 命令处理器路由（D7 §10.2）
+            // 在 WidgetSpec 实例处理器之后、旧 register_interaction 回调之前插入，
+            // 让 `.rhai` 脚本函数有机会消费事件。
+            #[cfg(feature = "devtools")]
+            if let Some(ref mut registry) = self.command_registry {
+                if let Some((_, action, _)) = self.app.interactions.get(&hit_id) {
+                    match registry.call_fn::<()>(action, ()) {
+                        Ok(()) => {
+                            // Rhai 函数执行成功，事件已消费
+                            self.app.events.push(Event::MouseDown {
+                                position,
+                                button: MouseButton::Left,
+                                modifiers: Modifiers::new(),
+                            });
+                            return;
+                        },
+                        Err(_) => {
+                            // Rhai 无此函数或调用失败，继续传播到旧回调
+                        },
+                    }
                 }
             }
 
@@ -819,6 +858,13 @@ impl ApplicationHandler for AppHandler {
                 // 窗口最小化或 surface 不可用时跳过渲染（D3 §12.4）
                 if self.should_skip_render() {
                     return;
+                }
+                // 每帧检查 Rhai 脚本热重载（D7 §10.2）
+                #[cfg(feature = "devtools")]
+                if let Some(ref mut rhai_reload) = self.rhai_hot_reload {
+                    if let Err(e) = rhai_reload.check_and_reload() {
+                        eprintln!("[rgui] Rhai 热重载失败: {e}");
+                    }
                 }
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
@@ -1464,6 +1510,84 @@ mod tests {
             // engine_mut 应能获取引擎并注册类型
             registry.engine_mut().register_type::<i64>();
             // 成功——没有 panic
+        }
+
+        // ========================================================================
+        // RH05: .rhai AppHandler 集成——handle_click Rhai 路由测试
+        // ========================================================================
+
+        /// `.rhai` 声明的函数在点击时被成功路由（Rhai 消费事件，旧回调不触发）。
+        #[test]
+        fn handle_click_rhai_routing_consumes_event() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rhai_path = dir.path().join("handlers.rhai");
+            // Rhai 脚本中定义 save 函数——将 consumed 设为 true
+            std::fs::write(&rhai_path, "fn save() { }").expect("写入 .rhai 文件失败");
+
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            app.load_rhai_scripts(&[&rhai_path])
+                .expect("load_rhai_scripts 应成功");
+
+            let widget_id = WidgetId::from_u64(1);
+            let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let old_called = Arc::new(AtomicBool::new(false));
+            let old_called_clone = Arc::clone(&old_called);
+            // 注册旧回调（不应被调用——Rhai 先消费事件）
+            app.register_interaction(widget_id, bounds, "save", move |_| {
+                old_called_clone.store(true, Ordering::SeqCst);
+            });
+
+            let mut handler = AppHandler::new(app);
+            handler.handle_click(Point::new(50.0, 30.0));
+
+            // Rhai 函数存在且被调用，旧回调不应被调用
+            assert!(
+                !old_called.load(Ordering::SeqCst),
+                "Rhai 路由应消费事件，旧回调不应被调用"
+            );
+            // 事件应被记录（由 Rhai 分支记录）
+            assert_eq!(handler.app.event_count(), 1);
+        }
+
+        /// Rhai 无匹配函数时，fallback 到旧回调。
+        #[test]
+        fn handle_click_rhai_not_found_falls_back_to_old_callback() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rhai_path = dir.path().join("handlers.rhai");
+            // Rhai 脚本中只定义 unknown_fn，不定义 "click" 函数
+            std::fs::write(&rhai_path, "fn unknown_fn() { }").expect("写入 .rhai 文件失败");
+
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            app.load_rhai_scripts(&[&rhai_path])
+                .expect("load_rhai_scripts 应成功");
+
+            let widget_id = WidgetId::from_u64(1);
+            let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let old_called = Arc::new(AtomicBool::new(false));
+            let old_called_clone = Arc::clone(&old_called);
+            // 注册旧回调（应被调用——Rhai 无匹配函数）
+            app.register_interaction(widget_id, bounds, "click", move |action| {
+                assert_eq!(action, "click");
+                old_called_clone.store(true, Ordering::SeqCst);
+            });
+
+            let mut handler = AppHandler::new(app);
+            handler.handle_click(Point::new(50.0, 30.0));
+
+            // Rhai 无 "click" 函数，旧回调应被调用
+            assert!(
+                old_called.load(Ordering::SeqCst),
+                "Rhai 无匹配函数时应 fallback 到旧回调"
+            );
+            assert_eq!(handler.app.event_count(), 1);
         }
     }
 }
