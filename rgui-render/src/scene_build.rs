@@ -707,7 +707,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         },
         "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
         | "WaTabGroup" | "WaAnimation" | "WaButtonGroup" | "WaSplitPanel" | "WaComparison"
-        | "WaCarousel" | "Stack" => Style {
+        | "WaCarousel" | "WaDialog" | "WaDrawer" | "WaDropdown" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()

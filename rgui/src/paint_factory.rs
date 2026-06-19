@@ -299,6 +299,91 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaComparison, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaDialog" => {
+                    use rgui_components::wa_dialog::{WaDialog, WaDialogState};
+                    let mut state = WaDialogState::new();
+                    if let Some(l) = get_str(&view.props, "label") {
+                        state.label = l.to_string();
+                    }
+                    if let Some(PropValue::Bool(o)) = view.props.get("open") {
+                        state.open = *o;
+                    }
+                    if let Some(PropValue::Bool(w)) = view.props.get("without-header") {
+                        state.without_header = *w;
+                    }
+                    if let Some(PropValue::Bool(ld)) = view.props.get("light-dismiss") {
+                        state.light_dismiss = *ld;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDialog, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaDrawer" => {
+                    use rgui_components::wa_drawer::{WaDrawer, WaDrawerState};
+                    let mut state = WaDrawerState::new();
+                    if let Some(l) = get_str(&view.props, "label") {
+                        state.label = l.to_string();
+                    }
+                    if let Some(p) = get_str(&view.props, "placement") {
+                        state.placement = p.to_string();
+                    }
+                    if let Some(PropValue::Bool(o)) = view.props.get("open") {
+                        state.open = *o;
+                    }
+                    if let Some(PropValue::Bool(w)) = view.props.get("without-header") {
+                        state.without_header = *w;
+                    }
+                    if let Some(PropValue::Bool(ld)) = view.props.get("light-dismiss") {
+                        state.light_dismiss = *ld;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDrawer, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaDropdown" => {
+                    use rgui_components::wa_dropdown::{WaDropdown, WaDropdownState};
+                    let mut state = WaDropdownState::new();
+                    if let Some(p) = get_str(&view.props, "placement") {
+                        state.placement = p.to_string();
+                    }
+                    if let Some(PropValue::Bool(o)) = view.props.get("open") {
+                        state.open = *o;
+                    }
+                    if let Some(PropValue::Float(d)) = view.props.get("distance") {
+                        state.distance = d.0;
+                    }
+                    if let Some(PropValue::Float(s)) = view.props.get("skidding") {
+                        state.skidding = s.0;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDropdown, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaDropdownItem" => {
+                    use rgui_components::wa_dropdown_item::{WaDropdownItem, WaDropdownItemState};
+                    let mut state = WaDropdownItemState::new();
+                    if let Some(PropValue::Bool(a)) = view.props.get("active") {
+                        state.active = *a;
+                    }
+                    if let Some(s) = get_str(&view.props, "variant") {
+                        state.variant = s.to_string();
+                    }
+                    if let Some(s) = get_str(&view.props, "value") {
+                        state.value = s.to_string();
+                    }
+                    if let Some(s) = get_str(&view.props, "type") {
+                        state.type_ = s.to_string();
+                    }
+                    if let Some(PropValue::Bool(c)) = view.props.get("checked") {
+                        state.checked = *c;
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDropdownItem, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaProgressBar" => {
                     use rgui_components::wa_progress_bar::{WaProgressBar, WaProgressBarState};
                     let mut state = WaProgressBarState::new();
@@ -747,7 +832,9 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     ctx.into_operations()
                 },
                 "WaAccordionItem" => {
-                    use rgui_components::wa_accordion_item::{WaAccordionItem, WaAccordionItemState};
+                    use rgui_components::wa_accordion_item::{
+                        WaAccordionItem, WaAccordionItemState,
+                    };
                     let mut state = WaAccordionItemState::new();
                     if let Some(l) = get_str(&view.props, "label") {
                         state.label = l.to_string();
@@ -772,14 +859,17 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.heading_level = hl.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(&WaAccordionItem, &state, bounds, &mut ctx);
+                    rgui_core::traits::WidgetSpec::paint(
+                        &WaAccordionItem,
+                        &state,
+                        bounds,
+                        &mut ctx,
+                    );
                     ctx.into_operations()
                 },
 
                 "WaFormatBytes" => {
-                    use rgui_components::wa_format_bytes::{
-                        WaFormatBytes, WaFormatBytesState,
-                    };
+                    use rgui_components::wa_format_bytes::{WaFormatBytes, WaFormatBytesState};
                     let mut state = WaFormatBytesState::new();
                     if let Some(PropValue::Float(v)) = view.props.get("value") {
                         state.value = v.0;
@@ -791,19 +881,12 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.display = d.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaFormatBytes,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaFormatBytes, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
 
                 "WaFormatDate" => {
-                    use rgui_components::wa_format_date::{
-                        WaFormatDate, WaFormatDateState,
-                    };
+                    use rgui_components::wa_format_date::{WaFormatDate, WaFormatDateState};
                     let mut state = WaFormatDateState::new();
                     if let Some(d) = get_str(&view.props, "date") {
                         state.date = d.to_string();
@@ -842,19 +925,12 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.hour_format = hf.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaFormatDate,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaFormatDate, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
 
                 "WaFormatNumber" => {
-                    use rgui_components::wa_format_number::{
-                        WaFormatNumber, WaFormatNumberState,
-                    };
+                    use rgui_components::wa_format_number::{WaFormatNumber, WaFormatNumberState};
                     let mut state = WaFormatNumberState::new();
                     if let Some(PropValue::Float(v)) = view.props.get("value") {
                         state.value = v.0;
@@ -872,19 +948,12 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.currency_display = cd.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaFormatNumber,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaFormatNumber, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
 
                 "WaRelativeTime" => {
-                    use rgui_components::wa_relative_time::{
-                        WaRelativeTime, WaRelativeTimeState,
-                    };
+                    use rgui_components::wa_relative_time::{WaRelativeTime, WaRelativeTimeState};
                     let mut state = WaRelativeTimeState::new();
                     if let Some(d) = get_str(&view.props, "date") {
                         state.date = d.to_string();
@@ -899,12 +968,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.sync = *s;
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaRelativeTime,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaRelativeTime, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
 
@@ -933,9 +997,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                 },
 
                 "WaQrCode" => {
-                    use rgui_components::wa_qr_code::{
-                        WaQrCode, WaQrCodeState,
-                    };
+                    use rgui_components::wa_qr_code::{WaQrCode, WaQrCodeState};
                     let mut state = WaQrCodeState::new();
                     if let Some(v) = get_str(&view.props, "value") {
                         state.value = v.to_string();
@@ -953,12 +1015,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                         state.error_correction = ec.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaQrCode,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaQrCode, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
 
@@ -1061,8 +1118,8 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
-                | "Card" | "Stack" | "ScrollView" | "ListView" | "WaButtonGroup" | "WaAccordion"
-                | "WaCarouselItem" | "WaTree" => Vec::new(),
+                | "Card" | "Stack" | "ScrollView" | "ListView" | "WaAnimation"
+                | "WaButtonGroup" | "WaAccordion" | "WaCarouselItem" | "WaTree" => Vec::new(),
 
                 // ── 未翻译 / 未知 ──
                 unknown => {
