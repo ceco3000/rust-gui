@@ -19,6 +19,7 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     "WaCard",
     "WaDivider",
     "WaIcon",
+    "WaSpinner",
     // 布局容器（框架内置，非组件 crate）
     "Container",
     "Row",

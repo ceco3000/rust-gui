@@ -91,6 +91,13 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaIcon, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaSpinner" => {
+                    use rgui_components::wa_spinner::{WaSpinner, WaSpinnerState};
+                    let state = WaSpinnerState::new();
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaSpinner, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
