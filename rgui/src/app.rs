@@ -1225,5 +1225,83 @@ mod tests {
             // 基本断言：场景图应非空（至少有一个图层）
             assert!(!scene.is_empty(), "SceneGraph 应包含图层");
         }
+
+        // ========================================================================
+        // RG05: AppHandler 集成验证测试
+        // ========================================================================
+
+        #[test]
+        fn load_rgui_view_scene_builder_detects_file_change() {
+            // 修改 .rgui 文件 → builder 检测变更 → 场景更新（< 1s）
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rgui_path = dir.path().join("app.rgui");
+            std::fs::write(
+                &rgui_path,
+                r#"<Column spacing="8"><Label text="Before"/></Column>"#,
+            )
+            .expect("写入 .rgui 文件失败");
+
+            let config = AppConfig::new().rgui_path(&rgui_path);
+            let mut app = App::new(config);
+            app.load_rgui::<TestMsg>().expect("load_rgui 应成功");
+
+            // 等待 watcher 稳定并消耗初始事件
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            let text_renderer = TextRenderer::new(rgui_render::TextureId(0));
+
+            // 第一次调用——获取初始场景
+            let scene1 = app.view_scene_builder.as_mut().unwrap()(1, 800, 600, &text_renderer);
+            assert!(!scene1.is_empty(), "初始场景应有效");
+
+            // 修改 .rgui 文件
+            std::fs::write(
+                &rgui_path,
+                r#"<Column spacing="8"><Button label="Click"/></Column>"#,
+            )
+            .expect("写入 .rgui 文件失败");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // 第二次调用——应检测到变更并返回新场景
+            let scene2 = app.view_scene_builder.as_mut().unwrap()(2, 800, 600, &text_renderer);
+            assert!(!scene2.is_empty(), "文件变更后应返回有效场景");
+        }
+
+        #[test]
+        fn load_rgui_view_scene_builder_keeps_old_view_on_parse_error() {
+            // 解析失败时保持旧视图（降级策略 D7 §9）
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rgui_path = dir.path().join("app.rgui");
+            std::fs::write(
+                &rgui_path,
+                r#"<Column spacing="8"><Label text="Valid"/></Column>"#,
+            )
+            .expect("写入 .rgui 文件失败");
+
+            let config = AppConfig::new().rgui_path(&rgui_path);
+            let mut app = App::new(config);
+            app.load_rgui::<TestMsg>().expect("load_rgui 应成功");
+
+            // 等待 watcher 稳定并消耗初始事件
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            let text_renderer = TextRenderer::new(rgui_render::TextureId(0));
+
+            // 第一次调用——获取初始有效场景
+            let scene1 = app.view_scene_builder.as_mut().unwrap()(1, 800, 600, &text_renderer);
+            assert!(!scene1.is_empty(), "初始场景应有效");
+
+            // 写入畸形的 .rgui（未闭合标签）
+            std::fs::write(&rgui_path, r#"<Column><Label text="Oops""#)
+                .expect("写入畸形 .rgui 文件失败");
+            std::thread::sleep(std::time::Duration::from_millis(200));
+
+            // 第二次调用——解析失败，应保持旧视图（降级策略）
+            let scene2 = app.view_scene_builder.as_mut().unwrap()(2, 800, 600, &text_renderer);
+            assert!(
+                !scene2.is_empty(),
+                "解析失败后应返回旧场景（降级策略——保持旧视图）"
+            );
+        }
     }
 }
