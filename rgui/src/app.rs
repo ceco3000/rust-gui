@@ -1,8 +1,12 @@
 //! App 启动器——winit 窗口 + 事件循环 + wgpu 渲染 + 交互。
 
+use rgui_core::context::UpdateContext;
 use rgui_core::geometry::{Point, Rect, Size};
 use rgui_core::id::{WidgetId, WindowId};
 use rgui_core::registry::WidgetRegistry;
+#[cfg(feature = "devtools")]
+use rgui_core::traits::AppMessage;
+use rgui_core::traits::EventResult;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
@@ -11,6 +15,7 @@ use rgui_render::{
 };
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -21,6 +26,12 @@ use winit::window::WindowAttributes;
 
 /// 交互回调类型。
 pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
+
+/// Widget 实例更新处理器（类型擦除）。
+///
+/// 接收动作名称和 UpdateContext，返回 EventResult 控制事件传播。
+pub type WidgetUpdateHandler =
+    Box<dyn FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send>;
 
 /// 视图场景构建回调类型。
 ///
@@ -51,6 +62,9 @@ pub struct AppConfig {
     pub resizable: bool,
     /// 最小窗口尺寸。
     pub min_size: Option<Size>,
+    /// 可选 `.rgui` 文件路径，作为视图源（替代 `set_view_scene_builder`）。
+    /// `App::load_rgui::<M>()` 从此字段读取路径。
+    pub rgui_path: Option<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -60,6 +74,7 @@ impl Default for AppConfig {
             window_size: Size::new(800.0, 600.0),
             resizable: true,
             min_size: Some(Size::new(320.0, 240.0)),
+            rgui_path: None,
         }
     }
 }
@@ -82,6 +97,12 @@ impl AppConfig {
         self.window_size = Size::new(w, h);
         self
     }
+    /// 设置 .rgui 文件路径（builder 风格）。
+    #[must_use]
+    pub fn rgui_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.rgui_path = Some(path.into());
+        self
+    }
 }
 
 /// rgui 应用实例。
@@ -98,6 +119,9 @@ pub struct App {
     focus: FocusManager,
     /// 交互区域：widget_id → (Rect, 消息名, 回调)
     interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
+    /// Widget 实例更新处理器（WidgetSpec 路径）。
+    /// 如果存在，handle_click 优先通过此处理器调用 update()，再根据 EventResult 决定是否回调旧路径。
+    widget_instances: FxHashMap<WidgetId, WidgetUpdateHandler>,
     /// 可选的视图场景构建回调（直接返回 SceneGraph）。
     view_scene_builder: Option<ViewSceneBuilder>,
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
@@ -117,6 +141,7 @@ impl App {
             hit_tester: HitTester::new(),
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
+            widget_instances: FxHashMap::new(),
             view_scene_builder: None,
             scale_factor: 1.0,
         }
@@ -179,6 +204,21 @@ impl App {
             .insert(id, (bounds, action.into(), Box::new(cb)));
     }
 
+    /// 注册 WidgetSpec 实例的更新处理器。
+    ///
+    /// - `id`: widget ID（需与 register_interaction 的 id 一致）
+    /// - `handler`: 事件处理器，接收动作名称，返回 EventResult
+    ///
+    /// 当 handle_click 命中此 widget 时，优先调用 handler，
+    /// 根据返回的 EventResult 决定是否继续传播到旧 register_interaction 回调。
+    pub fn register_widget_instance(
+        &mut self,
+        id: WidgetId,
+        handler: impl FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send + 'static,
+    ) {
+        self.widget_instances.insert(id, Box::new(handler));
+    }
+
     /// 设置视图场景构建回调（html! 声明式路径）。
     ///
     /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
@@ -190,6 +230,82 @@ impl App {
         builder: impl FnMut(u64, u32, u32, &TextRenderer) -> SceneGraph + Send + 'static,
     ) {
         self.view_scene_builder = Some(Box::new(builder));
+    }
+
+    /// 从 `.rgui` 文件加载视图（路径从 `config.rgui_path` 读取）。
+    ///
+    /// `M` 为 AppMessage 类型，用于解析器泛型参数。
+    /// 内部创建 [`RguiHotReload`]，每帧轮询文件变更，
+    /// 变更时重新解析 → `compute_view_layout` → `build_scene_from_view` → `SceneGraph`。
+    ///
+    /// 必须在 `run()` 之前调用。返回 `Err` 如果 config 未设置 `rgui_path`。
+    ///
+    /// 解析失败时保持旧视图，通过 stderr 报告错误（D7 §9 降级策略）。
+    #[cfg(feature = "devtools")]
+    pub fn load_rgui<M: AppMessage>(
+        &mut self,
+    ) -> Result<(), rgui_devtools::rgui_hot_reload::RguiHotReloadError> {
+        use rgui_core::geometry::Size;
+        use rgui_devtools::config::HotReloadConfig;
+        use rgui_devtools::rgui_hot_reload::RguiHotReload;
+
+        let rgui_path = self.config.rgui_path.as_ref().ok_or_else(|| {
+            rgui_devtools::rgui_hot_reload::RguiHotReloadError::Watch(
+                "AppConfig 未设置 rgui_path".to_string(),
+            )
+        })?;
+
+        // 构建 HotReloadConfig：监控 .rgui 文件所在目录
+        let watch_dir = rgui_path.parent().unwrap_or(std::path::Path::new("."));
+        let config = HotReloadConfig::default().with_watch_paths(vec![watch_dir.to_path_buf()]);
+
+        let mut hot_reload = RguiHotReload::<M>::new(&config, rgui_path)?;
+        let mut current_view = hot_reload.current_view().clone();
+
+        // 计算初始布局
+        let available = Size::new(
+            self.config.window_size.width,
+            self.config.window_size.height,
+        );
+        let mut layout_engine = {
+            let mut view = current_view.clone();
+            rgui_render::compute_view_layout(&mut view, available)
+        };
+
+        let builder = move |frame_count: u64,
+                            width: u32,
+                            height: u32,
+                            text_renderer: &TextRenderer|
+              -> SceneGraph {
+            match hot_reload.check_and_reload() {
+                Ok(Some(new_view)) => {
+                    let available = Size::new(f64::from(width), f64::from(height));
+                    let mut view = new_view.clone();
+                    let engine = rgui_render::compute_view_layout(&mut view, available);
+                    layout_engine = engine;
+                    current_view = new_view;
+                },
+                Ok(None) => {
+                    // 无变更，使用现有视图
+                },
+                Err(e) => {
+                    // 解析失败 → 保持旧视图（D7 §9 降级策略）
+                    eprintln!("[rgui] .rgui 热重载失败（保持旧视图）: {e}");
+                },
+            }
+
+            let paint_fn = crate::paint_factory::default_paint_fn::<M>();
+            rgui_render::build_scene_from_view(
+                &current_view,
+                &layout_engine,
+                &paint_fn,
+                frame_count,
+                Some(text_renderer),
+            )
+        };
+
+        self.set_view_scene_builder(builder);
+        Ok(())
     }
 
     /// 运行应用。
@@ -289,6 +405,37 @@ impl AppHandler {
 
     fn handle_click(&mut self, position: Point) {
         if let Some(hit_id) = self.app.hit_tester.hit_test(position) {
+            // 新路径：如果命中 widget 有 WidgetSpec 实例处理器，优先调用
+            let mut update_ctx = UpdateContext::new();
+            if let Some(handler) = self.app.widget_instances.get_mut(&hit_id) {
+                let action = self
+                    .app
+                    .interactions
+                    .get(&hit_id)
+                    .map(|(_, a, _)| a.clone())
+                    .unwrap_or_default();
+                let result = handler(&action, &mut update_ctx);
+                match result {
+                    EventResult::Handled => {
+                        // 组件消费了事件，停止，不调用旧回调
+                        self.app.events.push(Event::MouseDown {
+                            position,
+                            button: MouseButton::Left,
+                            modifiers: Modifiers::new(),
+                        });
+                        return;
+                    },
+                    EventResult::Prevented => {
+                        // 阻止默认行为，不调用旧回调，不记录事件
+                        return;
+                    },
+                    EventResult::Continue(_msg) => {
+                        // 继续传播——fall through 到旧回调路径
+                    },
+                }
+            }
+
+            // 旧路径：register_interaction 回调（fallback）
             if let Some((_bounds, action, cb)) = self.app.interactions.get_mut(&hit_id) {
                 // 交互回调带异常隔离（D1 §11.3）
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -829,5 +976,254 @@ mod tests {
         handler.height = 600;
         // render_ctx 为 None
         assert!(handler.should_skip_render());
+    }
+
+    // ========================================================================
+    // WC01: EventResult 接线测试
+    // ========================================================================
+
+    #[test]
+    fn event_result_handled_stops_old_callback() {
+        // EventResult::Handled → 调用 update()，不调用旧回调
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let old_called = Arc::new(AtomicBool::new(false));
+        let old_called_clone = Arc::clone(&old_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {
+            old_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let ctx_received = Arc::new(AtomicBool::new(false));
+        let ctx_received_clone = Arc::clone(&ctx_received);
+        app.register_widget_instance(widget_id, move |action, ctx| {
+            ctx_received_clone.store(true, Ordering::SeqCst);
+            assert_eq!(action, "click");
+            assert!(ctx.focus.is_none());
+            EventResult::Handled
+        });
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        // WidgetSpec 路径被调用
+        assert!(
+            ctx_received.load(Ordering::SeqCst),
+            "WidgetSpec handler 应被调用"
+        );
+        // 旧回调不应被调用
+        assert!(!old_called.load(Ordering::SeqCst), "旧回调不应被调用");
+        // 事件应被记录
+        assert_eq!(handler.app.event_count(), 1);
+    }
+
+    #[test]
+    fn event_result_continue_falls_through_to_old_callback() {
+        // EventResult::Continue → 继续传播，调用旧回调
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let old_called = Arc::new(AtomicBool::new(false));
+        let old_called_clone = Arc::clone(&old_called);
+        app.register_interaction(widget_id, bounds, "click", move |action| {
+            assert_eq!(action, "click");
+            old_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        app.register_widget_instance(widget_id, move |action, _ctx| {
+            assert_eq!(action, "click");
+            EventResult::Continue("click".to_string())
+        });
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        // 旧回调应被调用（Continue 后 fall through）
+        assert!(
+            old_called.load(Ordering::SeqCst),
+            "旧回调应被调用（Continue 后 fall through）"
+        );
+        assert_eq!(handler.app.event_count(), 1);
+    }
+
+    #[test]
+    fn event_result_prevented_stops_and_no_event_recorded() {
+        // EventResult::Prevented → 不调用旧回调，不记录事件
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let old_called = Arc::new(AtomicBool::new(false));
+        let old_called_clone = Arc::clone(&old_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {
+            old_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        app.register_widget_instance(widget_id, move |action, _ctx| {
+            assert_eq!(action, "click");
+            EventResult::Prevented
+        });
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        // 旧回调不应被调用
+        assert!(
+            !old_called.load(Ordering::SeqCst),
+            "旧回调不应被调用（Prevented）"
+        );
+        // 事件不应被记录
+        assert_eq!(handler.app.event_count(), 0);
+    }
+
+    #[test]
+    fn no_widget_instance_falls_back_to_old_callback() {
+        // 未注册 WidgetSpec 实例 → 直接走旧路径
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let old_called = Arc::new(AtomicBool::new(false));
+        let old_called_clone = Arc::clone(&old_called);
+        app.register_interaction(widget_id, bounds, "click", move |action| {
+            assert_eq!(action, "click");
+            old_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        // 不注册 WidgetSpec 实例
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        assert!(old_called.load(Ordering::SeqCst), "旧回调应被调用");
+        assert_eq!(handler.app.event_count(), 1);
+    }
+
+    #[test]
+    fn hit_miss_does_nothing() {
+        // 点击空白区域 → 无事发生
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 40.0);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let old_called = Arc::new(AtomicBool::new(false));
+        let old_called_clone = Arc::clone(&old_called);
+        app.register_interaction(widget_id, bounds, "click", move |_| {
+            old_called_clone.store(true, Ordering::SeqCst);
+        });
+        app.register_widget_instance(widget_id, |_, _| EventResult::Handled);
+
+        let mut handler = AppHandler::new(app);
+        // 点击位置在 widget 外部
+        handler.handle_click(Point::new(200.0, 200.0));
+
+        assert!(!old_called.load(Ordering::SeqCst));
+        assert_eq!(handler.app.event_count(), 0);
+    }
+
+    // ========================================================================
+    // RG04: .rgui App 集成测试
+    // ========================================================================
+
+    #[cfg(feature = "devtools")]
+    mod devtools_tests {
+        use super::*;
+
+        /// 测试用消息类型。
+        #[derive(Debug, Clone, PartialEq)]
+        enum TestMsg {}
+        impl AppMessage for TestMsg {
+            fn message_name(&self) -> &'static str {
+                match *self {}
+            }
+        }
+
+        #[test]
+        fn config_rgui_path_builder() {
+            let config = AppConfig::new().rgui_path("ui/app.rgui");
+            assert!(config.rgui_path.is_some());
+            assert_eq!(
+                config.rgui_path.unwrap(),
+                std::path::PathBuf::from("ui/app.rgui")
+            );
+        }
+
+        #[test]
+        fn config_rgui_path_default_is_none() {
+            let config = AppConfig::default();
+            assert!(config.rgui_path.is_none());
+        }
+
+        #[test]
+        fn load_rgui_errors_without_rgui_path() {
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            let result = app.load_rgui::<TestMsg>();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(err.to_string().contains("未设置 rgui_path"));
+        }
+
+        #[test]
+        fn load_rgui_with_nonexistent_file() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let non_existent = dir.path().join("no_such.rgui");
+            let config = AppConfig::new().rgui_path(&non_existent);
+            let mut app = App::new(config);
+            let result = app.load_rgui::<TestMsg>();
+            assert!(result.is_err());
+        }
+
+        #[test]
+        fn load_rgui_with_valid_rgui_file_sets_view_scene_builder() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rgui_path = dir.path().join("app.rgui");
+            std::fs::write(
+                &rgui_path,
+                r#"<Column spacing="8"><Label text="Hello"/></Column>"#,
+            )
+            .expect("写入 .rgui 文件失败");
+
+            let config = AppConfig::new().rgui_path(&rgui_path);
+            let mut app = App::new(config);
+            let result = app.load_rgui::<TestMsg>();
+            assert!(result.is_ok(), "load_rgui 应成功: {result:?}");
+
+            // view_scene_builder 应被设置
+            assert!(app.view_scene_builder.is_some());
+        }
+
+        #[test]
+        fn load_rgui_view_scene_builder_produces_scene() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rgui_path = dir.path().join("app.rgui");
+            std::fs::write(
+                &rgui_path,
+                r#"<Column spacing="8"><Label text="Hello"/></Column>"#,
+            )
+            .expect("写入 .rgui 文件失败");
+
+            let config = AppConfig::new().rgui_path(&rgui_path);
+            let mut app = App::new(config);
+            app.load_rgui::<TestMsg>().expect("load_rgui 应成功");
+
+            // 调用 view_scene_builder 应返回有效的 SceneGraph
+            let text_renderer = TextRenderer::new(rgui_render::TextureId(0));
+            let scene = app.view_scene_builder.as_mut().unwrap()(1, 800, 600, &text_renderer);
+            // 基本断言：场景图应非空（至少有一个图层）
+            assert!(!scene.is_empty(), "SceneGraph 应包含图层");
+        }
     }
 }

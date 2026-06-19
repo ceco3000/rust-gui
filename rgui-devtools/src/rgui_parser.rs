@@ -259,7 +259,7 @@ fn parse_element_with_children(
             Ok(Event::End(e)) => {
                 let name_ref = e.name();
                 let end_tag = String::from_utf8_lossy(name_ref.as_ref()).to_lowercase();
-                if end_tag.as_ref() != tag_name {
+                if end_tag != tag_name {
                     return Err(parse_error_msg(
                         reader,
                         format!("闭合标签不匹配：期望 `</{tag_name}>`，但找到 `</{end_tag}>`"),

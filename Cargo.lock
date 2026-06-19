@@ -2982,6 +2982,7 @@ dependencies = [
  "rgui-render",
  "rgui-state",
  "rgui-style",
+ "tempfile",
  "winit",
 ]
 
