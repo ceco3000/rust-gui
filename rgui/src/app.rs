@@ -291,7 +291,7 @@ impl App {
         );
         let mut layout_engine = {
             let mut view = current_view.clone();
-            rgui_render::compute_view_layout(&mut view, available)
+            rgui_render::compute_view_layout(&mut view, available, None)
         };
 
         let builder = move |frame_count: u64,
@@ -303,7 +303,8 @@ impl App {
                 Ok(Some(new_view)) => {
                     let available = Size::new(f64::from(width), f64::from(height));
                     let mut view = new_view.clone();
-                    let engine = rgui_render::compute_view_layout(&mut view, available);
+                    let engine =
+                        rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
                     layout_engine = engine;
                     current_view = new_view;
                 },

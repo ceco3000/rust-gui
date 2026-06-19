@@ -71,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         parse_rgui_file(rgui_path).map_err(|e| format!(".rgui 解析失败: {e}"))?;
 
     // 2. 计算布局 → 分配 WidgetIds + 布局结果
-    let layout = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+    let layout = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
 
     // 3. 创建 App 并注册交互区域（onclick → interaction）
     let config = AppConfig::new()
@@ -92,7 +92,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.set_view_scene_builder(
         move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
             let mut v = current_view.clone();
-            let l = compute_view_layout(&mut v, Size::new(f64::from(width), f64::from(height)));
+            let l = compute_view_layout(
+                &mut v,
+                Size::new(f64::from(width), f64::from(height)),
+                Some(tr),
+            );
             build_scene_from_view(&v, &l, &paint_fn, frame, Some(tr))
         },
     );

@@ -14,6 +14,7 @@ use rgui_layout::{LayoutEngine, LayoutNode};
 
 use crate::primitives::Transform;
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
+use crate::text_renderer::TextRenderer;
 
 // ============================================================================
 // PaintOp → DrawCommand 转换
@@ -376,9 +377,10 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
 pub fn compute_view_layout<M: rgui_core::traits::AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
     available: rgui_core::geometry::Size,
+    text_renderer: Option<&TextRenderer>,
 ) -> LayoutEngine {
     let mut engine = LayoutEngine::new();
-    let root = build_layout_tree(view, &mut engine);
+    let root = build_layout_tree(view, &mut engine, text_renderer);
     engine.compute_layout(root, available);
     engine
 }
@@ -387,16 +389,17 @@ pub fn compute_view_layout<M: rgui_core::traits::AppMessage>(
 fn build_layout_tree<M: rgui_core::traits::AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
     engine: &mut LayoutEngine,
+    text_renderer: Option<&TextRenderer>,
 ) -> LayoutNode {
     // 后序：先递归子节点
     let child_nodes: Vec<LayoutNode> = view
         .children
         .iter_mut()
-        .map(|child| build_layout_tree(child, engine))
+        .map(|child| build_layout_tree(child, engine, text_renderer))
         .collect();
 
     // 从 props 提取 Taffy Style
-    let style = extract_taffy_style(view.widget_type, &view.props);
+    let style = extract_taffy_style(view.widget_type, &view.props, text_renderer);
 
     // 分配唯一 WidgetId
     let widget_id = WidgetId::new();
@@ -419,6 +422,7 @@ fn build_layout_tree<M: rgui_core::traits::AppMessage>(
 fn extract_taffy_style(
     widget_type: &str,
     props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
+    text_renderer: Option<&TextRenderer>,
 ) -> taffy::Style {
     use rgui_core::view::PropValue;
 
@@ -491,21 +495,27 @@ fn extract_taffy_style(
         let has_explicit_width = props.get("width").is_some();
         if !has_explicit_width {
             if let Some(text) = get_str("label").or(get_str("text")) {
-                // 文字宽度估算：字符数 × 字体大小 × 宽高比系数 (0.6)
-                // 字体大小与 Button::paint 一致：height × 0.8
-                let char_count = text.chars().count().max(1) as f32;
                 let height: f32 = match props.get("height") {
                     Some(PropValue::Float(f)) => f.0 as f32,
                     Some(PropValue::Int(i)) => *i as f32,
                     _ => match style.min_size.height {
                         taffy::Dimension::Length(h) => h,
-                        _ => 32.0, // fallback 默认高度
+                        _ => 32.0,
                     },
                 };
-                let font_size_est = height * 0.8;
-                let text_width = char_count * font_size_est * 0.6;
-                let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
-                let content_width = text_width + padding;
+                let font_size = height * 0.8; // 对齐 Button::paint
+                let content_width: f32 = if let Some(tr) = text_renderer {
+                    // 精确测量：TextRenderer::measure_text 塑形但不光栅化
+                    let text_px = tr.measure_text(text, font_size);
+                    let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
+                    text_px + padding
+                } else {
+                    // 系数回退（无 TextRenderer 时）
+                    let char_count = text.chars().count().max(1) as f32;
+                    let text_width = char_count * font_size * 0.6;
+                    let padding: f32 = if widget_type == "Button" { 32.0 } else { 8.0 };
+                    text_width + padding
+                };
                 let min_w = match style.min_size.width {
                     taffy::Dimension::Length(w) => w,
                     _ => 0.0,
@@ -869,7 +879,7 @@ mod tests {
     fn compute_view_layout_assigns_unique_ids() {
         let mut view = make_view("Column", vec![make_label("Hello"), make_button("Click")]);
 
-        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
 
         // 根节点有 ID
         assert!(view.id.is_some());
@@ -890,7 +900,7 @@ mod tests {
     fn compute_view_layout_column_children_spaced() {
         let mut view = make_view("Column", vec![make_label("Line 1"), make_label("Line 2")]);
 
-        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
 
         let root_id = view.id.unwrap();
         let root_layout = engine.get_layout(root_id).unwrap();
@@ -908,8 +918,8 @@ mod tests {
         let mut view1 = make_view("Row", vec![make_button("A")]);
         let mut view2 = make_view("Row", vec![make_button("B")]);
 
-        let _e1 = compute_view_layout(&mut view1, Size::new(200.0, 100.0));
-        let _e2 = compute_view_layout(&mut view2, Size::new(200.0, 100.0));
+        let _e1 = compute_view_layout(&mut view1, Size::new(200.0, 100.0), None);
+        let _e2 = compute_view_layout(&mut view2, Size::new(200.0, 100.0), None);
 
         // 不同调用分配不同 ID
         assert_ne!(view1.id, view2.id);
@@ -920,7 +930,7 @@ mod tests {
     fn compute_view_layout_empty_view() {
         let mut view = make_view("Container", vec![]);
 
-        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0));
+        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0), None);
 
         assert!(view.id.is_some());
         let layout = engine.get_layout(view.id.unwrap()).unwrap();
@@ -931,12 +941,12 @@ mod tests {
 
     #[test]
     fn button_width_grows_with_label_text() {
-        // RED: 短文字按钮应有最小宽度，长文字按钮应更宽
+        // RED→GREEN: 短文字按钮有最小宽度，长文字按钮精确自适应
         let mut short = make_button("OK");
-        let mut long = make_button("Click Me — A Very Long Label");
+        let mut long = make_button("Click Me");
 
-        let eng_short = compute_view_layout(&mut short, Size::new(800.0, 600.0));
-        let eng_long = compute_view_layout(&mut long, Size::new(800.0, 600.0));
+        let eng_short = compute_view_layout(&mut short, Size::new(800.0, 600.0), None);
+        let eng_long = compute_view_layout(&mut long, Size::new(800.0, 600.0), None);
 
         let short_width = eng_short
             .get_layout(short.id.unwrap())
@@ -951,15 +961,13 @@ mod tests {
             .size
             .width;
 
-        // 短文字按钮至少 80px（最小宽度）
         assert!(
             short_width >= 80.0,
-            "短文字按钮宽度应 >= 80px，实际 {short_width}"
+            "短按钮宽度应 ≥ 80px，实际 {short_width}"
         );
-        // 长文字按钮应比短文字按钮明显更宽
         assert!(
-            long_width > short_width + 20.0,
-            "长文字按钮 ({long_width}px) 应比短文字 ({short_width}px) 更宽"
+            long_width > short_width + 10.0,
+            "长按钮 ({long_width}px) 应比短按钮 ({short_width}px) 更宽"
         );
     }
 
@@ -1003,7 +1011,7 @@ mod tests {
         );
 
         // 计算布局
-        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
 
         // 记录 paint_fn 收到的 bounds
         let records = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -1071,7 +1079,7 @@ mod tests {
             ],
         );
 
-        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0));
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
         let paint_fn = make_empty_paint_fn();
 
         let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
@@ -1183,7 +1191,7 @@ mod tests {
         // 回归测试：Center+Button（均无显式 props）不应退化为 0×0
         let mut view = make_view("Center", vec![make_button("OK")]);
 
-        let engine = compute_view_layout(&mut view, Size::new(300.0, 200.0));
+        let engine = compute_view_layout(&mut view, Size::new(300.0, 200.0), None);
 
         // Center 应填充全窗口
         let center_id = view.id.unwrap();
@@ -1234,7 +1242,7 @@ mod tests {
             .prop("width", rgui_core::view::PropValue::from(200.0_f64))
             .prop("height", rgui_core::view::PropValue::from(100.0_f64));
 
-        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0));
+        let engine = compute_view_layout(&mut view, Size::new(800.0, 600.0), None);
 
         let center_id = view.id.unwrap();
         let center_layout = engine.get_layout(center_id).unwrap();

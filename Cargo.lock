@@ -708,16 +708,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "counter"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
- "serde",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,16 +782,6 @@ name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
-
-[[package]]
-name = "crud"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
- "serde",
-]
 
 [[package]]
 name = "crunchy"
@@ -2342,59 +2322,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "one-button"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-checkbox"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-datagrid"
-version = "0.1.0"
-dependencies = [
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-label"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-progress-bar"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-radio-button"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
 name = "one-rgui-button"
 version = "0.1.0"
 dependencies = [
@@ -2405,33 +2332,6 @@ dependencies = [
  "rgui-render",
  "rgui-script",
  "serde",
-]
-
-[[package]]
-name = "one-slider"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-switch"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
-]
-
-[[package]]
-name = "one-textfield"
-version = "0.1.0"
-dependencies = [
- "ordered-float 4.6.0",
- "rgui",
- "rgui-core",
 ]
 
 [[package]]
