@@ -754,6 +754,17 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             ..Style::default()
         },
+        "WaInput" => Style {
+            size: taffy::geometry::Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Auto,
+            },
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(120.0),
+                height: Dimension::Length(36.0),
+            },
+            ..Style::default()
+        },
         "WaButton" => Style {
             min_size: wa_button_min_size,
             ..Style::default()

@@ -66,6 +66,53 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaDivider, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaInput" => {
+                    use rgui_components::wa_input::{WaInput, WaInputState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaInputState::new(label);
+                    if let Some(sz) = get_str(&view.props, "size") {
+                        state.size = sz.to_string();
+                    }
+                    if let Some(a) = get_str(&view.props, "appearance") {
+                        state.appearance = a.to_string();
+                    }
+                    if let Some(t) = get_str(&view.props, "type") {
+                        state.r#type = t.to_string();
+                    }
+                    if let Some(v) = get_str(&view.props, "value") {
+                        state.value = v.to_string();
+                    }
+                    if let Some(p) = get_str(&view.props, "placeholder") {
+                        state.placeholder = p.to_string();
+                    }
+                    if let Some(h) = get_str(&view.props, "hint") {
+                        state.hint = h.to_string();
+                    }
+                    if let Some(PropValue::Bool(d)) = view.props.get("disabled") {
+                        state.disabled = *d;
+                    }
+                    if let Some(PropValue::Bool(r)) = view.props.get("readonly") {
+                        state.readonly = *r;
+                    }
+                    if let Some(PropValue::Bool(rq)) = view.props.get("required") {
+                        state.required = *rq;
+                    }
+                    if let Some(PropValue::Bool(b)) = view.props.get("pill") {
+                        state.pill = *b;
+                    }
+                    if let Some(PropValue::Bool(b)) = view.props.get("with-clear") {
+                        state.with_clear = *b;
+                    }
+                    if let Some(PropValue::Bool(b)) = view.props.get("password-toggle") {
+                        state.password_toggle = *b;
+                    }
+                    if let Some(PropValue::Bool(b)) = view.props.get("password-visible") {
+                        state.password_visible = *b;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaInput, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaCard" => {
                     use rgui_components::wa_card::{WaCard, WaCardState};
                     let mut state = WaCardState::new();

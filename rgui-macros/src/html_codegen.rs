@@ -29,6 +29,7 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     "WaDetails",
     "WaDivider",
     "WaIcon",
+    "WaInput",
     "WaSpinner",
     // 布局容器（框架内置，非组件 crate）
     "Container",
