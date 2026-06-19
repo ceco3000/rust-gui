@@ -502,7 +502,7 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(widget_type, "WaButton" | "Label") {
+    if matches!(widget_type, "WaButton" | "WaBreadcrumbItem" | "Label") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
@@ -512,7 +512,12 @@ fn extract_taffy_style(
                 let em_height: f32 = 1.196;
 
                 // WaButton 字体大小由 paint() 统一控制: h × 0.44
-                let paint_font_ratio: f32 = 0.44;
+                // WaBreadcrumbItem 字体固定 14.0，ratio = 14.0 / min_h(24.0) ≈ 0.583
+                let paint_font_ratio: f32 = if widget_type == "WaBreadcrumbItem" {
+                    0.583
+                } else {
+                    0.44
+                };
 
                 // ── 高度 ──
                 let final_height: f32 = if has_explicit_height {
@@ -524,7 +529,13 @@ fn extract_taffy_style(
                     };
                     let font_size_from_min = min_h * paint_font_ratio;
                     let text_height_px = font_size_from_min * em_height;
-                    let pad_v: f32 = if widget_type == "WaButton" { 16.0 } else { 4.0 };
+                    let pad_v: f32 = if widget_type == "WaButton" {
+                        16.0
+                    } else if widget_type == "WaBreadcrumbItem" {
+                        8.0
+                    } else {
+                        4.0
+                    };
                     let content_h = text_height_px + pad_v;
                     let h = content_h.max(min_h);
                     style.size.height = taffy::Dimension::Length(h);
@@ -536,11 +547,23 @@ fn extract_taffy_style(
                     let font_size = final_height * paint_font_ratio;
                     let content_width: f32 = if let Some(tr) = text_renderer {
                         let text_px = tr.measure_text(text, font_size);
-                        let pad_w: f32 = if widget_type == "WaButton" { 32.0 } else { 8.0 };
+                        let pad_w: f32 = if widget_type == "WaButton" {
+                            32.0
+                        } else if widget_type == "WaBreadcrumbItem" {
+                            24.0
+                        } else {
+                            8.0
+                        };
                         text_px + pad_w
                     } else {
                         let char_count = text.chars().count().max(1) as f32;
-                        let pad_w: f32 = if widget_type == "WaButton" { 32.0 } else { 8.0 };
+                        let pad_w: f32 = if widget_type == "WaButton" {
+                            32.0
+                        } else if widget_type == "WaBreadcrumbItem" {
+                            24.0
+                        } else {
+                            8.0
+                        };
                         char_count * font_size * 0.6 + pad_w
                     };
                     let min_w = match style.min_size.width {
@@ -652,6 +675,22 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(20.0),
                 height: Dimension::Length(16.0),
+            },
+            ..Style::default()
+        },
+        // WaBreadcrumb：flex 行容器，允许换行，宽度 100% 高度自适应
+        "WaBreadcrumb" => Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Row,
+            flex_wrap: FlexWrap::Wrap,
+            size: full_width_auto_height,
+            ..Style::default()
+        },
+        // WaBreadcrumbItem：最小尺寸确保在 flex 容器中可见
+        "WaBreadcrumbItem" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(44.0),
+                height: Dimension::Length(24.0),
             },
             ..Style::default()
         },

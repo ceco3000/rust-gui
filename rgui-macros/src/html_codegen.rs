@@ -16,6 +16,8 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
     "WaAvatar",
     "WaBadge",
+    "WaBreadcrumb",
+    "WaBreadcrumbItem",
     "WaButton",
     "WaCard",
     "WaDivider",

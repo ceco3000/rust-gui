@@ -98,6 +98,32 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaAvatar, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaBreadcrumb" => {
+                    use rgui_components::wa_breadcrumb::{WaBreadcrumb, WaBreadcrumbState};
+                    let mut state = WaBreadcrumbState::new();
+                    if let Some(label) = get_str(&view.props, "label") {
+                        state.label = label.to_string();
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaBreadcrumb, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+                "WaBreadcrumbItem" => {
+                    use rgui_components::wa_breadcrumb_item::{WaBreadcrumbItem, WaBreadcrumbItemState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let mut state = WaBreadcrumbItemState::new(label);
+                    if let Some(href) = get_str(&view.props, "href") {
+                        state.href = href.to_string();
+                    }
+                    if let Some(sep) = view.props.get("separator") {
+                        if let PropValue::Bool(b) = sep {
+                            state.separator = *b;
+                        }
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaBreadcrumbItem, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaSpinner" => {
                     use rgui_components::wa_spinner::{WaSpinner, WaSpinnerState};
                     let state = WaSpinnerState::new();
