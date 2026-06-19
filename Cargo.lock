@@ -2980,6 +2980,7 @@ dependencies = [
  "rgui-macros",
  "rgui-platform",
  "rgui-render",
+ "rgui-script",
  "rgui-state",
  "rgui-style",
  "tempfile",
