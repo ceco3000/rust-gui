@@ -80,12 +80,8 @@ impl WidgetSpec for WaCarouselItem {
     }
 
     fn accessibility(&self, _state: &Self::State, _: &AccessContext) -> AccessibilityNode {
-        AccessibilityNode::new(
-            WidgetId::from_u64(0),
-            AccessibilityRole::Group,
-            Rect::ZERO,
-        )
-        .label("carousel item")
+        AccessibilityNode::new(WidgetId::from_u64(0), AccessibilityRole::Group, Rect::ZERO)
+            .label("carousel item")
     }
 }
 
@@ -159,19 +155,13 @@ mod tests {
 
     #[test]
     fn derive_state() {
-        assert_eq!(
-            WaCarouselItemState::schema_name(),
-            "WaCarouselItemState"
-        );
+        assert_eq!(WaCarouselItemState::schema_name(), "WaCarouselItemState");
     }
 
     #[test]
     fn persist_state_as_any() {
         let state = WaCarouselItemState::new();
         let any = state.as_any();
-        assert_eq!(
-            any.type_id(),
-            std::any::TypeId::of::<WaCarouselItemState>()
-        );
+        assert_eq!(any.type_id(), std::any::TypeId::of::<WaCarouselItemState>());
     }
 }

@@ -84,7 +84,7 @@ impl WidgetSpec for WaTree {
         match msg {
             WaTreeMessage::SelectionChange => {
                 // Phase 0: no coordination logic between items yet
-            }
+            },
         }
     }
 
@@ -161,7 +161,11 @@ mod tests {
     #[test]
     fn update_selection_change_noop() {
         let mut s = WaTreeState::new();
-        WaTree.update(WaTreeMessage::SelectionChange, &mut s, &mut UpdateContext::default());
+        WaTree.update(
+            WaTreeMessage::SelectionChange,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         // 不应 panic，状态不应改变
         assert_eq!(s.selection, "single");
     }
@@ -208,7 +212,10 @@ mod tests {
 
     #[test]
     fn derive_msg() {
-        assert_eq!(WaTreeMessage::SelectionChange.message_name(), "selection_change");
+        assert_eq!(
+            WaTreeMessage::SelectionChange.message_name(),
+            "selection_change"
+        );
     }
 
     #[test]

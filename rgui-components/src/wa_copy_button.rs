@@ -93,12 +93,21 @@ impl WidgetSpec for WaCopyButton {
             .prop("value", PropValue::str(state.value.as_str()))
             .prop("disabled", PropValue::bool(state.disabled))
             .prop("copy_label", PropValue::str(state.copy_label.as_str()))
-            .prop("success_label", PropValue::str(state.success_label.as_str()))
+            .prop(
+                "success_label",
+                PropValue::str(state.success_label.as_str()),
+            )
             .prop("error_label", PropValue::str(state.error_label.as_str()))
-            .prop("feedback_duration", PropValue::int(state.feedback_duration as i64))
+            .prop(
+                "feedback_duration",
+                PropValue::int(state.feedback_duration as i64),
+            )
             .prop("is_copying", PropValue::bool(state.is_copying))
             .prop("status", PropValue::str(state.status.as_str()))
-            .prop("live_announcement", PropValue::str(state.live_announcement.as_str()))
+            .prop(
+                "live_announcement",
+                PropValue::str(state.live_announcement.as_str()),
+            )
     }
 
     fn update(&self, msg: Self::Message, state: &mut Self::State, _: &mut UpdateContext) {
@@ -120,7 +129,7 @@ impl WidgetSpec for WaCopyButton {
                 } else {
                     state.success_label.clone()
                 };
-            }
+            },
             WaCopyButtonMessage::Copy => {
                 state.status = "success".into();
                 state.live_announcement = if state.success_label.is_empty() {
@@ -128,7 +137,7 @@ impl WidgetSpec for WaCopyButton {
                 } else {
                     state.success_label.clone()
                 };
-            }
+            },
             WaCopyButtonMessage::Error => {
                 state.status = "error".into();
                 state.is_copying = false;
@@ -137,7 +146,7 @@ impl WidgetSpec for WaCopyButton {
                 } else {
                     state.error_label.clone()
                 };
-            }
+            },
         }
     }
 
@@ -203,21 +212,21 @@ impl WidgetSpec for WaCopyButton {
                 } else {
                     state.success_label.as_str()
                 }
-            }
+            },
             "error" => {
                 if state.error_label.is_empty() {
                     "Error"
                 } else {
                     state.error_label.as_str()
                 }
-            }
+            },
             _ => {
                 if state.copy_label.is_empty() {
                     "Copy"
                 } else {
                     state.copy_label.as_str()
                 }
-            }
+            },
         };
         AccessibilityNode::none().label(label)
     }

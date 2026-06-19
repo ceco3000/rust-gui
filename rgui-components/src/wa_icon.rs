@@ -151,12 +151,7 @@ impl WidgetSpec for WaIcon {
         let x = bounds.origin.x + (bounds.size.width - text_width as f64) / 2.0;
         let y = bounds.origin.y + (bounds.size.height - font_size as f64) / 2.0;
 
-        let text_bounds = Rect::new(
-            x,
-            y,
-            text_width as f64,
-            font_size as f64,
-        );
+        let text_bounds = Rect::new(x, y, text_width as f64, font_size as f64);
         ctx.draw_text(ch, text_bounds, color, font_size);
     }
 
@@ -246,8 +241,14 @@ mod tests {
             BoxConstraints::new(0.0, 800.0, 0.0, 600.0),
             &MeasureContext::default(),
         );
-        assert!((size.width - 12.0).abs() < 0.1, "size s 应为 12px，实际 {size:?}");
-        assert!((size.height - 12.0).abs() < 0.1, "size s 高度应为 12px，实际 {size:?}");
+        assert!(
+            (size.width - 12.0).abs() < 0.1,
+            "size s 应为 12px，实际 {size:?}"
+        );
+        assert!(
+            (size.height - 12.0).abs() < 0.1,
+            "size s 高度应为 12px，实际 {size:?}"
+        );
     }
 
     #[test]
@@ -258,8 +259,14 @@ mod tests {
             BoxConstraints::new(0.0, 800.0, 0.0, 600.0),
             &MeasureContext::default(),
         );
-        assert!((size.width - 16.0).abs() < 0.1, "size m 应为 16px，实际 {size:?}");
-        assert!((size.height - 16.0).abs() < 0.1, "size m 高度应为 16px，实际 {size:?}");
+        assert!(
+            (size.width - 16.0).abs() < 0.1,
+            "size m 应为 16px，实际 {size:?}"
+        );
+        assert!(
+            (size.height - 16.0).abs() < 0.1,
+            "size m 高度应为 16px，实际 {size:?}"
+        );
     }
 
     #[test]
@@ -274,8 +281,14 @@ mod tests {
             BoxConstraints::new(0.0, 800.0, 0.0, 600.0),
             &MeasureContext::default(),
         );
-        assert!((size.width - 24.0).abs() < 0.1, "size l 应为 24px，实际 {size:?}");
-        assert!((size.height - 24.0).abs() < 0.1, "size l 高度应为 24px，实际 {size:?}");
+        assert!(
+            (size.width - 24.0).abs() < 0.1,
+            "size l 应为 24px，实际 {size:?}"
+        );
+        assert!(
+            (size.height - 24.0).abs() < 0.1,
+            "size l 高度应为 24px，实际 {size:?}"
+        );
     }
 
     #[test]

@@ -88,7 +88,10 @@ impl WidgetSpec for WaDetails {
             .prop("name", PropValue::str(state.name.as_str()))
             .prop("disabled", PropValue::bool(state.disabled))
             .prop("appearance", PropValue::str(state.appearance.as_str()))
-            .prop("icon_placement", PropValue::str(state.icon_placement.as_str()))
+            .prop(
+                "icon_placement",
+                PropValue::str(state.icon_placement.as_str()),
+            )
     }
 
     fn update(&self, msg: Self::Message, state: &mut Self::State, _: &mut UpdateContext) {
@@ -97,20 +100,20 @@ impl WidgetSpec for WaDetails {
                 if !state.disabled {
                     state.open = !state.open;
                 }
-            }
+            },
             WaDetailsMessage::Show => {
                 if !state.disabled {
                     state.open = true;
                 }
-            }
+            },
             WaDetailsMessage::Hide => {
                 if !state.disabled {
                     state.open = false;
                 }
-            }
+            },
             WaDetailsMessage::AfterShow | WaDetailsMessage::AfterHide => {
                 // 阶段 0：无动画，直接忽略
-            }
+            },
         }
     }
 

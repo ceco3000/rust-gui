@@ -88,7 +88,7 @@ impl WidgetSpec for WaAvatar {
         match msg {
             WaAvatarMessage::Error => {
                 state.has_error = true;
-            }
+            },
         }
     }
 
@@ -114,7 +114,7 @@ impl WidgetSpec for WaAvatar {
             _ => {
                 let min_dim = bounds.size.width.min(bounds.size.height);
                 (min_dim / 2.0) as f32
-            }
+            },
         };
 
         // 填充背景
@@ -241,8 +241,14 @@ mod tests {
             BoxConstraints::new(0.0, 32.0, 0.0, 32.0),
             &MeasureContext::default(),
         );
-        assert!(size.width <= 32.0, "宽度应受 max 约束 ≤ 32px，实际 {size:?}");
-        assert!(size.height <= 32.0, "高度应受 max 约束 ≤ 32px，实际 {size:?}");
+        assert!(
+            size.width <= 32.0,
+            "宽度应受 max 约束 ≤ 32px，实际 {size:?}"
+        );
+        assert!(
+            size.height <= 32.0,
+            "高度应受 max 约束 ≤ 32px，实际 {size:?}"
+        );
     }
 
     #[test]
@@ -262,7 +268,11 @@ mod tests {
         let mut ctx = PaintContext::new(bounds);
         WaAvatar.paint(&state, bounds, &mut ctx);
         // 不 panic 即通过；至少产生背景填充 + 文字绘制
-        assert!(ctx.op_count() >= 2, "有 initials 时应至少有背景 + 文字，实际 {}", ctx.op_count());
+        assert!(
+            ctx.op_count() >= 2,
+            "有 initials 时应至少有背景 + 文字，实际 {}",
+            ctx.op_count()
+        );
     }
 
     #[test]

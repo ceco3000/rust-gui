@@ -128,7 +128,14 @@ impl WidgetSpec for WaTreeItem {
 
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
         WidgetView::new("rgui_components::WaTreeItem")
-            .prop("label", PropValue::str(if state.label.is_empty() { "" } else { state.label.as_str() }))
+            .prop(
+                "label",
+                PropValue::str(if state.label.is_empty() {
+                    ""
+                } else {
+                    state.label.as_str()
+                }),
+            )
             .prop("expanded", PropValue::Bool(state.expanded))
             .prop("selected", PropValue::Bool(state.selected))
             .prop("disabled", PropValue::Bool(state.disabled))
@@ -153,25 +160,25 @@ impl WidgetSpec for WaTreeItem {
                     // 叶子节点且可选择：切换选中
                     state.selected = !state.selected;
                 }
-            }
+            },
             WaTreeItemMessage::Expand => {
                 state.expanded = true;
-            }
+            },
             WaTreeItemMessage::AfterExpand => {
                 // Phase 0: no animation, noop
-            }
+            },
             WaTreeItemMessage::Collapse => {
                 state.expanded = false;
-            }
+            },
             WaTreeItemMessage::AfterCollapse => {
                 // Phase 0: no animation, noop
-            }
+            },
             WaTreeItemMessage::LazyChange => {
                 // Phase 0: lazy loading not implemented
-            }
+            },
             WaTreeItemMessage::LazyLoad => {
                 // Phase 0: lazy loading not implemented
-            }
+            },
         }
     }
 
@@ -212,7 +219,11 @@ impl WidgetSpec for WaTreeItem {
         // —— 展开/折叠按钮 ——
         let show_expand = !state.loading && (!state.is_leaf || state.lazy);
         if show_expand {
-            let chevron = if state.expanded { "\u{25BC}" } else { "\u{25B6}" }; // ▼ or ▶
+            let chevron = if state.expanded {
+                "\u{25BC}"
+            } else {
+                "\u{25B6}"
+            }; // ▼ or ▶
             let chevron_color = if state.disabled {
                 Color::new(0.7, 0.7, 0.7, 1.0)
             } else {
@@ -271,7 +282,11 @@ impl WidgetSpec for WaTreeItem {
             AccessibilityRole::Custom("treeitem"),
             Rect::ZERO,
         )
-        .label(if state.label.is_empty() { "tree item" } else { state.label.as_str() })
+        .label(if state.label.is_empty() {
+            "tree item"
+        } else {
+            state.label.as_str()
+        })
     }
 }
 
@@ -356,9 +371,17 @@ mod tests {
             ..WaTreeItemState::new()
         };
         assert!(!s.expanded);
-        WaTreeItem.update(WaTreeItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.expanded);
-        WaTreeItem.update(WaTreeItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded);
     }
 
@@ -369,7 +392,11 @@ mod tests {
             lazy: true,
             ..WaTreeItemState::new()
         };
-        WaTreeItem.update(WaTreeItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.expanded);
     }
 
@@ -381,7 +408,11 @@ mod tests {
             ..WaTreeItemState::new()
         };
         assert!(!s.selected);
-        WaTreeItem.update(WaTreeItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.selected);
     }
 
@@ -392,14 +423,22 @@ mod tests {
             is_leaf: false,
             ..WaTreeItemState::new()
         };
-        WaTreeItem.update(WaTreeItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded, "disabled item should not toggle");
     }
 
     #[test]
     fn update_expand_sets_true() {
         let mut s = WaTreeItemState::new();
-        WaTreeItem.update(WaTreeItemMessage::Expand, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Expand,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.expanded);
     }
 
@@ -409,14 +448,22 @@ mod tests {
             expanded: true,
             ..WaTreeItemState::new()
         };
-        WaTreeItem.update(WaTreeItemMessage::Collapse, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::Collapse,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded);
     }
 
     #[test]
     fn update_after_expand_noop() {
         let mut s = WaTreeItemState::new();
-        WaTreeItem.update(WaTreeItemMessage::AfterExpand, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::AfterExpand,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         // no state change expected
         assert!(!s.expanded);
     }
@@ -424,15 +471,27 @@ mod tests {
     #[test]
     fn update_after_collapse_noop() {
         let mut s = WaTreeItemState::new();
-        WaTreeItem.update(WaTreeItemMessage::AfterCollapse, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::AfterCollapse,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         // no state change expected
     }
 
     #[test]
     fn update_lazy_events_noop() {
         let mut s = WaTreeItemState::new();
-        WaTreeItem.update(WaTreeItemMessage::LazyChange, &mut s, &mut UpdateContext::default());
-        WaTreeItem.update(WaTreeItemMessage::LazyLoad, &mut s, &mut UpdateContext::default());
+        WaTreeItem.update(
+            WaTreeItemMessage::LazyChange,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
+        WaTreeItem.update(
+            WaTreeItemMessage::LazyLoad,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         // no panic expected
     }
 
@@ -486,7 +545,10 @@ mod tests {
         let mut ctx = PaintContext::new(bounds);
         WaTreeItem.paint(&s, bounds, &mut ctx);
         // selected: bg + indicator + label >= 3 ops
-        assert!(ctx.op_count() >= 2, "selected item should have bg + indicator + label");
+        assert!(
+            ctx.op_count() >= 2,
+            "selected item should have bg + indicator + label"
+        );
     }
 
     #[test]
@@ -538,7 +600,10 @@ mod tests {
         let mut ctx = PaintContext::new(bounds);
         WaTreeItem.paint(&s, bounds, &mut ctx);
         // selectable adds unchecked checkbox character
-        assert!(ctx.op_count() > 1, "selectable should have checkbox + label");
+        assert!(
+            ctx.op_count() > 1,
+            "selectable should have checkbox + label"
+        );
     }
 
     #[test]

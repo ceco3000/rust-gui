@@ -86,23 +86,26 @@ impl WidgetSpec for WaTabGroup {
             .prop("active", PropValue::str(state.active.as_str()))
             .prop("placement", PropValue::str(state.placement.as_str()))
             .prop("activation", PropValue::str(state.activation.as_str()))
-            .prop("without-scroll-controls", PropValue::Bool(state.without_scroll_controls))
+            .prop(
+                "without-scroll-controls",
+                PropValue::Bool(state.without_scroll_controls),
+            )
     }
 
     fn update(&self, msg: Self::Message, _state: &mut Self::State, _: &mut UpdateContext) {
         match msg {
             WaTabGroupMessage::TabShow => {
                 // Phase 0：静态渲染，不做动态切换
-            }
+            },
             WaTabGroupMessage::TabHide => {
                 // Phase 0：静态渲染，不做动态切换
-            }
+            },
             WaTabGroupMessage::ScrollToStart => {
                 // Phase 0：跳过滚动
-            }
+            },
             WaTabGroupMessage::ScrollToEnd => {
                 // Phase 0：跳过滚动
-            }
+            },
         }
     }
 

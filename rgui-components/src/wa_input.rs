@@ -163,16 +163,16 @@ impl WidgetSpec for WaInput {
             WaInputMessage::Change => {
                 // 值提交——由 IME/框架事件系统处理后调用，这里只标记状态更新
                 // 实际值由框架通过 props 传递并写入 state
-            }
+            },
             WaInputMessage::Input => {
                 // 输入中——由 IME 驱动，state.value 由框架更新
-            }
+            },
             WaInputMessage::Clear => {
                 if !state.disabled && !state.readonly {
                     state.value = String::new();
                 }
-            }
-            WaInputMessage::Blur | WaInputMessage::Focus | WaInputMessage::Invalid => {}
+            },
+            WaInputMessage::Blur | WaInputMessage::Focus | WaInputMessage::Invalid => {},
         }
     }
 
@@ -180,10 +180,19 @@ impl WidgetSpec for WaInput {
         let h = input_height(&state.size);
         let font_size = input_font_size(&state.size);
         // 宽度：根据文本内容估算
-        let char_count = state.value.chars().count().max(state.placeholder.chars().count()).max(10) as f64;
+        let char_count = state
+            .value
+            .chars()
+            .count()
+            .max(state.placeholder.chars().count())
+            .max(10) as f64;
         let text_width = char_count * font_size * 0.6 + 24.0; // 24px padding
         // 如果有标签，加上标签高度
-        let label_height = if state.label.is_empty() { 0.0 } else { font_size * 1.4 };
+        let label_height = if state.label.is_empty() {
+            0.0
+        } else {
+            font_size * 1.4
+        };
         let total_h = h + label_height;
 
         Size::new(
@@ -198,7 +207,11 @@ impl WidgetSpec for WaInput {
         let border_radius = input_border_radius(&state.size, state.pill);
 
         // 标签绘制偏移
-        let label_offset_y = if state.label.is_empty() { 0.0 } else { font_size * 1.4 };
+        let label_offset_y = if state.label.is_empty() {
+            0.0
+        } else {
+            font_size * 1.4
+        };
         let input_y = bounds.origin.y + label_offset_y;
         let input_rect = Rect::new(bounds.origin.x, input_y, bounds.size.width, h);
 
@@ -221,8 +234,14 @@ impl WidgetSpec for WaInput {
 
         // ── 输入框背景 ──
         let (bg, border_color) = match state.appearance.as_str() {
-            "filled" => (Color::new(0.95, 0.95, 0.95, 1.0), Color::new(0.85, 0.85, 0.85, 1.0)),
-            "filled-outlined" => (Color::new(0.95, 0.95, 0.95, 1.0), Color::new(0.6, 0.6, 0.6, 1.0)),
+            "filled" => (
+                Color::new(0.95, 0.95, 0.95, 1.0),
+                Color::new(0.85, 0.85, 0.85, 1.0),
+            ),
+            "filled-outlined" => (
+                Color::new(0.95, 0.95, 0.95, 1.0),
+                Color::new(0.6, 0.6, 0.6, 1.0),
+            ),
             _ => (Color::WHITE, Color::new(0.6, 0.6, 0.6, 1.0)), // outlined (默认)
         };
 
@@ -269,11 +288,12 @@ impl WidgetSpec for WaInput {
         };
 
         // 截断显示文本：密码类型时显示星号
-        let display_str = if state.r#type == "password" && !state.password_visible && !state.value.is_empty() {
-            "●".repeat(state.value.chars().count())
-        } else {
-            display_text.clone()
-        };
+        let display_str =
+            if state.r#type == "password" && !state.password_visible && !state.value.is_empty() {
+                "●".repeat(state.value.chars().count())
+            } else {
+                display_text.clone()
+            };
 
         if !display_str.is_empty() {
             let text_padding: f64 = 8.0;
@@ -310,8 +330,17 @@ impl WidgetSpec for WaInput {
             let toggle_y = input_rect.origin.y + (h - toggle_size) / 2.0;
             let toggle_rect = Rect::new(toggle_x, toggle_y, toggle_size, toggle_size);
             let toggle_color = Color::new(0.5, 0.5, 0.5, 1.0);
-            let toggle_icon = if state.password_visible { "🙈" } else { "👁" };
-            ctx.draw_text(toggle_icon, toggle_rect, toggle_color, (toggle_size * 0.8) as f32);
+            let toggle_icon = if state.password_visible {
+                "🙈"
+            } else {
+                "👁"
+            };
+            ctx.draw_text(
+                toggle_icon,
+                toggle_rect,
+                toggle_color,
+                (toggle_size * 0.8) as f32,
+            );
         }
 
         // ── 提示文本 ──
@@ -319,12 +348,7 @@ impl WidgetSpec for WaInput {
             let hint_y = input_rect.origin.y + input_rect.size.height + 4.0;
             let hint_font_size = (font_size * 0.75) as f32;
             let hint_color = Color::new(0.5, 0.5, 0.5, 1.0);
-            let hint_rect = Rect::new(
-                bounds.origin.x,
-                hint_y,
-                bounds.size.width,
-                font_size * 0.75,
-            );
+            let hint_rect = Rect::new(bounds.origin.x, hint_y, bounds.size.width, font_size * 0.75);
             ctx.draw_text(&state.hint, hint_rect, hint_color, hint_font_size);
         }
     }
@@ -523,7 +547,11 @@ mod tests {
         let bounds = Rect::new(0.0, 0.0, 320.0, 60.0);
         let mut ctx = PaintContext::new(bounds);
         WaInput.paint(&state, bounds, &mut ctx);
-        assert!(ctx.op_count() >= 3, "应至少绘制标签+边框+文本，实际 {}", ctx.op_count());
+        assert!(
+            ctx.op_count() >= 3,
+            "应至少绘制标签+边框+文本，实际 {}",
+            ctx.op_count()
+        );
     }
 
     #[test]

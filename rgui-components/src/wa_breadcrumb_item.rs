@@ -218,7 +218,10 @@ mod tests {
             .iter()
             .filter(|op| matches!(op, rgui_core::context::PaintOp::DrawText { .. }))
             .count();
-        assert!(text_count >= 2, "应绘制标签文本 + 分隔符，实际 {text_count}");
+        assert!(
+            text_count >= 2,
+            "应绘制标签文本 + 分隔符，实际 {text_count}"
+        );
     }
 
     #[test]
@@ -238,10 +241,7 @@ mod tests {
 
     #[test]
     fn derive_msg() {
-        assert_eq!(
-            WaBreadcrumbItemMessage::NoOp.message_name(),
-            "no_op"
-        );
+        assert_eq!(WaBreadcrumbItemMessage::NoOp.message_name(), "no_op");
     }
 
     #[test]

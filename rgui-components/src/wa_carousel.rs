@@ -98,8 +98,14 @@ impl WidgetSpec for WaCarousel {
             .prop("orientation", PropValue::str(state.orientation.as_str()))
             .prop("navigation", PropValue::Bool(state.navigation))
             .prop("pagination", PropValue::Bool(state.pagination))
-            .prop("slides-per-page", PropValue::Int(state.slides_per_page as i64))
-            .prop("slides-per-move", PropValue::Int(state.slides_per_move as i64))
+            .prop(
+                "slides-per-page",
+                PropValue::Int(state.slides_per_page as i64),
+            )
+            .prop(
+                "slides-per-move",
+                PropValue::Int(state.slides_per_move as i64),
+            )
             .prop("slides", PropValue::Int(state.slides as i64))
             .prop("current-slide", PropValue::Int(state.current_slide as i64))
             .prop("active-slide", PropValue::Int(state.active_slide as i64))
@@ -112,7 +118,7 @@ impl WidgetSpec for WaCarousel {
         match msg {
             WaCarouselMessage::SlideChange => {
                 // Phase 0：不做滚动切换
-            }
+            },
             WaCarouselMessage::NoOp => {},
         }
     }
@@ -154,18 +160,29 @@ impl WidgetSpec for WaCarousel {
         // ── 导航按钮 ──
         if state.navigation {
             let nav_y = bounds.origin.y;
-            let nav_h = if state.pagination { h - pagination_h } else { h };
+            let nav_h = if state.pagination {
+                h - pagination_h
+            } else {
+                h
+            };
 
             let can_prev = state.active_slide > 0 || state.r#loop;
             let can_next = if state.slides > 0 {
-                state.active_slide + state.slides_per_page < state.slides
-                    || state.r#loop
+                state.active_slide + state.slides_per_page < state.slides || state.r#loop
             } else {
                 false
             };
 
-            let prev_color = if can_prev { nav_color } else { nav_disabled_color };
-            let next_color = if can_next { nav_color } else { nav_disabled_color };
+            let prev_color = if can_prev {
+                nav_color
+            } else {
+                nav_disabled_color
+            };
+            let next_color = if can_next {
+                nav_color
+            } else {
+                nav_disabled_color
+            };
 
             // 上一页按钮 ◀
             if is_horizontal {
@@ -175,12 +192,7 @@ impl WidgetSpec for WaCarousel {
 
             // 下一页按钮 ▶
             if is_horizontal {
-                let next_rect = Rect::new(
-                    bounds.origin.x + w - nav_btn_w,
-                    nav_y,
-                    nav_btn_w,
-                    nav_h,
-                );
+                let next_rect = Rect::new(bounds.origin.x + w - nav_btn_w, nav_y, nav_btn_w, nav_h);
                 ctx.draw_text("▶", next_rect, next_color, font_size);
             } else {
                 // 垂直方向：上 = ◀ 旋转概念，用 ▲ ▼
@@ -535,7 +547,10 @@ mod tests {
 
     #[test]
     fn derive_msg() {
-        assert_eq!(WaCarouselMessage::SlideChange.message_name(), "slide_change");
+        assert_eq!(
+            WaCarouselMessage::SlideChange.message_name(),
+            "slide_change"
+        );
         assert_eq!(WaCarouselMessage::NoOp.message_name(), "no_op");
     }
 

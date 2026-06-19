@@ -94,12 +94,25 @@ impl WidgetSpec for WaAccordionItem {
 
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
         WidgetView::new("rgui_components::WaAccordionItem")
-            .prop("label", PropValue::str(if state.label.is_empty() { "" } else { state.label.as_str() }))
+            .prop(
+                "label",
+                PropValue::str(if state.label.is_empty() {
+                    ""
+                } else {
+                    state.label.as_str()
+                }),
+            )
             .prop("expanded", PropValue::Bool(state.expanded))
             .prop("disabled", PropValue::Bool(state.disabled))
-            .prop("icon-placement", PropValue::str(state.icon_placement.as_str()))
+            .prop(
+                "icon-placement",
+                PropValue::str(state.icon_placement.as_str()),
+            )
             .prop("appearance", PropValue::str(state.appearance.as_str()))
-            .prop("heading-level", PropValue::str(state.heading_level.as_str()))
+            .prop(
+                "heading-level",
+                PropValue::str(state.heading_level.as_str()),
+            )
     }
 
     fn update(&self, msg: Self::Message, state: &mut Self::State, _: &mut UpdateContext) {
@@ -108,13 +121,13 @@ impl WidgetSpec for WaAccordionItem {
                 if !state.disabled {
                     state.expanded = !state.expanded;
                 }
-            }
+            },
             WaAccordionItemMessage::Expanded => {
                 state.expanded = true;
-            }
+            },
             WaAccordionItemMessage::Collapsed => {
                 state.expanded = false;
-            }
+            },
         }
     }
 
@@ -168,7 +181,11 @@ impl WidgetSpec for WaAccordionItem {
             Color::new(0.1, 0.1, 0.1, 1.0) // WA --wa-color-text-normal
         };
 
-        let text_label = if state.label.is_empty() { "" } else { state.label.as_str() };
+        let text_label = if state.label.is_empty() {
+            ""
+        } else {
+            state.label.as_str()
+        };
 
         // icon 在 end: 文本在左，icon 在右
         // icon 在 start: icon 在左，文本在右
@@ -182,7 +199,11 @@ impl WidgetSpec for WaAccordionItem {
         ctx.draw_text(text_label, text_rect, text_color, font_size);
 
         // —— 展开/折叠图标（Unicode chevron） ——
-        let chevron = if state.expanded { "\u{25BC}" } else { "\u{25B6}" }; // ▼ or ▶
+        let chevron = if state.expanded {
+            "\u{25BC}"
+        } else {
+            "\u{25B6}"
+        }; // ▼ or ▶
         let chevron_color = if state.disabled {
             Color::new(0.7, 0.7, 0.7, 1.0)
         } else {
@@ -219,8 +240,13 @@ impl WidgetSpec for WaAccordionItem {
         } else {
             AccessibilityRole::Button
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label(if state.label.is_empty() { "accordion item" } else { state.label.as_str() })
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label(
+            if state.label.is_empty() {
+                "accordion item"
+            } else {
+                state.label.as_str()
+            },
+        )
     }
 }
 
@@ -283,9 +309,17 @@ mod tests {
     fn update_trigger_toggles() {
         let mut s = WaAccordionItemState::new();
         assert!(!s.expanded);
-        WaAccordionItem.update(WaAccordionItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaAccordionItem.update(
+            WaAccordionItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.expanded);
-        WaAccordionItem.update(WaAccordionItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaAccordionItem.update(
+            WaAccordionItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded);
     }
 
@@ -295,14 +329,22 @@ mod tests {
             disabled: true,
             ..WaAccordionItemState::new()
         };
-        WaAccordionItem.update(WaAccordionItemMessage::Trigger, &mut s, &mut UpdateContext::default());
+        WaAccordionItem.update(
+            WaAccordionItemMessage::Trigger,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded, "disabled item should not toggle");
     }
 
     #[test]
     fn update_expanded_sets_true() {
         let mut s = WaAccordionItemState::new();
-        WaAccordionItem.update(WaAccordionItemMessage::Expanded, &mut s, &mut UpdateContext::default());
+        WaAccordionItem.update(
+            WaAccordionItemMessage::Expanded,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(s.expanded);
     }
 
@@ -312,14 +354,22 @@ mod tests {
             expanded: true,
             ..WaAccordionItemState::new()
         };
-        WaAccordionItem.update(WaAccordionItemMessage::Collapsed, &mut s, &mut UpdateContext::default());
+        WaAccordionItem.update(
+            WaAccordionItemMessage::Collapsed,
+            &mut s,
+            &mut UpdateContext::default(),
+        );
         assert!(!s.expanded);
     }
 
     #[test]
     fn measure_returns_zero() {
         let s = WaAccordionItemState::new();
-        let size = WaAccordionItem.measure(&s, BoxConstraints::new(0.0, 800.0, 0.0, 600.0), &MeasureContext::default());
+        let size = WaAccordionItem.measure(
+            &s,
+            BoxConstraints::new(0.0, 800.0, 0.0, 600.0),
+            &MeasureContext::default(),
+        );
         assert_eq!(size, Size::ZERO);
     }
 
@@ -355,7 +405,10 @@ mod tests {
         let bounds2 = Rect::new(0.0, 0.0, 400.0, 200.0);
         let mut ctx2 = PaintContext::new(bounds2);
         WaAccordionItem.paint(&s2, bounds2, &mut ctx2);
-        assert!(expanded_ops > ctx2.op_count(), "expanded should produce more ops");
+        assert!(
+            expanded_ops > ctx2.op_count(),
+            "expanded should produce more ops"
+        );
     }
 
     #[test]

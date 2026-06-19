@@ -1,4 +1,4 @@
-/// Translated from Web Awesome wa-radio-group
+/// Translated from Web Awesome wa-checkbox-group
 /// Original license: MIT
 /// Copyright (c) Font Awesome
 use rgui_core::a11y::AccessibilityNode;
@@ -15,33 +15,26 @@ use rgui_macros::{AppMessage as AppMsg, PersistState as Persist};
 // State
 // ============================================================================
 
-/// Web Awesome wa-radio-group 组件状态。
+/// Web Awesome wa-checkbox-group 组件状态。
 ///
-/// RadioGroup 是容器组件，管理多个 WaRadio 子项，
+/// CheckboxGroup 是容器组件，管理多个 Checkbox/Switch 子项，
 /// 提供统一的 label、hint 和分组语义。
 /// 跳过 withLabel/withHint（SSR 专属属性）。
-/// FormField trait impl 暂时跳过。
 #[derive(Debug, Clone, Default, serde::Serialize, Persist)]
-pub struct WaRadioGroupState {
-    /// 单选组的标签
+pub struct WaCheckboxGroupState {
+    /// 复选框组的标签
     pub label: String,
     /// 提示文本
     pub hint: String,
-    /// 表单 name 属性（用于提交）
-    pub name: String,
-    /// 禁用整个组及所有子 Radio
-    pub disabled: bool,
     /// 子项排列方向：vertical | horizontal
     pub orientation: String,
-    /// 当前选中的值
-    pub value: String,
     /// 组尺寸，应用到所有子项
     pub size: String,
-    /// 是否必填
+    /// 是否必填（仅视觉指示）
     pub required: bool,
 }
 
-impl WaRadioGroupState {
+impl WaCheckboxGroupState {
     #[must_use]
     pub fn new(label: impl Into<String>) -> Self {
         Self {
@@ -56,51 +49,45 @@ impl WaRadioGroupState {
 // Message
 // ============================================================================
 
+/// CheckboxGroup 无交互事件，占位枚举。
 #[derive(Debug, Clone, PartialEq, AppMsg)]
-pub enum WaRadioGroupMessage {
-    /// 选中值改变
-    Change,
-    /// 接收用户输入
-    Input,
-    /// 验证失败
-    Invalid,
+pub enum WaCheckboxGroupMessage {
+    /// 占位消息——CheckboxGroup 无交互事件
+    NoOp,
 }
 
 // ============================================================================
 // WidgetSpec
 // ============================================================================
 
-pub struct WaRadioGroup;
+pub struct WaCheckboxGroup;
 
-impl WidgetSpec for WaRadioGroup {
-    type State = WaRadioGroupState;
-    type Message = WaRadioGroupMessage;
+impl WidgetSpec for WaCheckboxGroup {
+    type State = WaCheckboxGroupState;
+    type Message = WaCheckboxGroupMessage;
 
     fn name(&self) -> &'static str {
-        "rgui_components::WaRadioGroup"
+        "rgui_components::WaCheckboxGroup"
     }
 
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
-        WidgetView::new("rgui_components::WaRadioGroup")
+        WidgetView::new("rgui_components::WaCheckboxGroup")
             .prop("label", PropValue::str(state.label.as_str()))
             .prop("hint", PropValue::str(state.hint.as_str()))
             .prop("orientation", PropValue::str(state.orientation.as_str()))
             .prop("size", PropValue::str(state.size.as_str()))
             .prop("required", PropValue::Bool(state.required))
-            .prop("disabled", PropValue::Bool(state.disabled))
-            .prop("value", PropValue::str(state.value.as_str()))
     }
 
     fn update(&self, msg: Self::Message, _state: &mut Self::State, _: &mut UpdateContext) {
         match msg {
-            WaRadioGroupMessage::Change
-            | WaRadioGroupMessage::Input
-            | WaRadioGroupMessage::Invalid => {},
+            WaCheckboxGroupMessage::NoOp => {},
         }
     }
 
     fn measure(&self, _state: &Self::State, c: BoxConstraints, _: &MeasureContext) -> Size {
         // 容器组件：尺寸由 Taffy 根据子节点和约束决定
+        // 返回最小约束，让 Taffy 自由伸缩
         Size::new(c.min_width, c.min_height)
     }
 
@@ -156,20 +143,20 @@ mod tests {
 
     #[test]
     fn name() {
-        assert_eq!(WaRadioGroup.name(), "rgui_components::WaRadioGroup");
+        assert_eq!(WaCheckboxGroup.name(), "rgui_components::WaCheckboxGroup");
     }
 
     #[test]
     fn view_has_label() {
-        let state = WaRadioGroupState::new("Choose one");
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let state = WaCheckboxGroupState::new("Preferences");
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert!(v.props.contains_key("label"));
     }
 
     #[test]
     fn view_has_orientation() {
-        let state = WaRadioGroupState::new("Settings");
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let state = WaCheckboxGroupState::new("Settings");
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(
             v.props.get("orientation"),
             Some(&PropValue::Str("vertical".into()))
@@ -178,9 +165,9 @@ mod tests {
 
     #[test]
     fn view_horizontal_orientation() {
-        let mut state = WaRadioGroupState::new("Options");
+        let mut state = WaCheckboxGroupState::new("Options");
         state.orientation = "horizontal".into();
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(
             v.props.get("orientation"),
             Some(&PropValue::Str("horizontal".into()))
@@ -189,84 +176,46 @@ mod tests {
 
     #[test]
     fn view_required() {
-        let mut state = WaRadioGroupState::new("Required");
+        let mut state = WaCheckboxGroupState::new("Required");
         state.required = true;
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("required"), Some(&PropValue::Bool(true)));
     }
 
     #[test]
-    fn view_disabled() {
-        let mut state = WaRadioGroupState::new("Disabled Group");
-        state.disabled = true;
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
-        assert_eq!(v.props.get("disabled"), Some(&PropValue::Bool(true)));
-    }
-
-    #[test]
     fn view_has_hint() {
-        let mut state = WaRadioGroupState::new("Pick one");
-        state.hint = "Select a single option.".into();
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let mut state = WaCheckboxGroupState::new("Toppings");
+        state.hint = "Choose as many as you like.".into();
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(
             v.props.get("hint"),
-            Some(&PropValue::Str("Select a single option.".into()))
-        );
-    }
-
-    #[test]
-    fn view_has_value() {
-        let mut state = WaRadioGroupState::new("Values");
-        state.value = "radio-2".into();
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
-        assert_eq!(
-            v.props.get("value"),
-            Some(&PropValue::Str("radio-2".into()))
+            Some(&PropValue::Str("Choose as many as you like.".into()))
         );
     }
 
     #[test]
     fn view_has_size() {
-        let mut state = WaRadioGroupState::new("Sizes");
+        let mut state = WaCheckboxGroupState::new("Sizes");
         state.size = "l".into();
-        let v = WaRadioGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        let v = WaCheckboxGroup.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("size"), Some(&PropValue::Str("l".into())));
     }
 
     #[test]
-    fn update_change_is_handled() {
-        let mut state = WaRadioGroupState::new("OK");
-        WaRadioGroup.update(
-            WaRadioGroupMessage::Change,
+    fn update_noop_is_handled() {
+        let mut state = WaCheckboxGroupState::new("OK");
+        WaCheckboxGroup.update(
+            WaCheckboxGroupMessage::NoOp,
             &mut state,
             &mut UpdateContext::default(),
         );
-    }
-
-    #[test]
-    fn update_input_is_handled() {
-        let mut state = WaRadioGroupState::new("OK");
-        WaRadioGroup.update(
-            WaRadioGroupMessage::Input,
-            &mut state,
-            &mut UpdateContext::default(),
-        );
-    }
-
-    #[test]
-    fn update_invalid_is_handled() {
-        let mut state = WaRadioGroupState::new("OK");
-        WaRadioGroup.update(
-            WaRadioGroupMessage::Invalid,
-            &mut state,
-            &mut UpdateContext::default(),
-        );
+        // 不 panic 即通过
     }
 
     #[test]
     fn measure_returns_min_constraints() {
-        let state = WaRadioGroupState::new("Group");
-        let size = WaRadioGroup.measure(
+        let state = WaCheckboxGroupState::new("Group");
+        let size = WaCheckboxGroup.measure(
             &state,
             BoxConstraints::new(100.0, 500.0, 50.0, 300.0),
             &MeasureContext::default(),
@@ -277,53 +226,54 @@ mod tests {
 
     #[test]
     fn paint_with_label_produces_ops() {
-        let state = WaRadioGroupState::new("My Group");
+        let state = WaCheckboxGroupState::new("My Group");
         let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
         let mut ctx = PaintContext::new(bounds);
-        WaRadioGroup.paint(&state, bounds, &mut ctx);
+        WaCheckboxGroup.paint(&state, bounds, &mut ctx);
         assert!(ctx.op_count() >= 1, "应至少绘制标签文本");
     }
 
     #[test]
     fn paint_with_hint_produces_ops() {
-        let mut state = WaRadioGroupState::new("Group");
-        state.hint = "Select one.".into();
+        let mut state = WaCheckboxGroupState::new("Group");
+        state.hint = "Select one or more.".into();
         let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
         let mut ctx = PaintContext::new(bounds);
-        WaRadioGroup.paint(&state, bounds, &mut ctx);
+        WaCheckboxGroup.paint(&state, bounds, &mut ctx);
         assert!(ctx.op_count() >= 1, "应至少绘制提示文本");
     }
 
     #[test]
     fn paint_empty_label_no_ops() {
-        let state = WaRadioGroupState::new("");
+        let state = WaCheckboxGroupState::new("");
         let bounds = Rect::new(0.0, 0.0, 200.0, 100.0);
         let mut ctx = PaintContext::new(bounds);
-        WaRadioGroup.paint(&state, bounds, &mut ctx);
+        WaCheckboxGroup.paint(&state, bounds, &mut ctx);
+        // 无标签无提示 → 无绘制操作
         assert_eq!(ctx.op_count(), 0);
     }
 
     #[test]
     fn accessibility_has_label() {
-        let state = WaRadioGroupState::new("Accessibility Group");
-        let node = WaRadioGroup.accessibility(&state, &AccessContext::new(Rect::ZERO));
+        let state = WaCheckboxGroupState::new("Accessibility Group");
+        let node = WaCheckboxGroup.accessibility(&state, &AccessContext::new(Rect::ZERO));
         assert_eq!(node.label.as_deref(), Some("Accessibility Group"));
     }
 
     #[test]
     fn derive_msg() {
-        assert_eq!(WaRadioGroupMessage::Change.message_name(), "change");
+        assert_eq!(WaCheckboxGroupMessage::NoOp.message_name(), "no_op");
     }
 
     #[test]
     fn derive_state() {
-        assert_eq!(WaRadioGroupState::schema_name(), "WaRadioGroupState");
+        assert_eq!(WaCheckboxGroupState::schema_name(), "WaCheckboxGroupState");
     }
 
     #[test]
     fn persist_state_as_any() {
-        let state = WaRadioGroupState::new("Test");
+        let state = WaCheckboxGroupState::new("Test");
         let any = state.as_any();
-        assert_eq!(any.type_id(), TypeId::of::<WaRadioGroupState>());
+        assert_eq!(any.type_id(), TypeId::of::<WaCheckboxGroupState>());
     }
 }

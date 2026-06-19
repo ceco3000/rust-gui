@@ -88,18 +88,24 @@ impl WidgetSpec for WaAccordion {
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
         WidgetView::new("rgui_components::WaAccordion")
             .prop("mode", PropValue::str(state.mode.as_str()))
-            .prop("icon-placement", PropValue::str(state.icon_placement.as_str()))
-            .prop("heading-level", PropValue::str(state.heading_level.as_str()))
+            .prop(
+                "icon-placement",
+                PropValue::str(state.icon_placement.as_str()),
+            )
+            .prop(
+                "heading-level",
+                PropValue::str(state.heading_level.as_str()),
+            )
             .prop("appearance", PropValue::str(state.appearance.as_str()))
     }
 
     fn update(&self, msg: Self::Message, _state: &mut Self::State, _: &mut UpdateContext) {
         match msg {
             // Phase 0: no coordination logic between items yet
-            WaAccordionMessage::Expand => {}
-            WaAccordionMessage::AfterExpand => {}
-            WaAccordionMessage::Collapse => {}
-            WaAccordionMessage::AfterCollapse => {}
+            WaAccordionMessage::Expand => {},
+            WaAccordionMessage::AfterExpand => {},
+            WaAccordionMessage::Collapse => {},
+            WaAccordionMessage::AfterCollapse => {},
         }
     }
 
@@ -116,12 +122,8 @@ impl WidgetSpec for WaAccordion {
     }
 
     fn accessibility(&self, _state: &Self::State, _: &AccessContext) -> AccessibilityNode {
-        AccessibilityNode::new(
-            WidgetId::from_u64(0),
-            AccessibilityRole::Group,
-            Rect::ZERO,
-        )
-        .label("accordion")
+        AccessibilityNode::new(WidgetId::from_u64(0), AccessibilityRole::Group, Rect::ZERO)
+            .label("accordion")
     }
 }
 

@@ -77,7 +77,14 @@ impl WidgetSpec for WaTab {
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
         WidgetView::new("rgui_components::WaTab")
             .prop("panel", PropValue::str(state.panel.as_str()))
-            .prop("label", PropValue::str(if state.label.is_empty() { "Tab" } else { state.label.as_str() }))
+            .prop(
+                "label",
+                PropValue::str(if state.label.is_empty() {
+                    "Tab"
+                } else {
+                    state.label.as_str()
+                }),
+            )
             .prop("active", PropValue::Bool(state.active))
             .prop("disabled", PropValue::Bool(state.disabled))
     }
@@ -133,7 +140,11 @@ impl WidgetSpec for WaTab {
         ctx.fill_rect(bounds, bg, 0.0);
 
         // 标签文本
-        let label = if state.label.is_empty() { "Tab" } else { state.label.as_str() };
+        let label = if state.label.is_empty() {
+            "Tab"
+        } else {
+            state.label.as_str()
+        };
         let font_size: f32 = (h * 0.44) as f32;
         let text_rect = Rect::new(
             bounds.origin.x + 8.0,
@@ -151,12 +162,8 @@ impl WidgetSpec for WaTab {
             state.label.as_str()
         };
 
-        AccessibilityNode::new(
-            WidgetId::from_u64(0),
-            AccessibilityRole::Tab,
-            Rect::ZERO,
-        )
-        .label(label_text)
+        AccessibilityNode::new(WidgetId::from_u64(0), AccessibilityRole::Tab, Rect::ZERO)
+            .label(label_text)
     }
 }
 
@@ -236,7 +243,10 @@ mod tests {
             .iter()
             .filter(|op| matches!(op, rgui_core::context::PaintOp::FillRect { .. }))
             .count();
-        assert_eq!(fill_count, 2, "active Tab 应有 2 个 FillRect（背景+指示线）");
+        assert_eq!(
+            fill_count, 2,
+            "active Tab 应有 2 个 FillRect（背景+指示线）"
+        );
 
         let text_count = ops
             .iter()
@@ -262,7 +272,10 @@ mod tests {
             .iter()
             .filter(|op| matches!(op, rgui_core::context::PaintOp::FillRect { .. }))
             .count();
-        assert_eq!(fill_count, 1, "inactive Tab 应有 1 个 FillRect（背景，无指示线）");
+        assert_eq!(
+            fill_count, 1,
+            "inactive Tab 应有 1 个 FillRect（背景，无指示线）"
+        );
 
         let text_count = ops
             .iter()

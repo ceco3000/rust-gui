@@ -97,7 +97,7 @@ impl WidgetSpec for WaRadio {
 
     fn update(&self, msg: Self::Message, _state: &mut Self::State, _: &mut UpdateContext) {
         match msg {
-            WaRadioMessage::Blur | WaRadioMessage::Focus => {}
+            WaRadioMessage::Blur | WaRadioMessage::Focus => {},
         }
     }
 
@@ -292,7 +292,10 @@ mod tests {
         let mut state = WaRadioState::new("Value");
         state.value = "radio-1".into();
         let v = WaRadio.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
-        assert_eq!(v.props.get("value"), Some(&PropValue::Str("radio-1".into())));
+        assert_eq!(
+            v.props.get("value"),
+            Some(&PropValue::Str("radio-1".into()))
+        );
     }
 
     #[test]
