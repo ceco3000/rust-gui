@@ -40,7 +40,7 @@ pub use geometry::{
 pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView};
 
 // 核心 trait
-pub use traits::{AppMessage, PersistState, WidgetSpec};
+pub use traits::{AppMessage, EventResult, PersistState, WidgetSpec};
 
 // Context 类型
 pub use context::{
