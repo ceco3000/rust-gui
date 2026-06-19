@@ -13,17 +13,9 @@ use quote::quote;
 ///
 /// 用于在编译期验证 `html!` 宏中的标签名，并提供拼写建议。
 const KNOWN_WIDGET_TYPES: &[&str] = &[
-    // 基础组件
-    "Button",
-    "Label",
-    "TextField",
-    "CheckBox",
-    "Switch",
-    "RadioButton",
-    "Slider",
-    "ProgressBar",
-    "DataGrid",
-    // 容器与布局组件
+    // WA 翻译组件
+    "WaButton",
+    // 布局容器（框架内置，非组件 crate）
     "Container",
     "Row",
     "Column",
@@ -32,10 +24,8 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     "Expanded",
     "SizedBox",
     "Card",
-    "Divider",
-    "Image",
-    "ScrollView",
     "Stack",
+    "ScrollView",
     "ListView",
     // 隐式组件
     "Text",

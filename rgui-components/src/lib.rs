@@ -2,6 +2,9 @@
 //!
 //! rgui 内置组件库——从 Web Awesome (MIT) 手工翻译。
 //!
-//! 当前无已翻译组件。组件通过 `wa-translate` 技能逐个翻译后加入。
+//! 当前已翻译组件：
+//! - `WaButton` — 按钮组件（wa-button）
 
-// 暂无模块
+pub mod wa_button;
+
+pub use wa_button::{WaButton, WaButtonMessage, WaButtonState};

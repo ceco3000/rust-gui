@@ -10,6 +10,7 @@ pub mod widget_node;
 
 pub use app::{App, AppConfig};
 pub use rgui_a11y::*;
+pub use rgui_components::*;
 pub use rgui_core::*;
 pub use rgui_layout::*;
 pub use rgui_macros::{AppMessage, WidgetSpec, html};
@@ -23,6 +24,7 @@ pub use widget_node::WidgetNode;
 pub mod prelude {
     pub use crate::app::{App, AppConfig};
     pub use rgui_a11y::*;
+    pub use rgui_components::*;
     pub use rgui_core::prelude::*;
     pub use rgui_layout::*;
     pub use rgui_macros::{AppMessage, WidgetSpec, html};

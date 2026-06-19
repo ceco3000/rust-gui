@@ -13,14 +13,40 @@ use rgui_render::PaintFn;
 
 /// 创建默认的 PaintFn。
 ///
-/// 当前无已翻译组件，所有类型返回空 Vec。
-/// WA 翻译组件后，在此添加 `"WaButton" => WaButton::paint(...)` 等分支。
+/// 调度到已翻译组件的 paint() 方法。
+/// 未翻译类型返回空 Vec。
 #[must_use]
 pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
+    fn get_str<'a>(
+        props: &'a std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
+        key: &str,
+    ) -> Option<&'a str> {
+        match props.get(key) {
+            Some(rgui_core::view::PropValue::Str(s)) => Some(s),
+            _ => None,
+        }
+    }
+
     Box::new(
-        move |view: &rgui_core::view::WidgetView<M>, _bounds: Rect| -> Vec<PaintOp> {
-            let _ = view; // 占位——翻译组件后使用
-            Vec::new()
+        move |view: &rgui_core::view::WidgetView<M>, bounds: Rect| -> Vec<PaintOp> {
+            match view.widget_type {
+                // ── WA 翻译组件 ──
+                "WaButton" => {
+                    use rgui_components::wa_button::{WaButton, WaButtonState};
+                    let label = get_str(&view.props, "label").unwrap_or("");
+                    let state = WaButtonState::new(label);
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaButton, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+
+                // ── 布局容器（自身不绘制）──
+                "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
+                | "Card" | "Stack" | "ScrollView" | "ListView" => Vec::new(),
+
+                // ── 未翻译 / 未知 ──
+                _ => Vec::new(),
+            }
         },
     )
 }
@@ -52,9 +78,17 @@ mod tests {
     }
 
     #[test]
+    fn wa_button_paint_produces_ops() {
+        let paint_fn = default_paint_fn::<TestMsg>();
+        let view = WidgetView::<TestMsg>::new("WaButton").prop("label", PropValue::str("Click"));
+        let ops = paint_fn(&view, Rect::new(0.0, 0.0, 120.0, 40.0));
+        assert!(!ops.is_empty(), "WaButton 应产生绘制操作");
+    }
+
+    #[test]
     fn unknown_type_returns_empty() {
         let paint_fn = default_paint_fn::<TestMsg>();
-        let view = WidgetView::<TestMsg>::new("UnknownWidget");
+        let view = WidgetView::<TestMsg>::new("Unknown");
         let ops = paint_fn(&view, Rect::new(0.0, 0.0, 100.0, 40.0));
         assert!(ops.is_empty());
     }
