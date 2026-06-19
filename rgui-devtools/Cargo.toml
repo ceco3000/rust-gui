@@ -20,6 +20,8 @@ html-hot-reload = ["dep:quick-xml", "notify"]
 rgui-core.workspace = true
 rgui-state.workspace = true
 rgui-style.workspace = true
+rgui-script.workspace = true
+rhai = "1"
 serde.workspace = true
 serde_json = { workspace = true, optional = true }
 postcard.workspace = true
