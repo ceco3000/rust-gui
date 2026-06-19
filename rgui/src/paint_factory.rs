@@ -39,6 +39,14 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaButton, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaDivider" => {
+                    use rgui_components::wa_divider::{WaDivider, WaDividerState};
+                    let orientation = get_str(&view.props, "orientation").unwrap_or("horizontal");
+                    let state = WaDividerState::new(orientation);
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaDivider, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"

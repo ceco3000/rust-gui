@@ -15,6 +15,7 @@ use quote::quote;
 const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
     "WaButton",
+    "WaDivider",
     // 布局容器（框架内置，非组件 crate）
     "Container",
     "Row",

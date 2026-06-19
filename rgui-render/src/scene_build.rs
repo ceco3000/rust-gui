@@ -524,11 +524,7 @@ fn extract_taffy_style(
                     };
                     let font_size_from_min = min_h * paint_font_ratio;
                     let text_height_px = font_size_from_min * em_height;
-                    let pad_v: f32 = if widget_type == "WaButton" {
-                        16.0
-                    } else {
-                        4.0
-                    };
+                    let pad_v: f32 = if widget_type == "WaButton" { 16.0 } else { 4.0 };
                     let content_h = text_height_px + pad_v;
                     let h = content_h.max(min_h);
                     style.size.height = taffy::Dimension::Length(h);
@@ -540,19 +536,11 @@ fn extract_taffy_style(
                     let font_size = final_height * paint_font_ratio;
                     let content_width: f32 = if let Some(tr) = text_renderer {
                         let text_px = tr.measure_text(text, font_size);
-                        let pad_w: f32 = if widget_type == "WaButton" {
-                            32.0
-                        } else {
-                            8.0
-                        };
+                        let pad_w: f32 = if widget_type == "WaButton" { 32.0 } else { 8.0 };
                         text_px + pad_w
                     } else {
                         let char_count = text.chars().count().max(1) as f32;
-                        let pad_w: f32 = if widget_type == "WaButton" {
-                            32.0
-                        } else {
-                            8.0
-                        };
+                        let pad_w: f32 = if widget_type == "WaButton" { 32.0 } else { 8.0 };
                         char_count * font_size * 0.6 + pad_w
                     };
                     let min_w = match style.min_size.width {
@@ -655,6 +643,18 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
         "WaButton" => Style {
             min_size: wa_button_min_size,
+            ..Style::default()
+        },
+        // WaDivider：水平分隔线（宽度 100%，高度 2px 最小）
+        "WaDivider" => Style {
+            size: taffy::geometry::Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Auto,
+            },
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Length(2.0),
+            },
             ..Style::default()
         },
         "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
