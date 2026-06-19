@@ -281,7 +281,10 @@ impl App {
         })?;
 
         // 构建 HotReloadConfig：监控 .rgui 文件所在目录
-        let watch_dir = rgui_path.parent().unwrap_or(std::path::Path::new("."));
+        let watch_dir = rgui_path.parent().unwrap_or_else(|| {
+            eprintln!("[rgui] load_rgui: {rgui_path:?} 无父目录，回退到 '.' 作为监视目录");
+            std::path::Path::new(".")
+        });
         let config = HotReloadConfig::default().with_watch_paths(vec![watch_dir.to_path_buf()]);
 
         let mut hot_reload = RguiHotReload::<M>::new(&config, rgui_path)?;

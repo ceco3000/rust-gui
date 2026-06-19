@@ -59,7 +59,12 @@ impl LayoutEngine {
         let node = LayoutNode(self.tree.new_leaf(style).unwrap());
 
         for &child in children {
-            self.tree.add_child(node.0, child.0).ok();
+            if let Err(e) = self.tree.add_child(node.0, child.0) {
+                eprintln!(
+                    "[rgui] LayoutEngine::add_node: add_child({:?}, {:?}) 失败: {e:?}",
+                    node, child
+                );
+            }
         }
 
         self.widget_to_node.insert(widget_id, node);
@@ -68,41 +73,54 @@ impl LayoutEngine {
     }
 
     pub fn set_style(&mut self, node: LayoutNode, style: Style) {
-        self.tree.set_style(node.0, style).ok();
+        if let Err(e) = self.tree.set_style(node.0, style) {
+            eprintln!("[rgui] LayoutEngine::set_style({node:?}) 失败: {e:?}");
+        }
     }
 
     pub fn remove(&mut self, widget_id: WidgetId) {
         if let Some(node) = self.widget_to_node.remove(&widget_id) {
             self.node_to_widget.remove(&node);
-            self.tree.remove(node.0).ok();
+            if let Err(e) = self.tree.remove(node.0) {
+                eprintln!(
+                    "[rgui] LayoutEngine::remove({widget_id:?}) → node({node:?}) 失败: {e:?}"
+                );
+            }
             self.cache.remove(&widget_id);
         }
     }
 
     pub fn compute_layout(&mut self, root: LayoutNode, available: Size) {
-        self.tree
-            .compute_layout(
-                root.0,
-                taffy::geometry::Size {
-                    width: AvailableSpace::Definite(available.width as f32),
-                    height: AvailableSpace::Definite(available.height as f32),
-                },
-            )
-            .ok();
+        if let Err(e) = self.tree.compute_layout(
+            root.0,
+            taffy::geometry::Size {
+                width: AvailableSpace::Definite(available.width as f32),
+                height: AvailableSpace::Definite(available.height as f32),
+            },
+        ) {
+            eprintln!("[rgui] LayoutEngine::compute_layout({root:?}, {available:?}) 失败: {e:?}");
+        }
 
         for (&node, &widget_id) in &self.node_to_widget {
-            if let Ok(layout) = self.tree.layout(node.0) {
-                let result = LayoutResult {
-                    size: Size::new(layout.size.width as f64, layout.size.height as f64),
-                    position: Point::new(layout.location.x as f64, layout.location.y as f64),
-                };
-                self.cache.insert(
-                    widget_id,
-                    CachedLayout {
-                        result,
-                        children: Vec::new(),
-                    },
-                );
+            match self.tree.layout(node.0) {
+                Ok(layout) => {
+                    let result = LayoutResult {
+                        size: Size::new(layout.size.width as f64, layout.size.height as f64),
+                        position: Point::new(layout.location.x as f64, layout.location.y as f64),
+                    };
+                    self.cache.insert(
+                        widget_id,
+                        CachedLayout {
+                            result,
+                            children: Vec::new(),
+                        },
+                    );
+                },
+                Err(e) => {
+                    eprintln!(
+                        "[rgui] LayoutEngine::compute_layout: tree.layout({node:?}) (widget={widget_id:?}) 失败: {e:?}"
+                    );
+                },
             }
         }
     }
