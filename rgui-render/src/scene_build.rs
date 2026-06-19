@@ -520,7 +520,7 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(widget_type, "WaButton" | "WaBreadcrumbItem" | "Label") {
+    if matches!(widget_type, "WaButton" | "WaTab" | "WaBreadcrumbItem" | "Label") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
@@ -530,6 +530,7 @@ fn extract_taffy_style(
                 let em_height: f32 = 1.196;
 
                 // WaButton 字体大小由 paint() 统一控制: h × 0.44
+                // WaTab 同样使用 h × 0.44
                 // WaBreadcrumbItem 字体固定 14.0，ratio = 14.0 / min_h(24.0) ≈ 0.583
                 let paint_font_ratio: f32 = if widget_type == "WaBreadcrumbItem" {
                     0.583
@@ -551,6 +552,8 @@ fn extract_taffy_style(
                         16.0
                     } else if widget_type == "WaBreadcrumbItem" {
                         8.0
+                    } else if widget_type == "WaTab" {
+                        17.0
                     } else {
                         4.0
                     };
@@ -569,6 +572,8 @@ fn extract_taffy_style(
                             32.0
                         } else if widget_type == "WaBreadcrumbItem" {
                             24.0
+                        } else if widget_type == "WaTab" {
+                            20.0
                         } else {
                             8.0
                         };
@@ -579,6 +584,8 @@ fn extract_taffy_style(
                             32.0
                         } else if widget_type == "WaBreadcrumbItem" {
                             24.0
+                        } else if widget_type == "WaTab" {
+                            20.0
                         } else {
                             8.0
                         };
@@ -656,7 +663,8 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             size: full_width_auto_height,
             ..Style::default()
         },
-        "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup" | "Stack" => Style {
+        "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
+        | "WaTabGroup" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()
@@ -754,6 +762,24 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             ..Style::default()
         },
+        "WaTextarea" => Style {
+            size: taffy::geometry::Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Auto,
+            },
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(200.0),
+                height: Dimension::Length(100.0),
+            },
+            ..Style::default()
+        },
+        "WaSlider" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(200.0),
+                height: Dimension::Length(52.0),
+            },
+            ..Style::default()
+        },
         "WaInput" => Style {
             size: taffy::geometry::Size {
                 width: Dimension::Percent(1.0),
@@ -761,6 +787,82 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             min_size: taffy::geometry::Size {
                 width: Dimension::Length(120.0),
+                height: Dimension::Length(36.0),
+            },
+            ..Style::default()
+        },
+        "WaSelect" => Style {
+            size: taffy::geometry::Size {
+                width: Dimension::Percent(1.0),
+                height: Dimension::Auto,
+            },
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(160.0),
+                height: Dimension::Length(36.0),
+            },
+            ..Style::default()
+        },
+        "WaSkeleton" => Style {
+            display: Display::Flex,
+            size: full_width_auto_height,
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Length(16.0),
+            },
+            ..Style::default()
+        },
+        "WaProgressBar" => Style {
+            display: Display::Flex,
+            size: full_width_auto_height,
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Length(16.0),
+            },
+            ..Style::default()
+        },
+        "WaProgressRing" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(48.0),
+                height: Dimension::Length(48.0),
+            },
+            ..Style::default()
+        },
+        "WaRating" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(120.0),
+                height: Dimension::Length(32.0),
+            },
+            ..Style::default()
+        },
+        "WaTab" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(64.0),
+                height: Dimension::Length(36.0),
+            },
+            ..Style::default()
+        },
+        "WaTabPanel" => Style {
+            display: Display::Flex,
+            size: full_size,
+            ..Style::default()
+        },
+        "WaCallout" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(200.0),
+                height: Dimension::Length(44.0),
+            },
+            ..Style::default()
+        },
+        "WaTag" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(20.0),
+                height: Dimension::Length(20.0),
+            },
+            ..Style::default()
+        },
+        "WaColorPicker" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(36.0),
                 height: Dimension::Length(36.0),
             },
             ..Style::default()
