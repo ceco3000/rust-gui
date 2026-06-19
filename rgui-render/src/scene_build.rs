@@ -314,7 +314,13 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     z_index: &mut i32,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) {
-    let widget_id = view.id.unwrap_or_default();
+    let widget_id = view.id.unwrap_or_else(|| {
+        eprintln!(
+            "[rgui] walk_view_tree: WidgetView.id 缺失，widget_type=\"{}\"，回退到 WidgetId(0)",
+            view.widget_type
+        );
+        WidgetId::default()
+    });
 
     // 从布局引擎查询该 widget 的计算后 bounds
     let bounds = layout_engine
@@ -327,7 +333,13 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
                 cached.result.size.height,
             )
         })
-        .unwrap_or(Rect::ZERO);
+        .unwrap_or_else(|| {
+            eprintln!(
+                "[rgui] walk_view_tree: 布局引擎无 WidgetId({widget_id:?}) (widget_type=\"{}\") 的缓存，回退到 Rect::ZERO",
+                view.widget_type
+            );
+            Rect::ZERO
+        });
 
     let ops = paint_fn(view, bounds);
 
@@ -644,7 +656,12 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         // Label、Divider、SizedBox 等——无默认，由内容或 props 决定
-        _ => Style::default(),
+        _ => {
+            eprintln!(
+                "[rgui] default_layout_for_type: 未知 widget_type=\"{widget_type}\"，回退到 Style::default() (0×0)"
+            );
+            Style::default()
+        },
     }
 }
 

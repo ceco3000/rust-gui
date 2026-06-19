@@ -45,7 +45,12 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                 | "Card" | "Stack" | "ScrollView" | "ListView" => Vec::new(),
 
                 // ── 未翻译 / 未知 ──
-                _ => Vec::new(),
+                unknown => {
+                    eprintln!(
+                        "[rgui] paint_factory: 未知 widget_type=\"{unknown}\"，无 paint 实现，返回空"
+                    );
+                    Vec::new()
+                },
             }
         },
     )

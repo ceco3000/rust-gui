@@ -196,11 +196,14 @@ impl App {
     pub fn scale_factor(&self) -> f64 {
         self.scale_factor
     }
-    /// 注册内置组件（Button、Label、TextField）。
+    /// 注册内置组件（Button、Label、TextField）。已废弃，组件由 WA 翻译管理。
+    #[deprecated(note = "组件由 WA 翻译管理，不再需要手动注册")]
     pub fn register_defaults(&mut self) {
-        self.registry.register("Button").ok();
-        self.registry.register("Label").ok();
-        self.registry.register("TextField").ok();
+        for name in &["Button", "Label", "TextField"] {
+            if let Err(e) = self.registry.register(name) {
+                eprintln!("[rgui] register_defaults: 注册 \"{name}\" 失败: {e}");
+            }
+        }
     }
     /// 返回当前事件列表。
     #[must_use]
@@ -514,7 +517,12 @@ impl AppHandler {
                     .interactions
                     .get(&hit_id)
                     .map(|(_, a, _)| a.clone())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| {
+                        eprintln!(
+                            "[rgui] handle_click: WidgetId({hit_id:?}) 未注册交互，action 回退为空字符串"
+                        );
+                        String::new()
+                    });
                 let result = handler(&action, &mut update_ctx);
                 match result {
                     EventResult::Handled => {
@@ -552,8 +560,10 @@ impl AppHandler {
                             });
                             return;
                         },
-                        Err(_) => {
-                            // Rhai 无此函数或调用失败，继续传播到旧回调
+                        Err(e) => {
+                            eprintln!(
+                                "[rgui] handle_click: Rhai call_fn(\"{action}\") 失败: {e}，继续传播到旧回调"
+                            );
                         },
                     }
                 }
@@ -662,7 +672,10 @@ impl AppHandler {
                 let key = match &event.logical_key {
                     WinitKey::Named(n) => convert_named_key(n),
                     WinitKey::Character(c) => convert_char_key(c),
-                    _ => return None,
+                    _ => {
+                        eprintln!("[rgui] convert_event: 未识别的键类型 {event:?}，跳过");
+                        return None;
+                    },
                 };
                 Some(match event.state {
                     ElementState::Pressed => Event::KeyDown {
@@ -965,8 +978,11 @@ impl ApplicationHandler for AppHandler {
                     }
                 }
                 // 回应 winit：告知我们已接受此尺寸
-                let _ = inner_size_writer
-                    .request_inner_size(winit::dpi::PhysicalSize::new(self.width, self.height));
+                if let Err(e) = inner_size_writer
+                    .request_inner_size(winit::dpi::PhysicalSize::new(self.width, self.height))
+                {
+                    eprintln!("[rgui] request_inner_size 失败: {e:?}");
+                }
                 // 转发事件给组件层
                 self.app
                     .events
