@@ -505,6 +505,15 @@ fn extract_taffy_style(
             };
         }
     }
+    // WaCarousel 使用 orientation 控制幻灯片排列方向
+    if widget_type == "WaCarousel" {
+        if let Some(orientation) = get_str("orientation") {
+            style.flex_direction = match orientation {
+                "vertical" => taffy::FlexDirection::Column,
+                _ => taffy::FlexDirection::Row,
+            };
+        }
+    }
     if let Some(jc) = get_str("justify-content") {
         style.justify_content = Some(rgui_layout::mapping::to_taffy_justify_content(jc));
     }
@@ -682,7 +691,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             ..Style::default()
         },
         "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
-        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "Stack" => Style {
+        | "WaTabGroup" | "WaButtonGroup" | "WaSplitPanel" | "WaCarousel" | "Stack" => Style {
             display: Display::Flex,
             size: full_width_auto_height,
             ..Style::default()
@@ -879,6 +888,13 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         "WaTabPanel" => Style {
             display: Display::Flex,
             size: full_size,
+            ..Style::default()
+        },
+        "WaCarouselItem" => Style {
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(200.0),
+                height: Dimension::Length(100.0),
+            },
             ..Style::default()
         },
         "WaCallout" => Style {

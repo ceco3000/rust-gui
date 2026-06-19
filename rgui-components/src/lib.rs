@@ -40,6 +40,8 @@ pub mod wa_tab_group;
 pub mod wa_tab_panel;
 pub mod wa_textarea;
 pub mod wa_button_group;
+pub mod wa_carousel;
+pub mod wa_carousel_item;
 pub mod wa_split_panel;
 
 pub use wa_accordion::{WaAccordion, WaAccordionMessage, WaAccordionState};
@@ -73,4 +75,6 @@ pub use wa_tab_panel::{WaTabPanel, WaTabPanelMessage, WaTabPanelState};
 pub use wa_tag::{WaTag, WaTagMessage, WaTagState};
 pub use wa_textarea::{WaTextarea, WaTextareaMessage, WaTextareaState};
 pub use wa_button_group::{WaButtonGroup, WaButtonGroupMessage, WaButtonGroupState};
+pub use wa_carousel::{WaCarousel, WaCarouselMessage, WaCarouselState};
+pub use wa_carousel_item::{WaCarouselItem, WaCarouselItemMessage, WaCarouselItemState};
 pub use wa_split_panel::{WaSplitPanel, WaSplitPanelMessage, WaSplitPanelState};

@@ -766,9 +766,51 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     ctx.into_operations()
                 },
 
+                "WaCarousel" => {
+                    use rgui_components::wa_carousel::{WaCarousel, WaCarouselState};
+                    let mut state = WaCarouselState::new();
+                    if let Some(o) = get_str(&view.props, "orientation") {
+                        state.orientation = o.to_string();
+                    }
+                    if let Some(PropValue::Bool(n)) = view.props.get("navigation") {
+                        state.navigation = *n;
+                    }
+                    if let Some(PropValue::Bool(p)) = view.props.get("pagination") {
+                        state.pagination = *p;
+                    }
+                    if let Some(PropValue::Int(spp)) = view.props.get("slides-per-page") {
+                        state.slides_per_page = *spp as u32;
+                    }
+                    if let Some(PropValue::Int(spm)) = view.props.get("slides-per-move") {
+                        state.slides_per_move = *spm as u32;
+                    }
+                    if let Some(PropValue::Int(s)) = view.props.get("slides") {
+                        state.slides = *s as u32;
+                    }
+                    if let Some(PropValue::Int(cs)) = view.props.get("current-slide") {
+                        state.current_slide = *cs as u32;
+                    }
+                    if let Some(PropValue::Int(a)) = view.props.get("active-slide") {
+                        state.active_slide = *a as u32;
+                    }
+                    if let Some(PropValue::Bool(l)) = view.props.get("loop") {
+                        state.r#loop = *l;
+                    }
+                    if let Some(PropValue::Bool(a)) = view.props.get("autoplay") {
+                        state.autoplay = *a;
+                    }
+                    if let Some(PropValue::Bool(md)) = view.props.get("mouse-dragging") {
+                        state.mouse_dragging = *md;
+                    }
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaCarousel, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
+
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
-                | "Card" | "Stack" | "ScrollView" | "ListView" | "WaButtonGroup" | "WaAccordion" => Vec::new(),
+                | "Card" | "Stack" | "ScrollView" | "ListView" | "WaButtonGroup" | "WaAccordion"
+                | "WaCarouselItem" => Vec::new(),
 
                 // ── 未翻译 / 未知 ──
                 unknown => {

@@ -24,6 +24,8 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     "WaButtonGroup",
     "WaCallout",
     "WaCard",
+    "WaCarousel",
+    "WaCarouselItem",
     "WaCheckbox",
     "WaCheckboxGroup",
     "WaColorPicker",
