@@ -17,12 +17,13 @@ rgui-a11y.workspace = true
 rgui-macros.workspace = true
 rgui-components.workspace = true
 rgui-devtools = { workspace = true, optional = true }
+rgui-script = { workspace = true, optional = true }
 winit.workspace = true
 [features]
 default = ["vello-backend", "skia-backend"]
 vello-backend = ["rgui-render/vello-backend"]
 skia-backend = ["rgui-render/skia-backend"]
-devtools = ["dep:rgui-devtools", "rgui-devtools/html-hot-reload", "rgui-style/hot-reload"]
+devtools = ["dep:rgui-devtools", "dep:rgui-script", "rgui-devtools/html-hot-reload", "rgui-style/hot-reload"]
 
 [dev-dependencies]
 tempfile = "3"

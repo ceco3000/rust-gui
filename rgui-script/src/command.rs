@@ -148,6 +148,22 @@ impl CommandRegistry {
     ) -> Result<rhai::Dynamic, Box<rhai::EvalAltResult>> {
         self.call_fn::<rhai::Dynamic>(fn_name, ())
     }
+
+    /// 获取内部 Rhai 引擎的可变引用（用于注册 Rust 端类型和函数）。
+    ///
+    /// 锁定内部 `Arc<Mutex<Engine>>`，中毒时恢复内部值。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// # use rgui_script::CommandRegistry;
+    /// # use rhai::Engine;
+    /// let registry = CommandRegistry::new();
+    /// registry.engine_mut().register_type::<i64>();
+    /// ```
+    pub fn engine_mut(&self) -> MutexGuard<'_, Engine> {
+        lock_mutex(&self.engine)
+    }
 }
 
 #[cfg(test)]
@@ -284,5 +300,24 @@ mod tests {
         let r2: i64 = registry.call_fn("second", ()).unwrap();
         assert_eq!(r1, 1);
         assert_eq!(r2, 2);
+    }
+
+    #[test]
+    fn engine_mut_returns_guard_allowing_type_registration() {
+        let registry = CommandRegistry::new();
+        // Verify engine_mut() returns a guard that allows type registration
+        registry.engine_mut().register_type::<i64>();
+        // Registration succeeded without panic
+    }
+
+    #[test]
+    fn engine_mut_guard_is_released_after_use() {
+        let registry = CommandRegistry::new();
+        {
+            let _guard = registry.engine_mut();
+            // guard held, _guard dropped at end of block
+        }
+        // Can acquire again — guard was released
+        registry.engine_mut().register_type::<String>();
     }
 }

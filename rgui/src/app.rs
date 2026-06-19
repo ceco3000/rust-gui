@@ -15,6 +15,8 @@ use rgui_render::{
 };
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
+#[cfg(feature = "devtools")]
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
@@ -65,6 +67,9 @@ pub struct AppConfig {
     /// 可选 `.rgui` 文件路径，作为视图源（替代 `set_view_scene_builder`）。
     /// `App::load_rgui::<M>()` 从此字段读取路径。
     pub rgui_path: Option<PathBuf>,
+    /// Rhai 脚本文件路径列表。
+    /// 启动时编译全部脚本，文件变更时热重载。
+    pub rhai_paths: Vec<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -75,6 +80,7 @@ impl Default for AppConfig {
             resizable: true,
             min_size: Some(Size::new(320.0, 240.0)),
             rgui_path: None,
+            rhai_paths: Vec::new(),
         }
     }
 }
@@ -103,6 +109,12 @@ impl AppConfig {
         self.rgui_path = Some(path.into());
         self
     }
+    /// 设置 Rhai 脚本文件路径列表（builder 风格）。
+    #[must_use]
+    pub fn rhai_paths(mut self, paths: Vec<PathBuf>) -> Self {
+        self.rhai_paths = paths;
+        self
+    }
 }
 
 /// rgui 应用实例。
@@ -127,6 +139,12 @@ pub struct App {
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
     /// 从 winit `window.scale_factor()` 读取，默认 1.0。
     pub(crate) scale_factor: f64,
+    /// Rhai 命令处理器注册表（load_rhai_scripts 创建，AppHandler::new() 时 .take() 移入）。
+    #[cfg(feature = "devtools")]
+    command_registry: Option<rgui_script::CommandRegistry>,
+    /// Rhai 脚本热重载管理器（load_rhai_scripts 创建，AppHandler::new() 时 .take() 移入）。
+    #[cfg(feature = "devtools")]
+    rhai_hot_reload: Option<rgui_devtools::rhai_hot_reload::RhaiHotReload>,
 }
 
 impl App {
@@ -144,6 +162,10 @@ impl App {
             widget_instances: FxHashMap::new(),
             view_scene_builder: None,
             scale_factor: 1.0,
+            #[cfg(feature = "devtools")]
+            command_registry: None,
+            #[cfg(feature = "devtools")]
+            rhai_hot_reload: None,
         }
     }
 
@@ -306,6 +328,68 @@ impl App {
 
         self.set_view_scene_builder(builder);
         Ok(())
+    }
+
+    /// 加载 `.rhai` 脚本并启动热重载。
+    ///
+    /// 内部创建 `CommandRegistry`（共享引用）和 `RhaiHotReload`。
+    /// 启动时编译全部脚本，每帧轮询文件变更并自动重新注册。
+    ///
+    /// 脚本编译失败时保留旧处理器，通过 stderr 报告错误（D7 §9 降级策略）。
+    ///
+    /// # Errors
+    ///
+    /// 返回 `Err` 如果文件监控创建失败或脚本编译失败。
+    #[cfg(feature = "devtools")]
+    pub fn load_rhai_scripts(
+        &mut self,
+        paths: &[impl AsRef<Path>],
+    ) -> Result<(), rgui_devtools::rhai_hot_reload::RhaiHotReloadError> {
+        use rgui_devtools::config::HotReloadConfig;
+        use rgui_devtools::rhai_hot_reload::RhaiHotReload;
+
+        if paths.is_empty() {
+            return Ok(());
+        }
+
+        // 构建 HotReloadConfig：监控脚本文件所在目录
+        let watch_dirs: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| p.as_ref().parent().map(Path::to_path_buf))
+            .collect();
+        let config = if watch_dirs.is_empty() {
+            HotReloadConfig::default()
+        } else {
+            HotReloadConfig::default().with_watch_paths(watch_dirs)
+        };
+
+        let mut hot_reload = RhaiHotReload::new(&config)?;
+        for path in paths {
+            hot_reload.watch(path.as_ref())?;
+        }
+
+        let registry = hot_reload.registry();
+        self.command_registry = Some(registry);
+        self.rhai_hot_reload = Some(hot_reload);
+
+        Ok(())
+    }
+
+    /// 获取共享的 `CommandRegistry`（用于注册 Rust 端类型和函数）。
+    ///
+    /// 在 `load_rhai_scripts` 之后调用，向引擎注册自定义类型：
+    ///
+    /// ```ignore
+    /// app.load_rhai_scripts(&["scripts/handlers.rhai"])?;
+    /// app.command_registry().unwrap()
+    ///     .engine_mut().register_type::<MyState>();
+    /// ```
+    ///
+    /// 返回 `None` 如果未调用 `load_rhai_scripts`。
+    #[cfg(feature = "devtools")]
+    #[must_use]
+    pub fn command_registry(&self) -> Option<&rgui_script::CommandRegistry> {
+        self.command_registry.as_ref()
     }
 
     /// 运行应用。
@@ -925,6 +1009,19 @@ mod tests {
     }
 
     #[test]
+    fn app_config_rhai_paths_default_empty() {
+        let config = AppConfig::default();
+        assert!(config.rhai_paths.is_empty());
+    }
+
+    #[test]
+    fn app_config_rhai_paths_builder() {
+        let paths = vec![PathBuf::from("scripts/handlers.rhai")];
+        let config = AppConfig::new().rhai_paths(paths.clone());
+        assert_eq!(config.rhai_paths, paths);
+    }
+
+    #[test]
     fn fallback_no_window_does_not_panic() {
         // 模拟没有窗口时的 fallback——不应 panic
         let mut handler = AppHandler::new(App::new(AppConfig::default()));
@@ -1302,6 +1399,71 @@ mod tests {
                 !scene2.is_empty(),
                 "解析失败后应返回旧场景（降级策略——保持旧视图）"
             );
+        }
+
+        // ========================================================================
+        // RH04: .rhai App 集成测试
+        // ========================================================================
+
+        #[test]
+        fn command_registry_none_before_load() {
+            let config = AppConfig::new();
+            let app = App::new(config);
+            assert!(
+                app.command_registry().is_none(),
+                "未调用 load_rhai_scripts 前 command_registry 应为 None"
+            );
+        }
+
+        #[test]
+        fn load_rhai_scripts_empty_paths_returns_ok() {
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            let empty: &[&str] = &[];
+            let result = app.load_rhai_scripts(empty);
+            assert!(result.is_ok(), "空路径列表应成功: {result:?}");
+            assert!(app.command_registry().is_none(), "空路径不创建 registry");
+        }
+
+        #[test]
+        fn load_rhai_scripts_single_file_succeeds() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rhai_path = dir.path().join("handlers.rhai");
+            std::fs::write(&rhai_path, "fn save() { }").expect("写入 .rhai 文件失败");
+
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            let result = app.load_rhai_scripts(&[&rhai_path]);
+            assert!(result.is_ok(), "load_rhai_scripts 应成功: {result:?}");
+
+            // command_registry 应可用
+            let registry = app
+                .command_registry()
+                .expect("load 后 command_registry 应为 Some");
+            // 能调用注册的函数
+            let mut cloned = registry.clone();
+            let call_result: Result<(), _> = cloned.call_fn("save", ());
+            assert!(
+                call_result.is_ok(),
+                "应能调用已注册的脚本函数: {call_result:?}"
+            );
+        }
+
+        #[test]
+        fn command_registry_engine_mut_works() {
+            let dir = tempfile::tempdir().expect("创建临时目录失败");
+            let rhai_path = dir.path().join("handlers.rhai");
+            std::fs::write(&rhai_path, "fn dummy() { }").expect("写入 .rhai 文件失败");
+
+            let config = AppConfig::new();
+            let mut app = App::new(config);
+            app.load_rhai_scripts(&[&rhai_path])
+                .expect("load_rhai_scripts 应成功");
+
+            let registry = app.command_registry().unwrap();
+            // engine_mut 应能获取引擎并注册类型
+            registry.engine_mut().register_type::<i64>();
+            // 成功——没有 panic
         }
     }
 }
