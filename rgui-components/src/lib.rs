@@ -11,8 +11,10 @@ pub mod wa_button;
 pub mod wa_card;
 pub mod wa_divider;
 pub mod wa_icon;
+pub mod wa_avatar;
 pub mod wa_spinner;
 
+pub use wa_avatar::{WaAvatar, WaAvatarMessage, WaAvatarState};
 pub use wa_badge::{WaBadge, WaBadgeMessage, WaBadgeState};
 pub use wa_button::{WaButton, WaButtonMessage, WaButtonState};
 pub use wa_card::{WaCard, WaCardMessage, WaCardState};

@@ -91,6 +91,13 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     rgui_core::traits::WidgetSpec::paint(&WaIcon, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
+                "WaAvatar" => {
+                    use rgui_components::wa_avatar::{WaAvatar, WaAvatarState};
+                    let state = WaAvatarState::new();
+                    let mut ctx = rgui_core::context::PaintContext::new(bounds);
+                    rgui_core::traits::WidgetSpec::paint(&WaAvatar, &state, bounds, &mut ctx);
+                    ctx.into_operations()
+                },
                 "WaSpinner" => {
                     use rgui_components::wa_spinner::{WaSpinner, WaSpinnerState};
                     let state = WaSpinnerState::new();
