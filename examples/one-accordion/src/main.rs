@@ -89,7 +89,7 @@ fn inject_expanded_state<M: AppMessage>(
         };
         let expanded = if label == "Section 1" { e1 } else { e2 };
         view.props
-            .insert("expanded", PropValue::Str(expanded.to_string().into()));
+            .insert("expanded", PropValue::Bool(expanded));
     }
     for child in &mut view.children {
         inject_expanded_state(child, e1, e2);
