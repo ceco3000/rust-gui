@@ -1,0 +1,11 @@
+[package]
+name = "one-icon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+rgui = { path = "../../rgui" }
+rgui-core = { path = "../../rgui-core" }
+ordered-float.workspace = true
