@@ -73,7 +73,7 @@ resolver = "2"
 members = [
     "rgui-core", "rgui-state", "rgui-render", "rgui-layout",
     "rgui-style", "rgui-platform", "rgui-a11y", "rgui-devtools",
-    "rgui-macros", "rgui", "rgui-components",
+    "rgui-macros", "rgui", "rgui-components", "rgui-script",
     "examples/*",
 ]
 
@@ -101,6 +101,7 @@ rgui-platform = { path = "rgui-platform", version = "0.1.0" }
 rgui-a11y = { path = "rgui-a11y", version = "0.1.0" }
 rgui-devtools = { path = "rgui-devtools", version = "0.1.0" }
 rgui-macros = { path = "rgui-macros", version = "0.1.0" }
+rgui-script = { path = "rgui-script", version = "0.1.0" }
 
 # 外部依赖——渲染
 wgpu = "24"

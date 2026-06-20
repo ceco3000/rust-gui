@@ -115,7 +115,7 @@ rgui (facade) ─ 重新导出全部公共 API
   ├─ rgui-devtools ← 热重载、双进程通信
   ├─ rgui-macros   ← 过程宏（html!、derive）
   ├─ rgui-components ← 内置组件库
-  └─ rgui-script   ← Rhai 脚本绑定（阶段 2 预留）
+  └─ rgui-script   ← Rhai 脚本绑定（✅ 已实现）
 ```
 
 依赖方向：所有 crate 依赖 `rgui-core`，严禁循环依赖。

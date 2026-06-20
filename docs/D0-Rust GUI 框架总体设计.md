@@ -98,6 +98,7 @@
 `rgui-devtools` 除依赖 `rgui-core` 外，还依赖：
 - `rgui-state`（快速重启的状态快照协议）
 - `rgui-style`（监控 `.rgss` 文件变更以触发热重载）
+- `rgui-script`（Rhai 引擎集成，脚本热重载）
 
 ### 2.3 各 Crate 职责
 
@@ -114,7 +115,7 @@
 | **rgui-macros** | `html!` 声明式宏、`#[derive(WidgetSpec)]`、`#[derive(AppMessage)]`、`#[derive(PersistState)]` | `syn`、`quote`、`proc-macro2` | ❌ 纯 Rust |
 | **rgui-components** | 内置组件库（Button、TextField、DataGrid、Form 等） | `rgui-core` | ❌ 纯 Rust |
 | **rgui** | Facade crate：重新导出所有公共 API、`html!` 宏、`App` 启动器 | 所有上述 crate | ❌ 纯 Rust |
-| **rgui-script**（阶段 2 预留） | Rhai 绑定、脚本热重载、命令处理器注册 | `rhai` | ❌ 纯 Rust |
+| **rgui-script**（✅ 已实现） | Rhai 绑定、脚本热重载、命令处理器注册 | `rhai` | ❌ 纯 Rust |
 
 > **layout-style 交互契约**：`rgui-style` 解析 `.rgss` 产生样式属性键值对（`BTreeMap<String, PropValue>`）；`rgui-layout` 从其中提取布局相关键（`display`、`flex-direction`、`gap`、`grid-template-columns` 等）→ 映射为 Taffy `Style`。两者通过 `LayoutStyle` 结构体交互（定义于 `rgui-core` 的 geometry 模块）。
 
@@ -883,7 +884,7 @@ rgui-core/
 | D5 事件系统 | 事件分发链、UpdateContext、AppMessage | UpdateContext（增加方法） |
 | D6 无障碍 | AccessibilityBackend trait、AccessibilityNode | AccessibilityNode（增加字段） |
 | D7 开发反馈 | rgui-devtools 的公共 API、StateStore 快照协议 | — |
-| rgui-script（阶段 2 预留） | AppMessage trait、事件分发链（§6.2 步骤 3a） | — |
+| rgui-script（✅ 已实现） | AppMessage trait、事件分发链（§6.2 步骤 3a） | — |
 
 ### 9.2 修改 D0 的流程
 
