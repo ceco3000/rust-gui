@@ -7,12 +7,16 @@ use rgui_core::registry::WidgetRegistry;
 #[cfg(feature = "devtools")]
 use rgui_core::traits::AppMessage;
 use rgui_core::traits::EventResult;
+#[cfg(feature = "devtools")]
+use rgui_core::widget_id_map::WidgetIdBimap;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::hit_test::HitTester;
 use rgui_render::{
     RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
 };
+#[cfg(feature = "devtools")]
+use rgui_script::PropRegistry;
 use std::collections::HashMap as FxHashMap;
 use std::fmt;
 #[cfg(feature = "devtools")]
@@ -141,6 +145,14 @@ pub struct App {
     overlay_ids: std::collections::HashSet<WidgetId>,
     /// 可选的视图场景构建回调（直接返回 SceneGraph）。
     view_scene_builder: Option<ViewSceneBuilder>,
+    /// PropRegistry——Rhai↔WidgetView prop 桥接（RS01/RS04）。
+    /// 与 CommandRegistry 共享同一实例：Rhai 写、渲染线程 drain。
+    #[cfg(feature = "devtools")]
+    prop_registry: PropRegistry,
+    /// WidgetId↔字符串双向映射（RS03/RS04）。
+    /// 与 CommandRegistry 共享：渲染线程在视图重建后更新，Rhai 查询。
+    #[cfg(feature = "devtools")]
+    id_map: Arc<std::sync::Mutex<WidgetIdBimap>>,
     /// 当前 DPI 缩放因子（逻辑像素 → 物理像素比例）。
     /// 从 winit `window.scale_factor()` 读取，默认 1.0。
     pub(crate) scale_factor: f64,
@@ -150,6 +162,66 @@ pub struct App {
     /// Rhai 脚本热重载管理器（load_rhai_scripts 创建，AppHandler::new() 时 .take() 移入）。
     #[cfg(feature = "devtools")]
     rhai_hot_reload: Option<rgui_devtools::rhai_hot_reload::RhaiHotReload>,
+}
+
+/// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
+///
+/// 遍历 WidgetView 树，根据 WidgetId 匹配将 pending props 注入到 `props` 映射。
+/// **⚠️ 临时捷径：RS05-RS06 后降级为 fallback。**
+#[cfg(feature = "devtools")]
+fn inject_props_from_registry<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    pending: &std::collections::HashMap<
+        WidgetId,
+        std::collections::BTreeMap<String, rgui_core::view::PropValue>,
+    >,
+) {
+    inject_props_recursive(view, pending);
+}
+
+/// 递归辅助函数：遍历 WidgetView 树并注入 pending props。
+#[cfg(feature = "devtools")]
+fn inject_props_recursive<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    pending: &std::collections::HashMap<
+        WidgetId,
+        std::collections::BTreeMap<String, rgui_core::view::PropValue>,
+    >,
+) {
+    if let Some(id) = view.id {
+        if let Some(widget_props) = pending.get(&id) {
+            for (key, value) in widget_props {
+                // 将 String key 转为 &'static str（RS04 临时捷径）
+                let static_key: &'static str = intern_prop_key(key);
+                view.props.insert(static_key, value.clone());
+            }
+        }
+    }
+    for child in &mut view.children {
+        inject_props_recursive(child, pending);
+    }
+}
+
+/// 将字符串 prop key 转为 `&'static str`（RS04 临时捷径）。
+///
+/// 使用全局缓存避免重复分配。prop key 数量有限（label、expanded、checked 等），
+/// 内存泄漏上限可控。
+#[cfg(feature = "devtools")]
+fn intern_prop_key(key: &str) -> &'static str {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashSet<&'static str>>> = Mutex::new(None);
+    let mut guard = CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let cache = guard.get_or_insert_with(HashSet::new);
+    if let Some(&existing) = cache.get(key) {
+        existing
+    } else {
+        let leaked: &'static str = Box::leak(key.to_string().into_boxed_str());
+        cache.insert(leaked);
+        leaked
+    }
 }
 
 impl App {
@@ -167,6 +239,10 @@ impl App {
             widget_instances: FxHashMap::new(),
             overlay_ids: std::collections::HashSet::new(),
             view_scene_builder: None,
+            #[cfg(feature = "devtools")]
+            prop_registry: PropRegistry::new(),
+            #[cfg(feature = "devtools")]
+            id_map: Arc::new(std::sync::Mutex::new(WidgetIdBimap::new())),
             scale_factor: 1.0,
             #[cfg(feature = "devtools")]
             command_registry: None,
@@ -290,6 +366,12 @@ impl App {
     /// 内部创建 [`RguiHotReload`]，每帧轮询文件变更，
     /// 变更时重新解析 → `compute_view_layout` → `build_scene_from_view` → `SceneGraph`。
     ///
+    /// ## RS04: PropRegistry 注入
+    ///
+    /// 每帧调用 [`PropRegistry::drain()`] 获取 Rhai 脚本通过 `set_prop` 写入的待更新 prop，
+    /// 通过 RS03 的字符串→WidgetId 映射定位节点，注入到 WidgetView 树。
+    /// **⚠️ 临时捷径：RS05-RS06 实施后，此路径降级为 fallback。**
+    ///
     /// 必须在 `run()` 之前调用。返回 `Err` 如果 config 未设置 `rgui_path`。
     ///
     /// 解析失败时保持旧视图，通过 stderr 报告错误（D7 §9 降级策略）。
@@ -317,6 +399,18 @@ impl App {
         let mut hot_reload = RguiHotReload::<M>::new(&config, rgui_path)?;
         let mut current_view = hot_reload.current_view().clone();
 
+        // RS04: 共享的 PropRegistry 和 WidgetIdBimap
+        let prop_registry = self.prop_registry.clone();
+        let id_map = Arc::clone(&self.id_map);
+
+        // 初始帧：填充 WidgetIdBimap
+        {
+            let bimap = rgui_devtools::rgui_parser::collect_widget_ids(&current_view);
+            *id_map
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = bimap;
+        }
+
         // 计算初始布局
         let available = Size::new(
             self.config.window_size.width,
@@ -334,15 +428,36 @@ impl App {
               -> SceneGraph {
             match hot_reload.check_and_reload() {
                 Ok(Some(new_view)) => {
+                    // RS04: 视图变更 → 更新 WidgetIdBimap
+                    let bimap = rgui_devtools::rgui_parser::collect_widget_ids(&new_view);
+                    *id_map
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = bimap;
+
                     let available = Size::new(f64::from(width), f64::from(height));
                     let mut view = new_view.clone();
+                    // RS04: 注入 Rhai 写入的待更新 prop
+                    inject_props_from_registry(&mut view, &prop_registry.drain());
                     let engine =
                         rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
                     layout_engine = engine;
-                    current_view = new_view;
+                    current_view = view;
                 },
                 Ok(None) => {
-                    // 无变更，使用现有视图
+                    // 无变更，但 Rhai 可能已写入 prop → 每帧注入
+                    let mut view = current_view.clone();
+                    let pending = prop_registry.drain();
+                    if !pending.is_empty() {
+                        inject_props_from_registry(&mut view, &pending);
+                        // prop 变更后需重算布局
+                        let available = Size::new(f64::from(width), f64::from(height));
+                        layout_engine = rgui_render::compute_view_layout(
+                            &mut view,
+                            available,
+                            Some(text_renderer),
+                        );
+                    }
+                    current_view = view;
                 },
                 Err(e) => {
                     // 解析失败 → 保持旧视图（D7 §9 降级策略）
@@ -366,6 +481,12 @@ impl App {
 
     /// 加载 `.rhai` 脚本并启动热重载。
     ///
+    /// ## RS04: 共享状态绑定
+    ///
+    /// 使用 `App` 持有的共享 [`PropRegistry`] 和 [`WidgetIdBimap`] 创建
+    /// [`CommandRegistry`]（通过 [`CommandRegistry::with_state`](rgui_script::CommandRegistry::with_state)），
+    /// 使 Rhai 引擎的 `set_prop`/`get_prop` 与渲染线程的 `drain()` 操作同一份数据。
+    ///
     /// 内部创建 `CommandRegistry`（共享引用）和 `RhaiHotReload`。
     /// 启动时编译全部脚本，每帧轮询文件变更并自动重新注册。
     ///
@@ -381,6 +502,7 @@ impl App {
     ) -> Result<(), rgui_devtools::rhai_hot_reload::RhaiHotReloadError> {
         use rgui_devtools::config::HotReloadConfig;
         use rgui_devtools::rhai_hot_reload::RhaiHotReload;
+        use rgui_script::CommandRegistry;
 
         if paths.is_empty() {
             return Ok(());
@@ -397,7 +519,11 @@ impl App {
             HotReloadConfig::default().with_watch_paths(watch_dirs)
         };
 
-        let mut hot_reload = RhaiHotReload::new(&config)?;
+        // RS04: 使用共享 PropRegistry + WidgetIdBimap 创建 CommandRegistry
+        let registry =
+            CommandRegistry::with_state(self.prop_registry.clone(), Arc::clone(&self.id_map));
+
+        let mut hot_reload = RhaiHotReload::with_registry(&config, registry)?;
         for path in paths {
             hot_reload.watch(path.as_ref())?;
         }
@@ -628,8 +754,7 @@ impl AppHandler {
             // WTI03：命中测试未命中 → 检查弹层 → 发送 Close 事件
             if !self.app.overlay_ids.is_empty() {
                 // 收集弹层 ID 列表（避免迭代时借用冲突）
-                let overlay_ids: Vec<WidgetId> =
-                    self.app.overlay_ids.iter().copied().collect();
+                let overlay_ids: Vec<WidgetId> = self.app.overlay_ids.iter().copied().collect();
                 for id in overlay_ids {
                     // 通过 WidgetSpec 实例处理器发送 close 动作
                     if let Some(handler) = self.app.widget_instances.get_mut(&id) {
@@ -1471,9 +1596,15 @@ mod tests {
         handler.handle_click(Point::new(300.0, 270.0));
 
         // 弹层不应收到 close 回调
-        assert!(!close_called.load(Ordering::SeqCst), "点击命中 widget 不应关闭弹层");
+        assert!(
+            !close_called.load(Ordering::SeqCst),
+            "点击命中 widget 不应关闭弹层"
+        );
         // other widget 应收到 click 回调
-        assert!(other_clicked.load(Ordering::SeqCst), "other widget 应收到 click 回调");
+        assert!(
+            other_clicked.load(Ordering::SeqCst),
+            "other widget 应收到 click 回调"
+        );
     }
 
     #[test]
@@ -1564,7 +1695,10 @@ mod tests {
         let mut handler = AppHandler::new(app);
         handler.handle_click(Point::new(200.0, 200.0));
 
-        assert!(!close_called.load(Ordering::SeqCst), "取消标记后不应再发送 close");
+        assert!(
+            !close_called.load(Ordering::SeqCst),
+            "取消标记后不应再发送 close"
+        );
     }
 
     #[test]

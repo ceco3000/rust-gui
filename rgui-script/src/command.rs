@@ -81,29 +81,24 @@ impl std::fmt::Debug for CommandRegistry {
 }
 
 impl CommandRegistry {
-    /// 创建空的命令注册表。
+    /// 使用外部提供的 [`PropRegistry`] 和 [`WidgetIdBimap`] 创建命令注册表（RS04）。
     ///
-    /// 自动向 Rhai 引擎注册 `set_prop(id, key, value)` 和 `get_prop(id, key)` 函数，
-    /// 用于 Rhai 脚本读写 `WidgetView` props（RS02）。
+    /// 与 [`new`](Self::new) 的区别：接受外部共享的 `PropRegistry` 和 `WidgetIdBimap`，
+    /// 使渲染线程的 `view_scene_builder` 和 Rhai 引擎可以共享同一份状态。
     ///
-    /// 初始时 `WidgetIdBimap` 为空——调用方需在 `WidgetView` 布局完成后
-    /// 通过 [`set_widget_id_map`] 注入映射。
+    /// 自动向 Rhai 引擎注册 `set_prop(id, key, value)` 和 `get_prop(id, key)` 函数。
     #[must_use]
-    pub fn new() -> Self {
-        let prop_registry = PropRegistry::new();
-        let id_map = Arc::new(Mutex::new(WidgetIdBimap::new()));
+    pub fn with_state(prop_registry: PropRegistry, id_map: Arc<Mutex<WidgetIdBimap>>) -> Self {
         let mut engine = Engine::new();
 
         // ── 注册 set_prop(id, key, value) ────────────────────────────
         let pr = prop_registry.clone();
         let im = Arc::clone(&id_map);
         engine.register_fn("set_prop", move |id: &str, key: &str, value: &str| {
-            // RS03: 使用 WidgetIdBimap 查找，不再创建新的 WidgetId
             let widget_id = lock_mutex(&im).get_id(id);
             if let Some(wid) = widget_id {
                 pr.set(wid, key.to_string(), PropValue::str(value));
             }
-            // 如果 id 不在映射中，静默忽略（widget 可能在 UI 中不存在）
         });
 
         // ── 注册 get_prop(id, key) -> String ────────────────────────
@@ -124,6 +119,21 @@ impl CommandRegistry {
             prop_registry,
             id_map,
         }
+    }
+
+    /// 创建空的命令注册表。
+    ///
+    /// 自动向 Rhai 引擎注册 `set_prop(id, key, value)` 和 `get_prop(id, key)` 函数，
+    /// 用于 Rhai 脚本读写 `WidgetView` props（RS02）。
+    ///
+    /// 初始时 `WidgetIdBimap` 为空——调用方需在 `WidgetView` 布局完成后
+    /// 通过 [`set_widget_id_map`] 注入映射。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_state(
+            PropRegistry::new(),
+            Arc::new(Mutex::new(WidgetIdBimap::new())),
+        )
     }
 
     /// 注册 Rhai 脚本。
@@ -642,5 +652,51 @@ mod tests {
         // 因为 "unknown" 不在 bimap 中，set_prop 被静默忽略
         let drained = registry.prop_registry().drain();
         assert!(drained.is_empty());
+    }
+
+    // ── RS04: with_state 共享状态测试 ──────────────────────────────
+
+    #[test]
+    fn with_state_shares_prop_registry() {
+        // 创建外部共享的 PropRegistry 和 WidgetIdBimap
+        let prop_registry = PropRegistry::new();
+        let id_map = Arc::new(Mutex::new(WidgetIdBimap::new()));
+
+        // 预先填充 bimap
+        {
+            let mut bimap = id_map.lock().unwrap();
+            bimap.insert("s1", WidgetId::from_u64(100));
+        }
+
+        let mut registry = CommandRegistry::with_state(prop_registry.clone(), Arc::clone(&id_map));
+        registry
+            .register_script("fn set_expanded() { set_prop(\"s1\", \"expanded\", \"true\"); }")
+            .unwrap();
+
+        registry.call_fn::<()>("set_expanded", ()).unwrap();
+
+        // 通过外部 prop_registry 验证写入
+        let drained = prop_registry.drain();
+        assert_eq!(drained.len(), 1);
+        let (_, props) = drained.iter().next().unwrap();
+        assert_eq!(props.get("expanded").unwrap().to_string(), "\"true\"");
+    }
+
+    #[test]
+    fn with_state_shares_id_map() {
+        let prop_registry = PropRegistry::new();
+        let id_map = Arc::new(Mutex::new(WidgetIdBimap::new()));
+
+        let registry = CommandRegistry::with_state(prop_registry, Arc::clone(&id_map));
+
+        // 外部修改 id_map，Rhai 侧应反映
+        {
+            let mut bimap = id_map.lock().unwrap();
+            bimap.insert("btn", WidgetId::from_u64(99));
+        }
+
+        // 验证 registry 内也看到此映射
+        let guard = registry.widget_id_map();
+        assert_eq!(guard.get_id("btn"), Some(WidgetId::from_u64(99)));
     }
 }

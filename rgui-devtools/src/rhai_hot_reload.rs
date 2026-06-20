@@ -97,6 +97,32 @@ pub struct RhaiHotReload {
 }
 
 impl RhaiHotReload {
+    /// 使用外部提供的 [`CommandRegistry`] 创建热重载管理器（RS04）。
+    ///
+    /// 与 [`new`](Self::new) 的区别：接受外部创建的 `CommandRegistry`，
+    /// 使渲染线程和 Rhai 引擎可以共享同一份 `PropRegistry` 和 `WidgetIdBimap`。
+    ///
+    /// # 参数
+    ///
+    /// * `config` - 热重载配置
+    /// * `registry` - 外部创建的 `CommandRegistry`（已包含共享状态）
+    ///
+    /// # 错误
+    ///
+    /// * 文件监控创建失败
+    pub fn with_registry(
+        config: &HotReloadConfig,
+        registry: CommandRegistry,
+    ) -> Result<Self, RhaiHotReloadError> {
+        let watcher = FileWatcher::new(config)?;
+        Ok(Self {
+            watcher,
+            registry,
+            watched_scripts: HashMap::new(),
+            canonical_to_source: HashMap::new(),
+        })
+    }
+
     /// 创建新的 `.rhai` 热重载管理器。
     ///
     /// # 参数
@@ -107,13 +133,7 @@ impl RhaiHotReload {
     ///
     /// * 文件监控创建失败
     pub fn new(config: &HotReloadConfig) -> Result<Self, RhaiHotReloadError> {
-        let watcher = FileWatcher::new(config)?;
-        Ok(Self {
-            watcher,
-            registry: CommandRegistry::new(),
-            watched_scripts: HashMap::new(),
-            canonical_to_source: HashMap::new(),
-        })
+        Self::with_registry(config, CommandRegistry::new())
     }
 
     /// 添加一个要监控的 `.rhai` 文件，并立即注册其中的函数。
