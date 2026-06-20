@@ -2322,6 +2322,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-icon"
+version = "0.1.0"
+dependencies = [
+ "ordered-float 4.6.0",
+ "rgui",
+ "rgui-core",
+]
+
+[[package]]
 name = "one-rgui-button"
 version = "0.1.0"
 dependencies = [
