@@ -143,6 +143,45 @@ pub fn parse_rgui_file<M: AppMessage>(path: &Path) -> Result<WidgetView<M>, Rgui
     parse_rgui_str(&content)
 }
 
+/// 从 WidgetView 树中收集 `id` 属性，建立字符串→WidgetId 双向映射。
+///
+/// 递归遍历整棵 WidgetView 树，查找所有携带 `id="xxx"` 属性的节点，
+/// 建立正向（字符串→WidgetId）和反向（WidgetId→字符串）映射。
+///
+/// # 示例
+///
+/// ```ignore
+/// use rgui_devtools::rgui_parser::{parse_rgui_str, collect_widget_ids};
+///
+/// let view = parse_rgui_str::<MyMsg>(r#"<Column><Button id="save" label="Save"/></Column>"#)?;
+/// let bimap = collect_widget_ids(&view);
+/// assert!(bimap.contains_name("save"));
+/// ```
+pub fn collect_widget_ids<M: AppMessage>(
+    view: &WidgetView<M>,
+) -> rgui_core::widget_id_map::WidgetIdBimap {
+    let mut bimap = rgui_core::widget_id_map::WidgetIdBimap::new();
+    collect_widget_ids_recursive(view, &mut bimap);
+    bimap
+}
+
+/// 递归辅助函数：遍历 WidgetView 树，收集 id 属性。
+fn collect_widget_ids_recursive<M: AppMessage>(
+    view: &WidgetView<M>,
+    bimap: &mut rgui_core::widget_id_map::WidgetIdBimap,
+) {
+    // 检查当前节点的 id prop
+    if let Some(PropValue::Str(id_str)) = view.props.get("id") {
+        if let Some(widget_id) = view.id {
+            bimap.insert(id_str, widget_id);
+        }
+    }
+    // 递归处理子节点
+    for child in &view.children {
+        collect_widget_ids_recursive(child, bimap);
+    }
+}
+
 // ============================================================================
 // Internal AST Types
 // ============================================================================
@@ -862,5 +901,84 @@ mod tests {
         // 确认表达式绑定
         let expr_label = &view.children[3];
         assert!(expr_label.props.contains_key("text"));
+    }
+
+    // --- collect_widget_ids 测试（RS03）---
+    // 注意：WidgetId 由 compute_view_layout() 分配，解析器本身不分配。
+    // 以下测试手动设置 WidgetId 模拟布局后的状态。
+
+    /// 辅助函数：为 WidgetView 树递归分配 WidgetId。
+    fn assign_widget_ids<M: AppMessage>(view: &mut WidgetView<M>) {
+        view.id = Some(rgui_core::id::WidgetId::new());
+        for child in &mut view.children {
+            assign_widget_ids(child);
+        }
+    }
+
+    #[test]
+    fn collect_single_widget_id() {
+        let mut view = parse_rgui_str::<TestMsg>(r#"<Button id="save" label="Save"/>"#).unwrap();
+        assign_widget_ids(&mut view);
+        let bimap = collect_widget_ids(&view);
+
+        assert_eq!(bimap.len(), 1);
+        assert!(bimap.contains_name("save"));
+        let id = bimap.get_id("save").unwrap();
+        assert_eq!(bimap.get_name(id), Some("save"));
+    }
+
+    #[test]
+    fn collect_multiple_widget_ids_nested() {
+        let mut view = parse_rgui_str::<TestMsg>(
+            r#"<Column id="root">
+                <Label id="title" text="Hello"/>
+                <Button id="submit" label="OK"/>
+               </Column>"#,
+        )
+        .unwrap();
+        assign_widget_ids(&mut view);
+        let bimap = collect_widget_ids(&view);
+
+        assert_eq!(bimap.len(), 3);
+        assert!(bimap.contains_name("root"));
+        assert!(bimap.contains_name("title"));
+        assert!(bimap.contains_name("submit"));
+    }
+
+    #[test]
+    fn collect_empty_when_no_id_attrs() {
+        let mut view =
+            parse_rgui_str::<TestMsg>(r#"<Column><Label text="Hello"/></Column>"#).unwrap();
+        assign_widget_ids(&mut view);
+        let bimap = collect_widget_ids(&view);
+
+        assert!(bimap.is_empty());
+    }
+
+    #[test]
+    fn collect_ignores_widgets_without_id() {
+        let mut view = parse_rgui_str::<TestMsg>(
+            r#"<Column>
+                <Label id="named" text="A"/>
+                <Label text="B"/>
+               </Column>"#,
+        )
+        .unwrap();
+        assign_widget_ids(&mut view);
+        let bimap = collect_widget_ids(&view);
+
+        // 只有 "named" 被收集；无 id 属性的 Label 被忽略
+        assert_eq!(bimap.len(), 1);
+        assert!(bimap.contains_name("named"));
+    }
+
+    #[test]
+    fn collect_bidirectional_lookup_works() {
+        let mut view = parse_rgui_str::<TestMsg>(r#"<Button id="btn_ok" label="OK"/>"#).unwrap();
+        assign_widget_ids(&mut view);
+        let bimap = collect_widget_ids(&view);
+
+        let id = bimap.get_id("btn_ok").unwrap();
+        assert_eq!(bimap.get_name(id), Some("btn_ok"));
     }
 }

@@ -30,13 +30,12 @@
 //! registry.call_fn::<()>("delete", ("item-42",)).unwrap();
 //! ```
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use rhai::{AST, Engine, Scope};
 
-use rgui_core::id::WidgetId;
 use rgui_core::view::PropValue;
+use rgui_core::widget_id_map::WidgetIdBimap;
 
 use crate::prop_registry::PropRegistry;
 
@@ -54,7 +53,7 @@ fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// `Arc<Mutex<Engine>>` 设计支持跨线程共享（需 rhai `sync` feature）。
 ///
 /// 同时持有 [`PropRegistry`] 用于 Rhai↔WidgetView prop 桥接，
-/// 以及临时 `id_map` 用于字符串→`WidgetId` 映射（RS03 完成后替换）。
+/// 以及 `WidgetIdBimap` 用于字符串↔`WidgetId` 双向映射（RS03）。
 #[derive(Clone)]
 pub struct CommandRegistry {
     engine: Arc<Mutex<Engine>>,
@@ -62,10 +61,9 @@ pub struct CommandRegistry {
     combined_ast: Arc<Mutex<Option<AST>>>,
     /// 响应式 prop 桥接注册表（RS01）。
     prop_registry: PropRegistry,
-    /// 临时字符串→WidgetId 映射。
-    /// RS03 完成后替换为双向映射。
-    #[allow(dead_code)]
-    id_map: Arc<Mutex<HashMap<String, WidgetId>>>,
+    /// `WidgetId` 字符串双向映射（RS03）。
+    /// 由外部在 `WidgetView` 布局完成后注入。
+    id_map: Arc<Mutex<WidgetIdBimap>>,
 }
 
 impl Default for CommandRegistry {
@@ -87,30 +85,32 @@ impl CommandRegistry {
     ///
     /// 自动向 Rhai 引擎注册 `set_prop(id, key, value)` 和 `get_prop(id, key)` 函数，
     /// 用于 Rhai 脚本读写 `WidgetView` props（RS02）。
+    ///
+    /// 初始时 `WidgetIdBimap` 为空——调用方需在 `WidgetView` 布局完成后
+    /// 通过 [`set_widget_id_map`] 注入映射。
     #[must_use]
     pub fn new() -> Self {
         let prop_registry = PropRegistry::new();
-        let id_map = Arc::new(Mutex::new(HashMap::new()));
+        let id_map = Arc::new(Mutex::new(WidgetIdBimap::new()));
         let mut engine = Engine::new();
 
         // ── 注册 set_prop(id, key, value) ────────────────────────────
         let pr = prop_registry.clone();
         let im = Arc::clone(&id_map);
         engine.register_fn("set_prop", move |id: &str, key: &str, value: &str| {
-            let widget_id = {
-                // 使用 WidgetId::new() 分配唯一 ID（全局原子计数器）
-                *lock_mutex(&im)
-                    .entry(id.to_string())
-                    .or_insert_with(WidgetId::new)
-            };
-            pr.set(widget_id, key.to_string(), PropValue::str(value));
+            // RS03: 使用 WidgetIdBimap 查找，不再创建新的 WidgetId
+            let widget_id = lock_mutex(&im).get_id(id);
+            if let Some(wid) = widget_id {
+                pr.set(wid, key.to_string(), PropValue::str(value));
+            }
+            // 如果 id 不在映射中，静默忽略（widget 可能在 UI 中不存在）
         });
 
         // ── 注册 get_prop(id, key) -> String ────────────────────────
         let pr2 = prop_registry.clone();
         let im2 = Arc::clone(&id_map);
         engine.register_fn("get_prop", move |id: &str, key: &str| -> String {
-            let widget_id = lock_mutex(&im2).get(id).copied();
+            let widget_id = lock_mutex(&im2).get_id(id);
             widget_id.map_or_else(String::new, |wid| {
                 pr2.get(wid, key)
                     .map(|pv| pv.to_string())
@@ -222,11 +222,35 @@ impl CommandRegistry {
     pub const fn prop_registry(&self) -> &PropRegistry {
         &self.prop_registry
     }
+
+    /// 设置 `WidgetId` 字符串双向映射（RS03）。
+    ///
+    /// 在 `WidgetView` 布局完成后调用，注入字符串 id→`WidgetId` 的完整映射。
+    /// 替换当前映射（每次视图重建时调用）。
+    ///
+    /// # 示例
+    ///
+    /// ```ignore
+    /// let bimap = collect_widget_ids(&view);
+    /// registry.set_widget_id_map(bimap);
+    /// ```
+    pub fn set_widget_id_map(&self, bimap: WidgetIdBimap) {
+        let mut guard = lock_mutex(&self.id_map);
+        *guard = bimap;
+    }
+
+    /// 获取内部 [`WidgetIdBimap`] 的引用（用于反向查找）。
+    ///
+    /// 用于将 `WidgetId` 转回字符串 id（如 `handle_click` 事件路由）。
+    pub fn widget_id_map(&self) -> MutexGuard<'_, WidgetIdBimap> {
+        lock_mutex(&self.id_map)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rgui_core::id::WidgetId;
 
     #[test]
     fn new_creates_empty_registry() {
@@ -380,10 +404,22 @@ mod tests {
     }
 
     // ── RS02: set_prop/get_prop Rhai 注册 ────────────────────────────
+    // 注意：RS03 后，set_prop/get_prop 依赖 WidgetIdBimap 查找 WidgetId。
+    // 测试需先注入映射。
+
+    /// 辅助函数：为已知的字符串 id 创建 WidgetIdBimap 条目。
+    fn register_test_ids(registry: &CommandRegistry, ids: &[&str]) {
+        let mut bimap = WidgetIdBimap::new();
+        for &name in ids {
+            bimap.insert(name, WidgetId::new());
+        }
+        registry.set_widget_id_map(bimap);
+    }
 
     #[test]
     fn set_prop_via_rhai_script_stores_in_prop_registry() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["section1"]);
         registry
             .register_script(
                 r#"
@@ -407,6 +443,7 @@ mod tests {
     #[test]
     fn get_prop_via_rhai_script_reads_from_prop_registry() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["s1"]);
         // 先用 set_prop 写入，再用 get_prop 读取
         registry
             .register_script(
@@ -426,6 +463,7 @@ mod tests {
     #[test]
     fn get_prop_returns_empty_for_unknown_key() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["s1"]);
         registry
             .register_script(
                 r#"
@@ -443,6 +481,7 @@ mod tests {
     #[test]
     fn get_prop_returns_empty_for_unknown_widget() {
         let mut registry = CommandRegistry::new();
+        // "ghost" 不在 bimap 中
         registry
             .register_script(
                 r#"
@@ -460,6 +499,7 @@ mod tests {
     #[test]
     fn set_prop_multiple_keys_per_widget() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["w"]);
         registry
             .register_script(
                 r#"
@@ -486,6 +526,7 @@ mod tests {
     #[test]
     fn set_prop_multiple_widgets_independent() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["a", "b"]);
         registry
             .register_script(
                 r#"
@@ -506,6 +547,7 @@ mod tests {
     #[test]
     fn set_prop_overwrites_previous_value() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["w"]);
         registry
             .register_script(
                 r#"
@@ -527,6 +569,7 @@ mod tests {
     #[test]
     fn set_prop_with_same_string_id_reuses_widget_id() {
         let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["w1"]);
         // 两次调用 set_prop 使用同一个字符串 ID
         registry
             .register_script(
@@ -556,5 +599,48 @@ mod tests {
         let pr = registry.prop_registry();
         // 初始状态：drain 为空
         assert!(pr.drain().is_empty());
+    }
+
+    // ── RS03: WidgetIdBimap 集成测试 ──────────────────────────────
+
+    #[test]
+    fn set_widget_id_map_and_lookup() {
+        let registry = CommandRegistry::new();
+
+        // 注入映射
+        let mut bimap = WidgetIdBimap::new();
+        let id = WidgetId::from_u64(42);
+        bimap.insert("btn", id);
+        registry.set_widget_id_map(bimap);
+
+        // 通过 widget_id_map() 验证正向查找
+        let guard = registry.widget_id_map();
+        assert_eq!(guard.get_id("btn"), Some(id));
+        drop(guard);
+
+        // 验证反向查找
+        let guard2 = registry.widget_id_map();
+        assert_eq!(guard2.get_name(id), Some("btn"));
+    }
+
+    #[test]
+    fn set_prop_ignores_unknown_id() {
+        let mut registry = CommandRegistry::new();
+        // 不注册任何 id 到 bimap
+        registry
+            .register_script(
+                r#"
+                fn try_set() {
+                    set_prop("unknown", "key", "value");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("try_set", ()).unwrap();
+
+        // 因为 "unknown" 不在 bimap 中，set_prop 被静默忽略
+        let drained = registry.prop_registry().drain();
+        assert!(drained.is_empty());
     }
 }

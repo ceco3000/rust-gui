@@ -25,6 +25,7 @@ pub mod locale;
 pub mod registry;
 pub mod traits;
 pub mod view;
+pub mod widget_id_map;
 
 // 标识符
 pub use id::{NodeHandle, WidgetId, WindowId};
@@ -38,6 +39,9 @@ pub use geometry::{
 
 // 视图类型
 pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView};
+
+// WidgetId 双向映射
+pub use widget_id_map::WidgetIdBimap;
 
 // 核心 trait
 pub use traits::{
