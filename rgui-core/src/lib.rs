@@ -40,7 +40,7 @@ pub use geometry::{
 pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView};
 
 // 核心 trait
-pub use traits::{AppMessage, EventResult, PersistState, WidgetSpec};
+pub use traits::{AppMessage, EventResult, FormField, FormFieldError, PersistState, WidgetSpec};
 
 // Context 类型
 pub use context::{
@@ -77,7 +77,7 @@ pub mod prelude {
     pub use crate::id::{NodeHandle, WidgetId, WindowId};
     pub use crate::locale::Locale;
     pub use crate::registry::{RegistryError, WidgetRegistry};
-    pub use crate::traits::{AppMessage, PersistState, WidgetSpec};
+    pub use crate::traits::{AppMessage, FormField, FormFieldError, PersistState, WidgetSpec};
     pub use crate::view::{
         Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView,
     };

@@ -6,7 +6,7 @@
 use crate::a11y::AccessibilityNode;
 use crate::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use crate::geometry::{BoxConstraints, Rect, Size};
-use crate::view::WidgetView;
+use crate::view::{PropValue, WidgetView};
 use std::any::Any;
 use std::fmt;
 
@@ -160,6 +160,83 @@ pub enum EventResult<M> {
 }
 
 // ============================================================================
+// FormField
+// ============================================================================
+
+/// 表单字段验证错误。
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormFieldError {
+    pub message: String,
+}
+
+impl FormFieldError {
+    #[must_use]
+    pub fn new(msg: impl Into<String>) -> Self {
+        Self {
+            message: msg.into(),
+        }
+    }
+}
+
+impl fmt::Display for FormFieldError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for FormFieldError {}
+
+/// 表单字段 trait。
+///
+/// 表单容器通过 trait bound 收集、校验、重置表单字段。
+/// 替代 Web Components 的 `formAssociated` + `ElementInternals`。
+///
+/// ## 实现指南
+///
+/// 组件状态类型实现此 trait。`value()` 返回字段当前值，
+/// `validate()` 检查 required/pattern 等约束，`reset()` 恢复默认值。
+///
+/// ## 示例
+///
+/// ```ignore
+/// impl FormField for WaCheckboxState {
+///     fn value(&self) -> PropValue {
+///         PropValue::Bool(self.checked)
+///     }
+///
+///     fn validate(&self) -> Result<(), FormFieldError> {
+///         if self.required && !self.checked {
+///             return Err(FormFieldError::new("此项为必填"));
+///         }
+///         Ok(())
+///     }
+///
+///     fn reset(&mut self) {
+///         self.checked = false;
+///     }
+///
+///     fn field_name(&self) -> &'static str {
+///         &self.name
+///     }
+/// }
+/// ```
+pub trait FormField {
+    /// 返回字段的当前值。
+    fn value(&self) -> PropValue;
+
+    /// 验证当前值是否有效。
+    ///
+    /// 返回 `Ok(())` 表示有效，`Err` 包含错误描述。
+    fn validate(&self) -> Result<(), FormFieldError>;
+
+    /// 将字段重置为默认/初始值。
+    fn reset(&mut self);
+
+    /// 返回字段的标识名称（用于表单序列化和错误定位）。
+    fn field_name(&self) -> &'static str;
+}
+
+// ============================================================================
 // 测试
 // ============================================================================
 
@@ -167,6 +244,7 @@ pub enum EventResult<M> {
 mod tests {
     use super::*;
     use std::any::TypeId;
+    use std::sync::Arc;
 
     /// 用于测试的简单消息类型。
     #[derive(Debug, Clone, PartialEq)]
@@ -242,5 +320,163 @@ mod tests {
         let state = TestState { count: 42 };
         let any = state.as_any();
         assert_eq!(any.type_id(), TypeId::of::<TestState>());
+    }
+
+    // ------------------------------------------------------------------
+    // FormField 测试
+    // ------------------------------------------------------------------
+
+    /// 模拟复选框状态的测试结构体。
+    #[derive(Debug, Clone)]
+    struct MockCheckboxState {
+        checked: bool,
+        required: bool,
+    }
+
+    impl MockCheckboxState {
+        fn new(checked: bool, required: bool) -> Self {
+            Self { checked, required }
+        }
+    }
+
+    impl FormField for MockCheckboxState {
+        fn value(&self) -> PropValue {
+            PropValue::Bool(self.checked)
+        }
+
+        fn validate(&self) -> Result<(), FormFieldError> {
+            if self.required && !self.checked {
+                return Err(FormFieldError::new("此项为必填"));
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {
+            self.checked = false;
+        }
+
+        fn field_name(&self) -> &'static str {
+            "mock_checkbox"
+        }
+    }
+
+    /// 模拟文本输入状态的测试结构体。
+    #[derive(Debug, Clone)]
+    struct MockInputState {
+        value: String,
+        default_value: String,
+        required: bool,
+    }
+
+    impl MockInputState {
+        fn new(value: impl Into<String>, required: bool) -> Self {
+            let value = value.into();
+            Self {
+                default_value: value.clone(),
+                value,
+                required,
+            }
+        }
+    }
+
+    impl FormField for MockInputState {
+        fn value(&self) -> PropValue {
+            PropValue::Str(Arc::from(self.value.as_str()))
+        }
+
+        fn validate(&self) -> Result<(), FormFieldError> {
+            if self.required && self.value.is_empty() {
+                return Err(FormFieldError::new("此项为必填"));
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {
+            self.value = self.default_value.clone();
+        }
+
+        fn field_name(&self) -> &'static str {
+            "mock_input"
+        }
+    }
+
+    #[test]
+    fn form_field_value_returns_correct_propvalue() {
+        let field = MockCheckboxState::new(true, false);
+        assert_eq!(field.value(), PropValue::Bool(true));
+
+        let field = MockCheckboxState::new(false, true);
+        assert_eq!(field.value(), PropValue::Bool(false));
+    }
+
+    #[test]
+    fn form_field_validate_passes_when_not_required() {
+        let field = MockCheckboxState::new(false, false);
+        assert!(field.validate().is_ok());
+    }
+
+    #[test]
+    fn form_field_validate_fails_when_required_and_empty() {
+        let field = MockCheckboxState::new(false, true);
+        let result = field.validate();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().message, "此项为必填");
+    }
+
+    #[test]
+    fn form_field_reset_restores_default() {
+        let mut field = MockCheckboxState::new(true, false);
+        assert_eq!(field.value(), PropValue::Bool(true));
+        field.reset();
+        assert_eq!(field.value(), PropValue::Bool(false));
+    }
+
+    #[test]
+    fn form_field_name_returns_static_str() {
+        let field = MockCheckboxState::new(false, false);
+        assert_eq!(field.field_name(), "mock_checkbox");
+    }
+
+    #[test]
+    fn form_field_input_value_returns_string() {
+        let field = MockInputState::new("hello", false);
+        assert_eq!(field.value(), PropValue::Str(Arc::from("hello")));
+    }
+
+    #[test]
+    fn form_field_input_validate_empty_required() {
+        let field = MockInputState::new("", true);
+        let result = field.validate();
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().message, "此项为必填");
+    }
+
+    #[test]
+    fn form_field_input_validate_nonempty_passes() {
+        let field = MockInputState::new("hello", true);
+        assert!(field.validate().is_ok());
+    }
+
+    #[test]
+    fn form_field_input_reset_to_default() {
+        let mut field = MockInputState::new("default", false);
+        field.value = "modified".into();
+        field.reset();
+        assert_eq!(field.value(), PropValue::Str(Arc::from("default")));
+    }
+
+    #[test]
+    fn form_field_error_display() {
+        let err = FormFieldError::new("invalid");
+        assert_eq!(err.to_string(), "invalid");
+    }
+
+    #[test]
+    fn form_field_error_partial_eq() {
+        let a = FormFieldError::new("error");
+        let b = FormFieldError::new("error");
+        let c = FormFieldError::new("different");
+        assert_eq!(a, b);
+        assert_ne!(a, c);
     }
 }
