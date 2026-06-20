@@ -166,6 +166,10 @@ pub struct App {
     /// 共享状态存储（RS06：Rhai↔渲染 dirty 追踪）。
     /// Rhai `store_write` 标记脏，渲染管线读取脏集合并增量重绘。
     state_store: Arc<RwLock<rgui_state::StateStore>>,
+    /// RS06 回归修复：非 StateStore 交互（如 AtomicBool）触发后强制重建场景。
+    /// register_interaction 回调触发后由 handle_click 设为 true，
+    /// RedrawRequested 中迫使 can_reuse=false，重建后清除。
+    pub(crate) needs_redraw: bool,
 }
 
 /// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
@@ -316,6 +320,7 @@ impl App {
             #[cfg(feature = "devtools")]
             rhai_hot_reload: None,
             state_store: Arc::new(RwLock::new(rgui_state::StateStore::new())),
+            needs_redraw: false,
         }
     }
 
@@ -426,6 +431,15 @@ impl App {
         builder: impl FnMut(u64, u32, u32, &TextRenderer) -> SceneGraph + Send + 'static,
     ) {
         self.view_scene_builder = Some(Box::new(builder));
+    }
+
+    /// RS06 回归修复：请求在下一帧强制重建场景。
+    ///
+    /// register_interaction 回调（如 AtomicBool toggle）不经过 StateStore 的脏标记机制。
+    /// 调用此方法后，下一次 `RedrawRequested` 将忽略 `prev_scene` 缓存并调用
+    /// `view_scene_builder` 重建场景图。
+    pub fn request_redraw(&mut self) {
+        self.needs_redraw = true;
     }
 
     /// 从 `.rgui` 文件加载视图（路径从 `config.rgui_path` 读取）。
@@ -885,6 +899,8 @@ impl AppHandler {
                 match result {
                     EventResult::Handled => {
                         // 组件消费了事件，停止，不调用旧回调
+                        // RS06 回归修复：WidgetSpec handler 可能改变了外部状态
+                        self.app.request_redraw();
                         self.app.events.push(Event::MouseDown {
                             position,
                             button: MouseButton::Left,
@@ -894,6 +910,8 @@ impl AppHandler {
                     },
                     EventResult::Prevented => {
                         // 阻止默认行为，不调用旧回调，不记录事件
+                        // RS06 回归修复：WidgetSpec handler 可能改变了外部状态
+                        self.app.request_redraw();
                         return;
                     },
                     EventResult::Continue(_msg) => {
@@ -913,6 +931,8 @@ impl AppHandler {
                     match registry.call_fn::<()>(fn_name, ()) {
                         Ok(()) => {
                             // Rhai 函数执行成功，事件已消费
+                            // RS06 回归修复：Rhai 函数可能改变了外部状态
+                            self.app.request_redraw();
                             self.app.events.push(Event::MouseDown {
                                 position,
                                 button: MouseButton::Left,
@@ -945,6 +965,9 @@ impl AppHandler {
                     };
                     eprintln!("[rgui] 交互回调 panic (widget={hit_id:?}, action={action}): {msg}");
                 }
+                // RS06 回归修复：交互回调（如 AtomicBool）不经过 StateStore，
+                // 必须强制请求下一帧重建场景。
+                self.app.request_redraw();
                 // 记录事件
                 self.app.events.push(Event::MouseDown {
                     position,
@@ -962,6 +985,8 @@ impl AppHandler {
                     if let Some(handler) = self.app.widget_instances.get_mut(&id) {
                         let mut update_ctx = UpdateContext::new();
                         let _result = handler("close", &mut update_ctx);
+                        // RS06 回归修复：close 可能改变了外部状态
+                        self.app.request_redraw();
                     }
                     // 同时推送 Close 事件到队列（供后续处理）
                     self.app.events.push(Event::Close {
@@ -1270,11 +1295,12 @@ impl ApplicationHandler for AppHandler {
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
 
                     // RS06: 检查脏集合——无脏 widget 且已有上一帧场景时跳过重建
+                    // RS06 回归修复：needs_redraw 为非 StateStore 交互（AtomicBool 等）强制重建
                     let has_dirty = {
                         let store = self.state_store.read().expect("StateStore RwLock poisoned");
                         !store.dirty_widgets().is_empty()
                     };
-                    let can_reuse = !has_dirty && self.prev_scene.is_some();
+                    let can_reuse = !has_dirty && !self.app.needs_redraw && self.prev_scene.is_some();
 
                     // 场景构建回调，带异常隔离（D1 §11.3）
                     let scene = if can_reuse {
@@ -1304,6 +1330,9 @@ impl ApplicationHandler for AppHandler {
 
                     // RS06: 缓存本帧场景供下一帧复用
                     self.prev_scene = Some(scene.clone());
+
+                    // RS06 回归修复：重建后清除 needs_redraw
+                    self.app.needs_redraw = false;
 
                     // RS06: 渲染后清除脏标记
                     {
@@ -2269,5 +2298,57 @@ mod tests {
             );
             assert_eq!(handler.app.event_count(), 1);
         }
+    }
+
+    // ========================================================================
+    // RS06 回归修复：AtomicBool 交互桥接 needs_redraw 测试
+    // ========================================================================
+
+    #[test]
+    fn request_redraw_sets_flag() {
+        let mut app = App::new(AppConfig::default());
+        assert!(!app.needs_redraw, "needs_redraw should start false");
+        app.request_redraw();
+        assert!(app.needs_redraw, "needs_redraw should be true after request_redraw()");
+    }
+
+    #[test]
+    fn interaction_callback_triggers_redraw_request() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+
+        let toggled = Arc::new(AtomicBool::new(false));
+        let toggled_clone = Arc::clone(&toggled);
+
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(42);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 50.0);
+
+        app.register_interaction(
+            widget_id,
+            bounds,
+            "toggle",
+            move |_action| {
+                toggled_clone.store(true, Ordering::SeqCst);
+            },
+        );
+
+        assert!(!app.needs_redraw, "needs_redraw should start false");
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        assert!(toggled.load(Ordering::SeqCst), "AtomicBool should be toggled");
+        assert!(
+            handler.app.needs_redraw,
+            "interaction callback should trigger needs_redraw"
+        );
+    }
+
+    #[test]
+    fn needs_redraw_cleared_after_scene_rebuild() {
+        // Verify that needs_redraw starts false (in a fresh App)
+        let app = App::new(AppConfig::default());
+        assert!(!app.needs_redraw, "needs_redraw should be false on fresh App");
     }
 }
