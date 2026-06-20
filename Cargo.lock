@@ -2325,90 +2325,130 @@ dependencies = [
 name = "one-accordion"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-badge"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-breadcrumb"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-checkbox"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-dialog"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-dropdown"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-icon"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-input"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-progress-bar"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-rating"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
@@ -2428,36 +2468,52 @@ dependencies = [
 name = "one-slider"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-switch"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-tag"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
 name = "one-tree"
 version = "0.1.0"
 dependencies = [
- "ordered-float 4.6.0",
  "rgui",
  "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
 ]
 
 [[package]]
