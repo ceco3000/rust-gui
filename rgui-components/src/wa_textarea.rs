@@ -17,18 +17,14 @@ use rgui_macros::{AppMessage as AppMsg, PersistState as Persist};
 
 /// Web Awesome wa-textarea 组件状态。
 ///
-/// Textarea 是多行文本输入框，支持标签、提示、resize、字符计数。
-/// 跳过 formAction/formEnctype/formMethod 等 Web 专属表单属性。
+/// Textarea 是多行文本输入框，支持标签、提示、验证、
+/// 字符计数和尺寸调整。
+///
 /// 跳过 withLabel/withHint SSR 属性。
-/// FormField trait impl 暂时跳过（WC02 trait 已存在但尚未提交到代码中）。
+/// 跳过 autocapitalize/autocorrect/autocomplete/autofocus/enterkeyhint
+/// 等 Web 专属属性。
 #[derive(Debug, Clone, Default, serde::Serialize, Persist)]
 pub struct WaTextareaState {
-    /// name 属性
-    pub name: String,
-    /// 当前值
-    pub value: String,
-    /// 默认值（表单重置时使用）
-    pub default_value: String,
     /// 尺寸：xs | s | m | l | xl | small | medium | large
     pub size: String,
     /// 视觉外观：filled | outlined | filled-outlined
@@ -39,26 +35,32 @@ pub struct WaTextareaState {
     pub hint: String,
     /// 占位符文本
     pub placeholder: String,
-    /// 默认行数（默认 4）
-    pub rows: u32,
-    /// resize 模式：none | vertical | horizontal | both | auto
+    /// 当前值（多行文本）
+    pub value: String,
+    /// 默认值（表单重置时使用）
+    pub default_value: String,
+    /// 表单 name 属性
+    pub name: String,
+    /// 调整大小方式：none | vertical | horizontal | both | auto
     pub resize: String,
+    /// 虚拟键盘输入模式
+    pub inputmode: String,
+    /// 默认显示行数
+    pub rows: u32,
     /// 禁用状态
     pub disabled: bool,
     /// 只读状态
     pub readonly: bool,
     /// 必填字段
     pub required: bool,
-    /// 最小长度
-    pub minlength: Option<u32>,
-    /// 最大长度
-    pub maxlength: Option<u32>,
-    /// 拼写检查（默认 true）
+    /// 拼写检查
     pub spellcheck: bool,
-    /// 输入模式
-    pub inputmode: String,
     /// 显示字符计数
     pub with_count: bool,
+    /// 最小输入长度
+    pub minlength: Option<u32>,
+    /// 最大输入长度
+    pub maxlength: Option<u32>,
 }
 
 impl WaTextareaState {
@@ -68,8 +70,8 @@ impl WaTextareaState {
             label: label.into(),
             size: "m".into(),
             appearance: "outlined".into(),
-            rows: 4,
             resize: "vertical".into(),
+            rows: 4,
             spellcheck: true,
             ..Self::default()
         }
@@ -100,14 +102,14 @@ pub enum WaTextareaMessage {
 
 pub struct WaTextarea;
 
-/// 根据 size 属性的像素高度映射
-fn textarea_height(size: &str) -> f64 {
+/// 根据 size 属性的像素映射
+fn textarea_height_scale(size: &str) -> f64 {
     match size {
-        "xs" => 24.0,
-        "s" | "small" => 28.0,
-        "l" | "large" => 48.0,
-        "xl" => 56.0,
-        _ => 36.0, // "m" | "medium" (默认)
+        "xs" => 16.0,
+        "s" | "small" => 18.0,
+        "l" | "large" => 28.0,
+        "xl" => 32.0,
+        _ => 22.0, // "m" | "medium" (默认)
     }
 }
 
@@ -142,7 +144,7 @@ impl WidgetSpec for WaTextarea {
     }
 
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
-        WidgetView::new("rgui_components::WaTextarea")
+        let mut v = WidgetView::new("rgui_components::WaTextarea")
             .prop("label", PropValue::str(state.label.as_str()))
             .prop("size", PropValue::str(state.size.as_str()))
             .prop("appearance", PropValue::str(state.appearance.as_str()))
@@ -157,58 +159,59 @@ impl WidgetSpec for WaTextarea {
             .prop("readonly", PropValue::Bool(state.readonly))
             .prop("required", PropValue::Bool(state.required))
             .prop("spellcheck", PropValue::Bool(state.spellcheck))
-            .prop("with-count", PropValue::Bool(state.with_count))
-            .prop(
-                "minlength",
-                PropValue::Int(state.minlength.unwrap_or(0) as i64),
-            )
-            .prop(
-                "maxlength",
-                PropValue::Int(state.maxlength.unwrap_or(0) as i64),
-            )
+            .prop("with-count", PropValue::Bool(state.with_count));
+        if let Some(min) = state.minlength {
+            v = v.prop("minlength", PropValue::Int(min as i64));
+        }
+        if let Some(max) = state.maxlength {
+            v = v.prop("maxlength", PropValue::Int(max as i64));
+        }
+        v
     }
 
     fn update(&self, msg: Self::Message, _state: &mut Self::State, _: &mut UpdateContext) {
         match msg {
             WaTextareaMessage::Change => {
                 // 值提交——由 IME/框架事件系统处理后调用
-            },
+            }
             WaTextareaMessage::Input => {
                 // 输入中——由 IME 驱动，state.value 由框架更新
-            },
-            WaTextareaMessage::Blur | WaTextareaMessage::Focus | WaTextareaMessage::Invalid => {},
+            }
+            WaTextareaMessage::Blur
+            | WaTextareaMessage::Focus
+            | WaTextareaMessage::Invalid => {
+                // 这些事件由框架事件系统处理
+            }
         }
     }
 
     fn measure(&self, state: &Self::State, c: BoxConstraints, _: &MeasureContext) -> Size {
+        let line_h = textarea_height_scale(&state.size);
         let font_size = textarea_font_size(&state.size);
-        let line_height = font_size * 1.5;
-        let _h_per_row = textarea_height(&state.size).max(line_height);
+        let rows = state.rows.max(2) as f64;
 
-        // Textarea 高度 = 标签(可选) + rows × 行高 + 提示(可选)
-        let label_height = if state.label.is_empty() {
+        // 文本区域高度 = 行数 × 行高 + 内边距
+        let textarea_h = rows * line_h + 16.0; // 16px 垂直 padding
+
+        // 标签高度
+        let label_h = if state.label.is_empty() {
             0.0
         } else {
             font_size * 1.4
         };
-        let textarea_h = state.rows as f64 * line_height + 16.0; // 16px padding
-        let hint_height = if state.hint.is_empty() {
+
+        // 提示/计数区域高度
+        let footer_h = if state.hint.is_empty() && !state.with_count {
             0.0
         } else {
-            font_size * 0.75 + 4.0
+            font_size * 0.85 * 1.5
         };
-        let total_h = label_height + textarea_h + hint_height;
 
-        // 宽度：估算文本宽度
-        let char_count = state
-            .value
-            .lines()
-            .map(|l| l.chars().count())
-            .max()
-            .unwrap_or(0)
-            .max(state.placeholder.chars().count())
-            .max(20) as f64;
-        let text_width = char_count * font_size * 0.6 + 24.0; // 24px padding
+        let total_h = label_h + textarea_h + footer_h;
+
+        // 宽度：根据内容估算
+        let char_count = 30; // 多行文本固定宽度
+        let text_width = char_count as f64 * font_size * 0.6 + 24.0;
 
         Size::new(
             text_width.clamp(c.min_width, c.max_width),
@@ -217,8 +220,10 @@ impl WidgetSpec for WaTextarea {
     }
 
     fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let line_h = textarea_height_scale(&state.size);
         let font_size = textarea_font_size(&state.size);
         let border_radius = textarea_border_radius(&state.size);
+        let rows = state.rows.max(2) as f64;
 
         // 标签绘制偏移
         let label_offset_y = if state.label.is_empty() {
@@ -227,7 +232,7 @@ impl WidgetSpec for WaTextarea {
             font_size * 1.4
         };
         let textarea_y = bounds.origin.y + label_offset_y;
-        let textarea_h = state.rows as f64 * font_size * 1.5 + 16.0;
+        let textarea_h = rows * line_h + 16.0;
         let textarea_rect = Rect::new(bounds.origin.x, textarea_y, bounds.size.width, textarea_h);
 
         // ── 标签 ──
@@ -247,7 +252,7 @@ impl WidgetSpec for WaTextarea {
             ctx.draw_text(&state.label, label_rect, label_color, label_font_size);
         }
 
-        // ── 文本框背景 ──
+        // ── 文本区域背景 ──
         let (bg, border_color) = match state.appearance.as_str() {
             "filled" => (
                 Color::new(0.95, 0.95, 0.95, 1.0),
@@ -274,7 +279,7 @@ impl WidgetSpec for WaTextarea {
         // 绘制背景（带 border-radius）
         ctx.fill_rect(textarea_rect, bg_color, border_radius);
 
-        // 模拟边框（绘制略小的矩形叠加）
+        // 模拟边框
         let border_width: f64 = 2.0;
         ctx.fill_rect(textarea_rect, border, border_radius);
         let inner_rect = Rect::new(
@@ -286,53 +291,37 @@ impl WidgetSpec for WaTextarea {
         let inner_radius = (border_radius as f64 - 1.0).max(1.0) as f32;
         ctx.fill_rect(inner_rect, bg_color, inner_radius);
 
-        // ── 文本内容 / 占位符 ──
+        // ── 值文本 / 占位符 ──
         let display_text = if state.value.is_empty() {
             &state.placeholder
         } else {
             &state.value
         };
 
-        let text_color = if state.value.is_empty() {
-            // 占位符颜色
-            Color::new(0.6, 0.6, 0.6, 1.0)
-        } else if state.disabled {
-            Color::new(0.6, 0.6, 0.6, 1.0)
+        let text_color = if state.value.is_empty() || state.disabled {
+            Color::new(0.6, 0.6, 0.6, 1.0) // 占位符或禁用颜色
         } else {
             Color::new(0.1, 0.1, 0.1, 1.0)
         };
 
         if !display_text.is_empty() {
             let text_padding: f64 = 8.0;
-            let text_rect = Rect::new(
-                textarea_rect.origin.x + text_padding,
-                textarea_rect.origin.y + 4.0,
-                textarea_rect.size.width - text_padding * 2.0,
-                textarea_rect.size.height - 8.0,
-            );
-            ctx.draw_text(display_text, text_rect, text_color, font_size as f32);
-        }
+            // 多行文本：从上到下绘制多行
+            let text_lines: Vec<&str> = display_text.lines().collect();
+            let line_height = line_h;
 
-        // ── 字符计数 ──
-        if state.with_count {
-            let current_len = state.value.chars().count();
-            let count_text = if let Some(max) = state.maxlength {
-                let remaining = (max as usize).saturating_sub(current_len);
-                format!("{}", remaining)
-            } else {
-                format!("{}", current_len)
-            };
-
-            let count_font_size = (font_size * 0.75) as f32;
-            let count_color = Color::new(0.5, 0.5, 0.5, 1.0);
-            let count_y = textarea_rect.origin.y + textarea_rect.size.height + 4.0;
-            let count_rect = Rect::new(
-                textarea_rect.origin.x + textarea_rect.size.width - 40.0,
-                count_y,
-                40.0,
-                font_size * 0.75,
-            );
-            ctx.draw_text(&count_text, count_rect, count_color, count_font_size);
+            for (i, line) in text_lines.iter().enumerate() {
+                if i as f64 * line_height > textarea_h - text_padding * 2.0 {
+                    break; // 超出可见区域
+                }
+                let line_rect = Rect::new(
+                    inner_rect.origin.x + text_padding,
+                    inner_rect.origin.y + text_padding + i as f64 * line_height,
+                    inner_rect.size.width - text_padding * 2.0,
+                    line_height,
+                );
+                ctx.draw_text(line, line_rect, text_color, font_size as f32);
+            }
         }
 
         // ── 提示文本 ──
@@ -342,6 +331,34 @@ impl WidgetSpec for WaTextarea {
             let hint_color = Color::new(0.5, 0.5, 0.5, 1.0);
             let hint_rect = Rect::new(bounds.origin.x, hint_y, bounds.size.width, font_size * 0.75);
             ctx.draw_text(&state.hint, hint_rect, hint_color, hint_font_size);
+        }
+
+        // ── 字符计数 ──
+        if state.with_count {
+            let count_y = if state.hint.is_empty() {
+                textarea_rect.origin.y + textarea_rect.size.height + 4.0
+            } else {
+                textarea_rect.origin.y + textarea_rect.size.height + 4.0 + font_size * 0.75
+            };
+            let count_font_size = (font_size * 0.7) as f32;
+            let count_color = Color::new(0.5, 0.5, 0.5, 1.0);
+            let count_text = match state.maxlength {
+                Some(max) => {
+                    let current = state.value.chars().count() as u32;
+                    format!("{}/{}", current, max)
+                }
+                None => {
+                    let current = state.value.chars().count();
+                    format!("{}", current)
+                }
+            };
+            let count_rect = Rect::new(
+                bounds.origin.x + bounds.size.width - 60.0,
+                count_y,
+                60.0,
+                font_size * 0.7,
+            );
+            ctx.draw_text(&count_text, count_rect, count_color, count_font_size);
         }
     }
 
@@ -357,6 +374,7 @@ impl WidgetSpec for WaTextarea {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::any::TypeId;
 
     #[test]
     fn name() {
@@ -371,19 +389,86 @@ mod tests {
     }
 
     #[test]
-    fn view_has_value() {
-        let mut state = WaTextareaState::new("Bio");
-        state.value = "Hello world".into();
+    fn view_has_size() {
+        let mut state = WaTextareaState::new("Notes");
+        state.size = "l".into();
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(
-            v.props.get("value"),
-            Some(&PropValue::Str(std::sync::Arc::from("Hello world")))
+            v.props.get("size"),
+            Some(&PropValue::Str(std::sync::Arc::from("l")))
         );
     }
 
     #[test]
+    fn view_has_appearance() {
+        let mut state = WaTextareaState::new("Bio");
+        state.appearance = "filled".into();
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(
+            v.props.get("appearance"),
+            Some(&PropValue::Str(std::sync::Arc::from("filled")))
+        );
+    }
+
+    #[test]
+    fn view_has_value() {
+        let mut state = WaTextareaState::new("Comment");
+        state.value = "Hello\nWorld".into();
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(
+            v.props.get("value"),
+            Some(&PropValue::Str(std::sync::Arc::from("Hello\nWorld")))
+        );
+    }
+
+    #[test]
+    fn view_has_placeholder() {
+        let mut state = WaTextareaState::new("Message");
+        state.placeholder = "Enter your message...".into();
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(
+            v.props.get("placeholder"),
+            Some(&PropValue::Str(std::sync::Arc::from(
+                "Enter your message..."
+            )))
+        );
+    }
+
+    #[test]
+    fn view_has_hint() {
+        let mut state = WaTextareaState::new("Feedback");
+        state.hint = "Max 500 characters.".into();
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(
+            v.props.get("hint"),
+            Some(&PropValue::Str(std::sync::Arc::from(
+                "Max 500 characters."
+            )))
+        );
+    }
+
+    #[test]
+    fn view_has_resize() {
+        let mut state = WaTextareaState::new("Resizable");
+        state.resize = "none".into();
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(
+            v.props.get("resize"),
+            Some(&PropValue::Str(std::sync::Arc::from("none")))
+        );
+    }
+
+    #[test]
+    fn view_has_rows() {
+        let mut state = WaTextareaState::new("Tall");
+        state.rows = 8;
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(v.props.get("rows"), Some(&PropValue::Int(8)));
+    }
+
+    #[test]
     fn view_disabled() {
-        let mut state = WaTextareaState::new("Notes");
+        let mut state = WaTextareaState::new("Locked");
         state.disabled = true;
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("disabled"), Some(&PropValue::Bool(true)));
@@ -391,7 +476,7 @@ mod tests {
 
     #[test]
     fn view_readonly() {
-        let mut state = WaTextareaState::new("Notes");
+        let mut state = WaTextareaState::new("ReadOnly");
         state.readonly = true;
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("readonly"), Some(&PropValue::Bool(true)));
@@ -399,36 +484,56 @@ mod tests {
 
     #[test]
     fn view_required() {
-        let mut state = WaTextareaState::new("Notes");
+        let mut state = WaTextareaState::new("Must fill");
         state.required = true;
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("required"), Some(&PropValue::Bool(true)));
     }
 
     #[test]
+    fn view_spellcheck() {
+        let mut state = WaTextareaState::new("Spell");
+        state.spellcheck = false;
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert_eq!(v.props.get("spellcheck"), Some(&PropValue::Bool(false)));
+    }
+
+    #[test]
     fn view_with_count() {
-        let mut state = WaTextareaState::new("Notes");
+        let mut state = WaTextareaState::new("Counted");
         state.with_count = true;
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(v.props.get("with-count"), Some(&PropValue::Bool(true)));
     }
 
     #[test]
-    fn view_default_rows() {
-        let state = WaTextareaState::new("Notes");
+    fn view_has_minlength() {
+        let mut state = WaTextareaState::new("Min");
+        state.minlength = Some(10);
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
-        assert_eq!(v.props.get("rows"), Some(&PropValue::Int(4)));
+        assert_eq!(v.props.get("minlength"), Some(&PropValue::Int(10)));
     }
 
     #[test]
-    fn view_placeholder() {
-        let mut state = WaTextareaState::new("Notes");
-        state.placeholder = "Enter text...".into();
+    fn view_has_maxlength() {
+        let mut state = WaTextareaState::new("Max");
+        state.maxlength = Some(500);
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
-        assert_eq!(
-            v.props.get("placeholder"),
-            Some(&PropValue::Str(std::sync::Arc::from("Enter text...")))
-        );
+        assert_eq!(v.props.get("maxlength"), Some(&PropValue::Int(500)));
+    }
+
+    #[test]
+    fn view_no_minlength_when_none() {
+        let state = WaTextareaState::new("No min");
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert!(!v.props.contains_key("minlength"));
+    }
+
+    #[test]
+    fn view_no_maxlength_when_none() {
+        let state = WaTextareaState::new("No max");
+        let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
+        assert!(!v.props.contains_key("maxlength"));
     }
 
     #[test]
@@ -436,27 +541,6 @@ mod tests {
         let mut state = WaTextareaState::new("OK");
         WaTextarea.update(
             WaTextareaMessage::Blur,
-            &mut state,
-            &mut UpdateContext::default(),
-        );
-        // 不 panic 即通过
-    }
-
-    #[test]
-    fn update_focus_is_handled() {
-        let mut state = WaTextareaState::new("OK");
-        WaTextarea.update(
-            WaTextareaMessage::Focus,
-            &mut state,
-            &mut UpdateContext::default(),
-        );
-    }
-
-    #[test]
-    fn update_invalid_is_handled() {
-        let mut state = WaTextareaState::new("OK");
-        WaTextarea.update(
-            WaTextareaMessage::Invalid,
             &mut state,
             &mut UpdateContext::default(),
         );
@@ -473,6 +557,16 @@ mod tests {
     }
 
     #[test]
+    fn update_focus_is_handled() {
+        let mut state = WaTextareaState::new("OK");
+        WaTextarea.update(
+            WaTextareaMessage::Focus,
+            &mut state,
+            &mut UpdateContext::default(),
+        );
+    }
+
+    #[test]
     fn update_input_is_handled() {
         let mut state = WaTextareaState::new("OK");
         WaTextarea.update(
@@ -483,31 +577,122 @@ mod tests {
     }
 
     #[test]
-    fn measure_min_dimensions() {
-        let state = WaTextareaState::new("Textarea");
-        let size = WaTextarea.measure(
-            &state,
-            BoxConstraints::new(0.0, 1920.0, 0.0, 1080.0),
-            &MeasureContext::default(),
-        );
-        assert!(size.width >= 80.0, "宽度应 ≥ 80px，实际 {size:?}");
-        assert!(
-            size.height >= 60.0,
-            "高度应 ≥ 60px（4 rows），实际 {size:?}"
+    fn update_invalid_is_handled() {
+        let mut state = WaTextareaState::new("OK");
+        WaTextarea.update(
+            WaTextareaMessage::Invalid,
+            &mut state,
+            &mut UpdateContext::default(),
         );
     }
 
     #[test]
-    fn paint_disabled_changes_colors() {
-        let mut state = WaTextareaState::new("Greyed");
-        state.disabled = true;
-        state.value = "Cannot edit".into();
-        let bounds = Rect::new(0.0, 0.0, 400.0, 200.0);
+    fn measure_returns_min_constraints() {
+        let state = WaTextareaState::new("Group");
+        let size = WaTextarea.measure(
+            &state,
+            BoxConstraints::new(200.0, 800.0, 100.0, 600.0),
+            &MeasureContext::default(),
+        );
+        assert!(size.width >= 200.0);
+        assert!(size.height >= 100.0);
+    }
+
+    #[test]
+    fn measure_with_label_is_taller() {
+        let state_no_label = WaTextareaState::new("");
+        let state_with_label = WaTextareaState::new("Description");
+
+        let size_no = WaTextarea.measure(
+            &state_no_label,
+            BoxConstraints::new(200.0, 800.0, 100.0, 600.0),
+            &MeasureContext::default(),
+        );
+        let size_with = WaTextarea.measure(
+            &state_with_label,
+            BoxConstraints::new(200.0, 800.0, 100.0, 600.0),
+            &MeasureContext::default(),
+        );
+        assert!(size_with.height > size_no.height);
+    }
+
+    #[test]
+    fn paint_with_label_produces_ops() {
+        let state = WaTextareaState::new("My Textarea");
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
         let mut ctx = PaintContext::new(bounds);
         WaTextarea.paint(&state, bounds, &mut ctx);
-        let ops = ctx.into_operations();
-        // 应该产生绘制操作
-        assert!(!ops.is_empty(), "disabled textarea 仍应绘制");
+        assert!(ctx.op_count() >= 1, "应至少绘制标签文本");
+    }
+
+    #[test]
+    fn paint_with_value_produces_ops() {
+        let mut state = WaTextareaState::new("Content");
+        state.value = "Line 1\nLine 2\nLine 3".into();
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1, "应至少绘制文本内容");
+    }
+
+    #[test]
+    fn paint_with_placeholder_produces_ops() {
+        let mut state = WaTextareaState::new("Placeholder");
+        state.placeholder = "Type something...".into();
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1, "应至少绘制占位符文本");
+    }
+
+    #[test]
+    fn paint_with_hint_produces_ops() {
+        let mut state = WaTextareaState::new("Group");
+        state.hint = "Enter multiple lines.".into();
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1, "应至少绘制提示文本");
+    }
+
+    #[test]
+    fn paint_empty_no_label_no_ops() {
+        let state = WaTextareaState::new("");
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        // 即使无 label，仍绘制背景边框，所以应有 ops
+        assert!(ctx.op_count() >= 1);
+    }
+
+    #[test]
+    fn paint_with_count() {
+        let mut state = WaTextareaState::new("Counted");
+        state.with_count = true;
+        state.value = "Test".into();
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1);
+    }
+
+    #[test]
+    fn paint_with_count_and_maxlength() {
+        let mut state = WaTextareaState::new("Limited");
+        state.with_count = true;
+        state.maxlength = Some(500);
+        state.value = "Hello".into();
+        let bounds = Rect::new(0.0, 0.0, 300.0, 200.0);
+        let mut ctx = PaintContext::new(bounds);
+        WaTextarea.paint(&state, bounds, &mut ctx);
+        assert!(ctx.op_count() >= 1);
+    }
+
+    #[test]
+    fn accessibility_has_label() {
+        let state = WaTextareaState::new("Accessibility Textarea");
+        let node = WaTextarea.accessibility(&state, &AccessContext::new(Rect::ZERO));
+        assert_eq!(node.label.as_deref(), Some("Accessibility Textarea"));
     }
 
     #[test]
@@ -522,7 +707,29 @@ mod tests {
 
     #[test]
     fn persist_state_as_any() {
-        let state = WaTextareaState::new("Notes");
-        let _any = state.as_any();
+        let state = WaTextareaState::new("Test");
+        let any = state.as_any();
+        assert_eq!(any.type_id(), TypeId::of::<WaTextareaState>());
+    }
+
+    #[test]
+    fn default_state_values() {
+        let state = WaTextareaState::default();
+        assert!(state.label.is_empty());
+        assert!(!state.disabled);
+        assert!(!state.readonly);
+        assert!(!state.required);
+        assert_eq!(state.resize, "");
+    }
+
+    #[test]
+    fn new_state_has_defaults() {
+        let state = WaTextareaState::new("Title");
+        assert_eq!(state.label, "Title");
+        assert_eq!(state.size, "m");
+        assert_eq!(state.appearance, "outlined");
+        assert_eq!(state.resize, "vertical");
+        assert_eq!(state.rows, 4);
+        assert!(state.spellcheck);
     }
 }
