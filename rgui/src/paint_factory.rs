@@ -371,6 +371,10 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     if let Some(s) = get_str(&view.props, "value") {
                         state.value = s.to_string();
                     }
+                    // label 作为显示文本（覆盖 value 的显示用途）
+                    if let Some(s) = get_str(&view.props, "label") {
+                        state.value = s.to_string();
+                    }
                     if let Some(s) = get_str(&view.props, "type") {
                         state.type_ = s.to_string();
                     }
@@ -1169,7 +1173,13 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                             state.indeterminate = *b;
                         }
                     }
+                    // 兼容 html! 宏不支持连字符属性名，同时读 is-leaf 和 is_leaf
                     if let Some(is_leaf) = view.props.get("is-leaf") {
+                        if let PropValue::Bool(b) = is_leaf {
+                            state.is_leaf = *b;
+                        }
+                    }
+                    if let Some(is_leaf) = view.props.get("is_leaf") {
                         if let PropValue::Bool(b) = is_leaf {
                             state.is_leaf = *b;
                         }
