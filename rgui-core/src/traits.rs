@@ -6,6 +6,7 @@
 use crate::a11y::AccessibilityNode;
 use crate::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use crate::geometry::{BoxConstraints, Rect, Size};
+use crate::id::WidgetId;
 use crate::view::{PropValue, WidgetView};
 use std::any::Any;
 use std::fmt;
@@ -234,6 +235,69 @@ pub trait FormField {
 
     /// 返回字段的标识名称（用于表单序列化和错误定位）。
     fn field_name(&self) -> &'static str;
+}
+
+// ============================================================================
+// WidgetLifecycle
+// ============================================================================
+
+/// 组件生命周期回调 trait。
+///
+/// 组件可选择实现此 trait 以响应生命周期事件：
+///
+/// - `on_mount`：组件挂载到 widget 树时触发
+/// - `on_unmount`：组件从 widget 树卸载前触发
+/// - `on_reparent`：组件在树中位置变化时触发
+///
+/// 替代 Web Components 的 `connectedCallback`/`disconnectedCallback`。
+///
+/// ## 使用场景
+///
+/// - 订阅外部事件源（定时器、网络推送）
+/// - 取消订阅、释放外部资源
+/// - 响应树结构变化
+///
+/// ## 与 WidgetSpec 的关系
+///
+/// 实现此 trait 的组件应同时实现 [`WidgetSpec`]。此 trait
+/// 从 WidgetSpec 独立出来以保持对象安全性，便于 WidgetTree
+/// 以 `Box<dyn WidgetLifecycle>` 形式存储回调。
+///
+/// 所有方法都有默认空实现，组件只需覆盖关心的方法。
+///
+/// 定义源自 D1 §5.3。
+///
+/// # 示例
+///
+/// ```ignore
+/// struct MyComponent;
+///
+/// impl WidgetLifecycle for MyComponent {
+///     fn on_mount(&self, ctx: &mut UpdateContext) {
+///         println!("组件已挂载");
+///     }
+///
+///     fn on_unmount(&self, ctx: &mut UpdateContext) {
+///         println!("组件已卸载");
+///     }
+/// }
+/// ```
+pub trait WidgetLifecycle: Send + Sync + 'static {
+    /// 组件首次挂载到 widget 树时调用。
+    ///
+    /// 可用于订阅外部事件源、启动定时器等。
+    fn on_mount(&self, _ctx: &mut UpdateContext) {}
+
+    /// 组件从 widget 树卸载前调用。
+    ///
+    /// 可用于取消订阅、释放外部资源等。
+    fn on_unmount(&self, _ctx: &mut UpdateContext) {}
+
+    /// 组件在 widget 树中的位置发生变化时调用。
+    ///
+    /// - `old_parent`：移动前的父节点
+    /// - `new_parent`：移动后的父节点
+    fn on_reparent(&self, _old_parent: WidgetId, _new_parent: WidgetId) {}
 }
 
 // ============================================================================
@@ -478,5 +542,146 @@ mod tests {
         let c = FormFieldError::new("different");
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    // ------------------------------------------------------------------
+    // WidgetLifecycle 测试
+    // ------------------------------------------------------------------
+
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// 模拟实现了 WidgetLifecycle 的组件，用原子计数器追踪回调调用次数。
+    struct MockLifecycleComponent {
+        mount_count: AtomicUsize,
+        unmount_count: AtomicUsize,
+        reparent_count: AtomicUsize,
+        last_old_parent: Mutex<Option<WidgetId>>,
+        last_new_parent: Mutex<Option<WidgetId>>,
+    }
+
+    impl MockLifecycleComponent {
+        fn new() -> Self {
+            Self {
+                mount_count: AtomicUsize::new(0),
+                unmount_count: AtomicUsize::new(0),
+                reparent_count: AtomicUsize::new(0),
+                last_old_parent: Mutex::new(None),
+                last_new_parent: Mutex::new(None),
+            }
+        }
+    }
+
+    impl WidgetLifecycle for MockLifecycleComponent {
+        fn on_mount(&self, _ctx: &mut UpdateContext) {
+            self.mount_count.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_unmount(&self, _ctx: &mut UpdateContext) {
+            self.unmount_count.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn on_reparent(&self, old_parent: WidgetId, new_parent: WidgetId) {
+            self.reparent_count.fetch_add(1, Ordering::SeqCst);
+            *self.last_old_parent.lock().unwrap() = Some(old_parent);
+            *self.last_new_parent.lock().unwrap() = Some(new_parent);
+        }
+    }
+
+    #[test]
+    fn lifecycle_default_impls_are_noops() {
+        // 默认实现不应 panic
+        struct DefaultComponent;
+        impl WidgetLifecycle for DefaultComponent {}
+
+        let comp = DefaultComponent;
+        let mut ctx = UpdateContext::new();
+        comp.on_mount(&mut ctx);
+        comp.on_unmount(&mut ctx);
+        comp.on_reparent(WidgetId::from_u64(1), WidgetId::from_u64(2));
+    }
+
+    #[test]
+    fn lifecycle_on_mount_increments_counter() {
+        let comp = MockLifecycleComponent::new();
+        let mut ctx = UpdateContext::new();
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 0);
+        comp.on_mount(&mut ctx);
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 1);
+        comp.on_mount(&mut ctx);
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn lifecycle_on_unmount_increments_counter() {
+        let comp = MockLifecycleComponent::new();
+        let mut ctx = UpdateContext::new();
+        assert_eq!(comp.unmount_count.load(Ordering::SeqCst), 0);
+        comp.on_unmount(&mut ctx);
+        assert_eq!(comp.unmount_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn lifecycle_on_reparent_records_parents() {
+        let comp = MockLifecycleComponent::new();
+        let old = WidgetId::from_u64(10);
+        let new = WidgetId::from_u64(20);
+        assert_eq!(comp.reparent_count.load(Ordering::SeqCst), 0);
+        comp.on_reparent(old, new);
+        assert_eq!(comp.reparent_count.load(Ordering::SeqCst), 1);
+        assert_eq!(*comp.last_old_parent.lock().unwrap(), Some(old));
+        assert_eq!(*comp.last_new_parent.lock().unwrap(), Some(new));
+    }
+
+    #[test]
+    fn lifecycle_boxed_trait_object() {
+        // 验证对象安全性：可存储为 Box<dyn WidgetLifecycle>
+        let comp = MockLifecycleComponent::new();
+        let boxed: Box<dyn WidgetLifecycle> = Box::new(comp);
+        let mut ctx = UpdateContext::new();
+        boxed.on_mount(&mut ctx);
+        boxed.on_unmount(&mut ctx);
+        boxed.on_reparent(WidgetId::from_u64(1), WidgetId::from_u64(2));
+    }
+
+    #[test]
+    fn lifecycle_arc_trait_object() {
+        // 验证可通过 Arc 共享
+        let comp = Arc::new(MockLifecycleComponent::new());
+        let mut ctx = UpdateContext::new();
+        comp.on_mount(&mut ctx);
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 1);
+
+        let comp2 = Arc::clone(&comp);
+        comp2.on_mount(&mut ctx);
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn lifecycle_reparent_called_multiple_times() {
+        let comp = MockLifecycleComponent::new();
+        comp.on_reparent(WidgetId::from_u64(1), WidgetId::from_u64(2));
+        comp.on_reparent(WidgetId::from_u64(2), WidgetId::from_u64(3));
+        comp.on_reparent(WidgetId::from_u64(3), WidgetId::from_u64(4));
+        assert_eq!(comp.reparent_count.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            *comp.last_old_parent.lock().unwrap(),
+            Some(WidgetId::from_u64(3))
+        );
+        assert_eq!(
+            *comp.last_new_parent.lock().unwrap(),
+            Some(WidgetId::from_u64(4))
+        );
+    }
+
+    #[test]
+    fn lifecycle_mount_unmount_independent_counters() {
+        let comp = MockLifecycleComponent::new();
+        let mut ctx = UpdateContext::new();
+        comp.on_mount(&mut ctx);
+        comp.on_mount(&mut ctx);
+        comp.on_unmount(&mut ctx);
+        assert_eq!(comp.mount_count.load(Ordering::SeqCst), 2);
+        assert_eq!(comp.unmount_count.load(Ordering::SeqCst), 1);
     }
 }
