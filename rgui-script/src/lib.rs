@@ -21,6 +21,8 @@
 
 mod command;
 mod engine;
+mod prop_registry;
 
 pub use command::CommandRegistry;
 pub use engine::ScriptEngine;
+pub use prop_registry::PropRegistry;
