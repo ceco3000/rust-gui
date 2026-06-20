@@ -11,5 +11,6 @@ pub use diff::{Patch, WidgetIdMap, apply_patch, diff, diff_props};
 pub use harness::TestHarness;
 pub use snapshot::{SchemaMigration, SchemaMigrationRegistry, Snapshot, Snapshotter};
 pub use store::{
-    InstanceState, StateStore, StoreAccess, StoreAccessMut, Subscription, SubscriptionLifetime,
+    InstanceState, StateStore, StateStoreBinding, StoreAccess, StoreAccessMut, Subscription,
+    SubscriptionLifetime,
 };

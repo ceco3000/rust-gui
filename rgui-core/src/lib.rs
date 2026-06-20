@@ -23,6 +23,7 @@ pub mod geometry;
 pub mod id;
 pub mod locale;
 pub mod registry;
+pub mod state_binding;
 pub mod traits;
 pub mod view;
 pub mod widget_id_map;
@@ -63,6 +64,9 @@ pub use a11y::{AccessibilityAction, AccessibilityNode, AccessibilityRole, Access
 // 注册表
 pub use registry::{RegistryError, WidgetRegistry};
 
+// State binding
+pub use state_binding::StateBinding;
+
 /// rgui-core 预导入模块。
 ///
 /// 包含使用框架时最常用的类型和 trait。
@@ -83,6 +87,7 @@ pub mod prelude {
     pub use crate::id::{NodeHandle, WidgetId, WindowId};
     pub use crate::locale::Locale;
     pub use crate::registry::{RegistryError, WidgetRegistry};
+    pub use crate::state_binding::StateBinding;
     pub use crate::traits::{
         AppMessage, FormField, FormFieldError, PersistState, WidgetLifecycle, WidgetSpec,
     };

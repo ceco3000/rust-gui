@@ -7,6 +7,7 @@ use rgui_core::id::{NodeHandle, WidgetId};
 use rgui_core::traits::PersistState;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
+use std::sync::{Arc, RwLock};
 
 // ============================================================================
 // InstanceState
@@ -119,6 +120,8 @@ pub struct StateStore {
     subscriptions: FxHashMap<WidgetId, Vec<Subscription>>,
     /// WidgetId 分配器（单调递增）。
     next_id: u64,
+    /// Rhai 脚本状态——key-value string 存储（RS05）。
+    rhai_state: FxHashMap<WidgetId, String>,
 }
 
 #[allow(dead_code)]
@@ -133,6 +136,7 @@ impl StateStore {
             dirty: FxHashSet::default(),
             subscriptions: FxHashMap::default(),
             next_id: 0,
+            rhai_state: FxHashMap::default(),
         }
     }
 
@@ -158,6 +162,7 @@ impl StateStore {
         self.caches.remove(&id);
         self.dirty.remove(&id);
         self.subscriptions.remove(&id);
+        self.rhai_state.remove(&id);
         for subs in self.subscriptions.values_mut() {
             subs.retain(|s| s.subscriber != id);
         }
@@ -454,12 +459,73 @@ impl fmt::Debug for StoreAccessMut<'_> {
 }
 
 // ============================================================================
+// StateStoreBinding — Rhai↔StateStore bridge (RS05)
+// ============================================================================
+
+/// Bridge between Rhai scripts and [`StateStore`] persistent state.
+///
+/// Wraps a shared `StateStore` behind `Arc<RwLock<...>>` so Rhai closures
+/// can access it through the [`rgui_core::StateBinding`] trait.
+///
+/// # Thread safety
+///
+/// `StateStoreBinding` is `Send + Sync` because all access goes through
+/// `RwLock`. Rhai closures (registered via `CommandRegistry`) capture
+/// `Arc<dyn StateBinding>` and call `store_read`/`store_write` from
+/// potentially different threads.
+#[derive(Clone)]
+pub struct StateStoreBinding {
+    store: Arc<RwLock<StateStore>>,
+}
+
+impl StateStoreBinding {
+    /// Create a new binding wrapping the given `StateStore`.
+    #[must_use]
+    pub fn new(store: Arc<RwLock<StateStore>>) -> Self {
+        Self { store }
+    }
+}
+
+impl rgui_core::StateBinding for StateStoreBinding {
+    fn store_read(&self, widget_id: WidgetId) -> String {
+        let store = self
+            .store
+            .read()
+            .expect("StateStoreBinding: RwLock poisoned");
+        store
+            .rhai_state
+            .get(&widget_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn store_write(&self, widget_id: WidgetId, value: &str) {
+        let mut store = self
+            .store
+            .write()
+            .expect("StateStoreBinding: RwLock poisoned");
+        store.rhai_state.insert(widget_id, value.to_string());
+        store.mark_dirty(widget_id);
+        store.propagate_dirty(widget_id);
+    }
+}
+
+impl std::fmt::Debug for StateStoreBinding {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StateStoreBinding")
+            .field("store", &"<Arc<RwLock<StateStore>>>")
+            .finish()
+    }
+}
+
+// ============================================================================
 // 测试
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rgui_core::StateBinding;
     use std::any::Any;
 
     // --- 测试用类型 ---
@@ -1075,5 +1141,112 @@ mod tests {
         cache.last_paint_color = Some(color.clone());
         assert!(cache.last_paint_color.is_some());
         assert_eq!(cache.last_paint_color.as_ref().unwrap(), &color);
+    }
+
+    // --- StateStoreBinding（RS05）---
+
+    #[test]
+    fn state_store_binding_write_then_read() {
+        let store = Arc::new(RwLock::new(StateStore::new()));
+        let id = {
+            let mut s = store.write().unwrap();
+            s.allocate_id()
+        };
+        let binding = StateStoreBinding::new(Arc::clone(&store));
+
+        binding.store_write(id, "hello rhai");
+        let result = binding.store_read(id);
+        assert_eq!(result, "hello rhai");
+    }
+
+    #[test]
+    fn state_store_binding_read_unknown_widget_returns_empty() {
+        let store = Arc::new(RwLock::new(StateStore::new()));
+        let binding = StateStoreBinding::new(store);
+        let unknown = WidgetId::new();
+
+        let result = binding.store_read(unknown);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn state_store_binding_write_overwrites_previous_value() {
+        let store = Arc::new(RwLock::new(StateStore::new()));
+        let id = {
+            let mut s = store.write().unwrap();
+            s.allocate_id()
+        };
+        let binding = StateStoreBinding::new(Arc::clone(&store));
+
+        binding.store_write(id, "first");
+        binding.store_write(id, "second");
+        assert_eq!(binding.store_read(id), "second");
+    }
+
+    #[test]
+    fn state_store_binding_write_marks_widget_dirty() {
+        let store = Arc::new(RwLock::new(StateStore::new()));
+        let id = {
+            let mut s = store.write().unwrap();
+            let wid = s.allocate_id();
+            s.insert_persistent(wid, Box::new(TestCounter { count: 0 }));
+            wid
+        };
+        let binding = StateStoreBinding::new(Arc::clone(&store));
+
+        binding.store_write(id, "some value");
+
+        let dirty = {
+            let s = store.read().unwrap();
+            s.dirty_widgets().contains(&id)
+        };
+        assert!(dirty, "widget should be marked dirty after store_write");
+    }
+
+    #[test]
+    fn state_store_binding_write_propagates_dirty_to_subscribers() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        store.insert_persistent(id_a, Box::new(TestCounter { count: 0 }));
+        let id_b = store.allocate_id();
+        store.insert_persistent(id_b, Box::new(TestCounter { count: 0 }));
+
+        // B subscribes to A
+        store.apply_subscriptions(
+            id_b,
+            vec![(
+                id_a,
+                Subscription {
+                    subscriber: id_b,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+
+        let store = Arc::new(RwLock::new(store));
+        let binding = StateStoreBinding::new(Arc::clone(&store));
+
+        binding.store_write(id_a, "changed");
+
+        let s = store.read().unwrap();
+        assert!(s.dirty_widgets().contains(&id_a), "source should be dirty");
+        assert!(
+            s.dirty_widgets().contains(&id_b),
+            "subscriber should be dirty via propagation"
+        );
+    }
+
+    #[test]
+    fn state_store_binding_clone_shares_state() {
+        let store = Arc::new(RwLock::new(StateStore::new()));
+        let id = {
+            let mut s = store.write().unwrap();
+            s.allocate_id()
+        };
+        let binding1 = StateStoreBinding::new(Arc::clone(&store));
+        let binding2 = binding1.clone();
+
+        binding1.store_write(id, "shared");
+        assert_eq!(binding2.store_read(id), "shared");
     }
 }

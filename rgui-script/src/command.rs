@@ -34,6 +34,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use rhai::{AST, Engine, Scope};
 
+use rgui_core::StateBinding;
 use rgui_core::view::PropValue;
 use rgui_core::widget_id_map::WidgetIdBimap;
 
@@ -134,6 +135,39 @@ impl CommandRegistry {
             PropRegistry::new(),
             Arc::new(Mutex::new(WidgetIdBimap::new())),
         )
+    }
+
+    /// 注册 `store_read(id, key)` 和 `store_write(id, key, value)` Rhai 函数，
+    /// 桥接 Rhai 脚本与 [`StateStore`] 持久状态（RS05）。
+    ///
+    /// 注册后 `.rhai` 脚本可调用：
+    /// - `store_read("s1")` → 返回 widget "s1" 的持久状态字符串
+    /// - `store_write("s1", "new_value")` → 写入状态并触发 dirty 传播
+    ///
+    /// 字符串 `id` 通过内部 [`WidgetIdBimap`] 转换为 [`WidgetId`]（RS03）。
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn register_state_binding(&self, binding: Arc<dyn StateBinding>) {
+        let mut engine = self.engine_mut();
+
+        // ── store_read(id) ──────────────────────────────────────
+        let im = Arc::clone(&self.id_map);
+        let b = Arc::clone(&binding);
+        engine.register_fn("store_read", move |id: &str| -> String {
+            let widget_id = lock_mutex(&im).get_id(id);
+            widget_id.map_or(String::new(), |wid| b.store_read(wid))
+        });
+
+        // ── store_write(id, value) ──────────────────────────────
+        let im2 = Arc::clone(&self.id_map);
+        let b2 = Arc::clone(&binding);
+        engine.register_fn("store_write", move |id: &str, value: &str| {
+            let widget_id = lock_mutex(&im2).get_id(id);
+            if let Some(wid) = widget_id {
+                b2.store_write(wid, value);
+            }
+        });
+
+        drop(engine);
     }
 
     /// 注册 Rhai 脚本。
@@ -698,5 +732,143 @@ mod tests {
         // 验证 registry 内也看到此映射
         let guard = registry.widget_id_map();
         assert_eq!(guard.get_id("btn"), Some(WidgetId::from_u64(99)));
+    }
+
+    // ── RS05: store_read / store_write Rhai 注册 ──────────────────
+
+    use std::collections::HashMap;
+    use std::sync::RwLock;
+
+    /// Mock StateBinding for testing — stores key-value strings in memory.
+    struct MockStateBinding {
+        state: RwLock<HashMap<WidgetId, String>>,
+    }
+
+    impl MockStateBinding {
+        fn new() -> Self {
+            Self {
+                state: RwLock::new(HashMap::new()),
+            }
+        }
+    }
+
+    impl rgui_core::StateBinding for MockStateBinding {
+        fn store_read(&self, widget_id: WidgetId) -> String {
+            self.state
+                .read()
+                .unwrap()
+                .get(&widget_id)
+                .cloned()
+                .unwrap_or_default()
+        }
+
+        fn store_write(&self, widget_id: WidgetId, value: &str) {
+            self.state
+                .write()
+                .unwrap()
+                .insert(widget_id, value.to_string());
+        }
+    }
+
+    #[test]
+    fn store_read_via_rhai_returns_stored_value() {
+        let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["s1"]);
+
+        let mock = Arc::new(MockStateBinding::new());
+        registry.register_state_binding(mock.clone());
+
+        // 预先通过 mock 写入
+        let wid = registry.widget_id_map().get_id("s1").unwrap();
+        mock.store_write(wid, "active");
+
+        registry
+            .register_script("fn read_state() { store_read(\"s1\") }")
+            .unwrap();
+
+        let result: String = registry.call_fn("read_state", ()).unwrap();
+        assert_eq!(result, "active");
+    }
+
+    #[test]
+    fn store_write_via_rhai_persists_to_binding() {
+        let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["s1"]);
+
+        let mock = Arc::new(MockStateBinding::new());
+        registry.register_state_binding(mock.clone());
+
+        registry
+            .register_script(
+                r#"
+                fn write_state() {
+                    store_write("s1", "updated");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("write_state", ()).unwrap();
+
+        // 验证 mock 收到值
+        let wid = registry.widget_id_map().get_id("s1").unwrap();
+        assert_eq!(mock.store_read(wid), "updated");
+    }
+
+    #[test]
+    fn store_read_unknown_widget_returns_empty_string() {
+        let mut registry = CommandRegistry::new();
+        let mock = Arc::new(MockStateBinding::new());
+        registry.register_state_binding(mock);
+
+        registry
+            .register_script("fn read_unknown() { store_read(\"ghost\") }")
+            .unwrap();
+
+        let result: String = registry.call_fn("read_unknown", ()).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn store_write_unknown_widget_is_noop() {
+        let mut registry = CommandRegistry::new();
+        let mock = Arc::new(MockStateBinding::new());
+        registry.register_state_binding(mock.clone());
+
+        registry
+            .register_script(
+                r#"
+                fn write_unknown() {
+                    store_write("ghost", "should not persist");
+                }
+                "#,
+            )
+            .unwrap();
+
+        // 不应 panic
+        registry.call_fn::<()>("write_unknown", ()).unwrap();
+    }
+
+    #[test]
+    fn store_read_write_roundtrip_via_rhai() {
+        let mut registry = CommandRegistry::new();
+        register_test_ids(&registry, &["widget1"]);
+
+        let mock = Arc::new(MockStateBinding::new());
+        registry.register_state_binding(mock);
+
+        registry
+            .register_script(
+                r#"
+                fn roundtrip() {
+                    store_write("widget1", "hello from rhai");
+                    store_read("widget1")
+                }
+                "#,
+            )
+            .unwrap();
+
+        let result: String = registry.call_fn("roundtrip", ()).unwrap();
+        assert_eq!(result, "hello from rhai");
     }
 }
