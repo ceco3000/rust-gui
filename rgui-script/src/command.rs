@@ -30,8 +30,15 @@
 //! registry.call_fn::<()>("delete", ("item-42",)).unwrap();
 //! ```
 
-use rhai::{AST, Engine, Scope};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
+
+use rhai::{AST, Engine, Scope};
+
+use rgui_core::id::WidgetId;
+use rgui_core::view::PropValue;
+
+use crate::prop_registry::PropRegistry;
 
 /// 获取 mutex 锁，中毒时恢复内部值。
 fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -45,11 +52,20 @@ fn lock_mutex<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 ///
 /// 内部持有 Rhai 引擎和编译后的脚本 AST。
 /// `Arc<Mutex<Engine>>` 设计支持跨线程共享（需 rhai `sync` feature）。
+///
+/// 同时持有 [`PropRegistry`] 用于 Rhai↔WidgetView prop 桥接，
+/// 以及临时 `id_map` 用于字符串→`WidgetId` 映射（RS03 完成后替换）。
 #[derive(Clone)]
 pub struct CommandRegistry {
     engine: Arc<Mutex<Engine>>,
     /// 组合 AST（合并所有注册脚本的函数定义）。
     combined_ast: Arc<Mutex<Option<AST>>>,
+    /// 响应式 prop 桥接注册表（RS01）。
+    prop_registry: PropRegistry,
+    /// 临时字符串→WidgetId 映射。
+    /// RS03 完成后替换为双向映射。
+    #[allow(dead_code)]
+    id_map: Arc<Mutex<HashMap<String, WidgetId>>>,
 }
 
 impl Default for CommandRegistry {
@@ -68,11 +84,45 @@ impl std::fmt::Debug for CommandRegistry {
 
 impl CommandRegistry {
     /// 创建空的命令注册表。
+    ///
+    /// 自动向 Rhai 引擎注册 `set_prop(id, key, value)` 和 `get_prop(id, key)` 函数，
+    /// 用于 Rhai 脚本读写 `WidgetView` props（RS02）。
     #[must_use]
     pub fn new() -> Self {
+        let prop_registry = PropRegistry::new();
+        let id_map = Arc::new(Mutex::new(HashMap::new()));
+        let mut engine = Engine::new();
+
+        // ── 注册 set_prop(id, key, value) ────────────────────────────
+        let pr = prop_registry.clone();
+        let im = Arc::clone(&id_map);
+        engine.register_fn("set_prop", move |id: &str, key: &str, value: &str| {
+            let widget_id = {
+                // 使用 WidgetId::new() 分配唯一 ID（全局原子计数器）
+                *lock_mutex(&im)
+                    .entry(id.to_string())
+                    .or_insert_with(WidgetId::new)
+            };
+            pr.set(widget_id, key.to_string(), PropValue::str(value));
+        });
+
+        // ── 注册 get_prop(id, key) -> String ────────────────────────
+        let pr2 = prop_registry.clone();
+        let im2 = Arc::clone(&id_map);
+        engine.register_fn("get_prop", move |id: &str, key: &str| -> String {
+            let widget_id = lock_mutex(&im2).get(id).copied();
+            widget_id.map_or_else(String::new, |wid| {
+                pr2.get(wid, key)
+                    .map(|pv| pv.to_string())
+                    .unwrap_or_default()
+            })
+        });
+
         Self {
-            engine: Arc::new(Mutex::new(Engine::new())),
+            engine: Arc::new(Mutex::new(engine)),
             combined_ast: Arc::new(Mutex::new(None)),
+            prop_registry,
+            id_map,
         }
     }
 
@@ -163,6 +213,14 @@ impl CommandRegistry {
     /// ```
     pub fn engine_mut(&self) -> MutexGuard<'_, Engine> {
         lock_mutex(&self.engine)
+    }
+
+    /// 获取内部 [`PropRegistry`] 的引用。
+    ///
+    /// 用于渲染线程每帧调用 `drain()` 获取 Rhai 脚本写入的待更新 props。
+    #[must_use]
+    pub const fn prop_registry(&self) -> &PropRegistry {
+        &self.prop_registry
     }
 }
 
@@ -319,5 +377,184 @@ mod tests {
         }
         // Can acquire again — guard was released
         registry.engine_mut().register_type::<String>();
+    }
+
+    // ── RS02: set_prop/get_prop Rhai 注册 ────────────────────────────
+
+    #[test]
+    fn set_prop_via_rhai_script_stores_in_prop_registry() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn update_label() {
+                    set_prop("section1", "label", "Hello World");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("update_label", ()).unwrap();
+
+        // 验证 PropRegistry 中可见写入的 prop
+        let drained = registry.prop_registry().drain();
+        assert_eq!(drained.len(), 1, "应有一个 widget 的 props");
+        let (_, props) = drained.iter().next().unwrap();
+        let val = props.get("label").unwrap();
+        assert_eq!(val.to_string(), "\"Hello World\"");
+    }
+
+    #[test]
+    fn get_prop_via_rhai_script_reads_from_prop_registry() {
+        let mut registry = CommandRegistry::new();
+        // 先用 set_prop 写入，再用 get_prop 读取
+        registry
+            .register_script(
+                r#"
+                fn write_then_read() {
+                    set_prop("s1", "expanded", "true");
+                    get_prop("s1", "expanded")
+                }
+                "#,
+            )
+            .unwrap();
+
+        let result: String = registry.call_fn("write_then_read", ()).unwrap();
+        assert_eq!(result, "\"true\"");
+    }
+
+    #[test]
+    fn get_prop_returns_empty_for_unknown_key() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn read_unknown() {
+                    get_prop("s1", "nonexistent")
+                }
+                "#,
+            )
+            .unwrap();
+
+        let result: String = registry.call_fn("read_unknown", ()).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn get_prop_returns_empty_for_unknown_widget() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn read_unknown_widget() {
+                    get_prop("ghost", "anything")
+                }
+                "#,
+            )
+            .unwrap();
+
+        let result: String = registry.call_fn("read_unknown_widget", ()).unwrap();
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn set_prop_multiple_keys_per_widget() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn set_many() {
+                    set_prop("w", "label", "Save");
+                    set_prop("w", "enabled", "false");
+                    set_prop("w", "color", "blue");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("set_many", ()).unwrap();
+
+        let drained = registry.prop_registry().drain();
+        assert_eq!(drained.len(), 1);
+        let (_, props) = drained.iter().next().unwrap();
+        assert_eq!(props.len(), 3);
+        assert_eq!(props.get("label").unwrap().to_string(), "\"Save\"");
+        assert_eq!(props.get("enabled").unwrap().to_string(), "\"false\"");
+        assert_eq!(props.get("color").unwrap().to_string(), "\"blue\"");
+    }
+
+    #[test]
+    fn set_prop_multiple_widgets_independent() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn set_multi() {
+                    set_prop("a", "x", "1");
+                    set_prop("b", "y", "2");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("set_multi", ()).unwrap();
+
+        let drained = registry.prop_registry().drain();
+        assert_eq!(drained.len(), 2, "两个不同 widget");
+    }
+
+    #[test]
+    fn set_prop_overwrites_previous_value() {
+        let mut registry = CommandRegistry::new();
+        registry
+            .register_script(
+                r#"
+                fn overwrite() {
+                    set_prop("w", "v", "first");
+                    set_prop("w", "v", "second");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("overwrite", ()).unwrap();
+
+        let drained = registry.prop_registry().drain();
+        let (_, props) = drained.iter().next().unwrap();
+        assert_eq!(props.get("v").unwrap().to_string(), "\"second\"");
+    }
+
+    #[test]
+    fn set_prop_with_same_string_id_reuses_widget_id() {
+        let mut registry = CommandRegistry::new();
+        // 两次调用 set_prop 使用同一个字符串 ID
+        registry
+            .register_script(
+                r#"
+                fn two_calls() {
+                    set_prop("w1", "first", "a");
+                    set_prop("w1", "second", "b");
+                }
+                "#,
+            )
+            .unwrap();
+
+        registry.call_fn::<()>("two_calls", ()).unwrap();
+
+        let drained = registry.prop_registry().drain();
+        // 同一个 widget ID，应有合并后的 2 个 key
+        assert_eq!(drained.len(), 1);
+        let (_, props) = drained.iter().next().unwrap();
+        assert_eq!(props.len(), 2);
+        assert_eq!(props.get("first").unwrap().to_string(), "\"a\"");
+        assert_eq!(props.get("second").unwrap().to_string(), "\"b\"");
+    }
+
+    #[test]
+    fn prop_registry_accessor_returns_valid_reference() {
+        let registry = CommandRegistry::new();
+        let pr = registry.prop_registry();
+        // 初始状态：drain 为空
+        assert!(pr.drain().is_empty());
     }
 }
