@@ -1,50 +1,74 @@
-//! one-icon — WaIcon 组件示例
-//!
-//! 用 html! 宏声明式展示不同尺寸和名称的 WaIcon 组件。
-//!
-//! WaIcon 是 Web Awesome wa-icon 的翻译组件，使用 Unicode 字符渲染矢量图标。
-//! 支持属性: name (图标名), size (s/m/l), label (无障碍标签)。
-
+use rgui::AppMessage;
 use rgui::app::{App, AppConfig};
 use rgui::paint_factory::default_paint_fn;
-use rgui::{build_scene_from_view, compute_view_layout, html, AppMessage, Size, WidgetView};
+use rgui_core::geometry::{Rect, Size};
+use rgui_devtools::rgui_parser::parse_rgui_file;
+use rgui_layout::LayoutEngine;
+use rgui_render::{build_scene_from_view, compute_view_layout};
+use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
-enum Msg {
-    _Dummy,
+#[allow(dead_code)]
+enum Msg { Noop }
+
+fn register_click_interactions<M: AppMessage>(
+    view: &rgui_core::view::WidgetView<M>,
+    engine: &LayoutEngine,
+    app: &mut App,
+) {
+    if let Some(widget_id) = view.id {
+        if let Some(action) = view.props.get("onclick") {
+            if let rgui_core::view::PropValue::Str(action_str) = action {
+                if let Some(layout) = engine.get_layout(widget_id) {
+                    let rect = Rect::new(
+                        layout.result.position.x,
+                        layout.result.position.y,
+                        layout.result.size.width,
+                        layout.result.size.height,
+                    );
+                    let action_owned = action_str.to_string();
+                    app.register_interaction(widget_id, rect, &action_owned, move |_| {});
+                }
+            }
+        }
+    }
+    for child in &view.children {
+        register_click_interactions(child, engine, app);
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = App::new(
-        AppConfig::new()
-            .title("rgui — WaIcon Demo")
-            .window_size(300.0, 200.0),
-    );
+    let rgui_path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/ui.rgui"));
+    let mut view: rgui_core::view::WidgetView<Msg> =
+        parse_rgui_file(rgui_path).map_err(|e| format!(".rgui parse failed: {e}"))?;
 
+    let layout = compute_view_layout(&mut view, Size::new(300.0, 200.0), None);
+
+    let config = AppConfig::new()
+        .title("rgui — WaIcon Demo")
+        .window_size(300.0, 200.0);
+
+    let mut app = App::new(config);
+    register_click_interactions(&view, &layout, &mut app);
+
+    let rhai_path = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/handlers.rhai"));
+    app.load_rhai_scripts(&[rhai_path])
+        .map_err(|e| format!(".rhai load failed: {e}"))?;
+
+    let current_view = view;
     let paint_fn = default_paint_fn::<Msg>();
     app.set_view_scene_builder(
-        move |frame: u64, width: u32, height: u32, _tr: &rgui::TextRenderer| {
-            let w = f64::from(width);
-            let h = f64::from(height);
-
-            let mut view: WidgetView<Msg> = html! {
-                <Center>
-                    <Row gap="12">
-                        <WaIcon name="check" size="s" />
-                        <WaIcon name="check" size="m" />
-                        <WaIcon name="check" size="l" />
-                        <WaIcon name="star" size="m" />
-                        <WaIcon name="xmark" size="m" />
-                    </Row>
-                </Center>
-            };
-
-            let layout = compute_view_layout(&mut view, Size::new(w, h), Some(_tr));
-            build_scene_from_view(&view, &layout, &paint_fn, frame, Some(_tr))
+        move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
+            let mut v = current_view.clone();
+            let l = compute_view_layout(
+                &mut v,
+                Size::new(f64::from(width), f64::from(height)),
+                Some(tr),
+            );
+            build_scene_from_view(&v, &l, &paint_fn, frame, Some(tr))
         },
     );
 
     println!("=== rgui WaIcon Demo ===\n");
-    println!("展示: check (s/m/l), star, xmark\n");
     app.run()
 }

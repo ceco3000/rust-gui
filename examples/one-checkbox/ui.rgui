@@ -1,0 +1,1 @@
+<Center><Column gap="8"><WaCheckbox label="Accept terms" checked="true" size="m"/><WaCheckbox label="Opt in to newsletter" checked="false" size="m"/><WaCheckbox label="Disabled option" disabled="true" size="m"/><WaCheckbox label="Select all" indeterminate="true" size="m"/></Column></Center>

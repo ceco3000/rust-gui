@@ -1,0 +1,1 @@
+<Center><Column gap="8"><WaSwitch label="Wi-Fi" checked="true" size="m"/><WaSwitch label="Bluetooth" checked="false" size="m"/><WaSwitch label="Airplane Mode" disabled="true" size="m"/></Column></Center>
