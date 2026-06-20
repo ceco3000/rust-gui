@@ -76,6 +76,7 @@ pub use wa_card::{WaCard, WaCardMessage, WaCardState};
 pub use wa_carousel::{WaCarousel, WaCarouselMessage, WaCarouselState};
 pub use wa_carousel_item::{WaCarouselItem, WaCarouselItemMessage, WaCarouselItemState};
 pub use wa_checkbox::{WaCheckbox, WaCheckboxMessage, WaCheckboxState};
+pub use wa_color_picker::{WaColorPicker, WaColorPickerMessage, WaColorPickerState};
 pub use wa_comparison::{WaComparison, WaComparisonMessage, WaComparisonState};
 pub use wa_copy_button::{WaCopyButton, WaCopyButtonMessage, WaCopyButtonState};
 pub use wa_details::{WaDetails, WaDetailsMessage, WaDetailsState};
