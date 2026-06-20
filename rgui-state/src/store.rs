@@ -240,6 +240,54 @@ impl StateStore {
         }
     }
 
+    /// 为 subscriber 订阅 target 的状态变更（RS07）。
+    ///
+    /// 当 target 被标记为 dirty 时，subscriber 也会通过
+    /// [`propagate_dirty`] 收到脏标记。
+    ///
+    /// # Panics
+    ///
+    /// 如果 subscriber == target（禁止自引用订阅）。
+    pub fn subscribe(&mut self, subscriber: WidgetId, target: WidgetId) {
+        assert_ne!(
+            subscriber, target,
+            "StateStore::subscribe: 不允许自引用订阅（subscriber == target）"
+        );
+        let sub = Subscription {
+            subscriber,
+            lifetime: SubscriptionLifetime::Persistent,
+        };
+        self.subscriptions.entry(target).or_default().push(sub);
+    }
+
+    /// 移除 subscriber 对 target 的订阅（RS07）。
+    pub fn unsubscribe(&mut self, subscriber: WidgetId, target: WidgetId) {
+        if let Some(subs) = self.subscriptions.get_mut(&target) {
+            subs.retain(|s| s.subscriber != subscriber);
+        }
+    }
+
+    /// 写入 Rhai 字符串状态（RS05/RS07）。
+    ///
+    /// 存储 key-value 字符串状态并触发脏传播。
+    /// 返回 `true` 如果值确实变更（新值 ≠ 旧值），
+    /// `false` 表示值未变化（避免不必要的重绘）。
+    pub fn write_rhai_state(&mut self, id: WidgetId, value: &str) -> bool {
+        let changed = self.rhai_state.get(&id).is_none_or(|old| old != value);
+        if changed {
+            self.rhai_state.insert(id, value.to_string());
+            self.mark_dirty(id);
+            self.propagate_dirty(id);
+        }
+        changed
+    }
+
+    /// 读取 Rhai 字符串状态（RS05/RS07）。
+    #[must_use]
+    pub fn read_rhai_state(&self, id: WidgetId) -> Option<&str> {
+        self.rhai_state.get(&id).map(String::as_str)
+    }
+
     /// 检测订阅图中的循环依赖（D2 §6.3）。
     #[must_use]
     pub fn detect_cycles(&self) -> Vec<Vec<WidgetId>> {
@@ -504,9 +552,7 @@ impl rgui_core::StateBinding for StateStoreBinding {
             .store
             .write()
             .expect("StateStoreBinding: RwLock poisoned");
-        store.rhai_state.insert(widget_id, value.to_string());
-        store.mark_dirty(widget_id);
-        store.propagate_dirty(widget_id);
+        store.write_rhai_state(widget_id, value);
     }
 }
 

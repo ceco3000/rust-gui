@@ -33,10 +33,31 @@
 
 use ordered_float::OrderedFloat;
 use rgui_core::AppMessage;
+use rgui_core::id::WidgetId;
 use rgui_core::view::{Color, PropValue, WidgetView};
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
+
+// ============================================================================
+// Public Types
+// ============================================================================
+
+/// 状态绑定——`.rgui` 中 `expanded="{state.open}"` 的解析结果。
+///
+/// RS07：声明式数据绑定——`.rgui` 属性值中 `{state.xxx}` 表达式
+/// 自动转换为 StateStore 订阅。每个绑定记录所属 prop 名称、
+/// state key 和对应的 WidgetId。
+#[derive(Debug, Clone)]
+pub struct StateBinding {
+    /// 属性名称（如 `"expanded"`）。
+    pub prop_name: String,
+    /// StateStore 中的 key（如 `"open"`，去除 `state.` 前缀）。
+    pub state_key: String,
+    /// 所属 widget 的 ID（由 `compute_view_layout` 分配）。
+    /// 仅在调用 `collect_state_bindings` 时有值。
+    pub widget_id: Option<WidgetId>,
+}
 
 // ============================================================================
 // Error Types
@@ -165,6 +186,35 @@ pub fn collect_widget_ids<M: AppMessage>(
     bimap
 }
 
+/// 从 WidgetView 树中收集所有 `state.xxx` 声明式绑定（RS07）。
+///
+/// 递归遍历 WidgetView 树，查找标记为 `${expr:state.*}` 的 prop 值，
+/// 为每个 state 绑定提取 widget_id、prop_name 和 state_key。
+///
+/// # 示例
+///
+/// ```ignore
+/// let mut view = parse_rgui_str::<MyMsg>(r#"<WaAccordionItem expanded="${state.open}"/>"#)?;
+/// // WidgetId 需先通过 compute_view_layout() 分配
+/// let bindings = collect_state_bindings(&view);
+/// assert_eq!(bindings.len(), 1);
+/// assert_eq!(bindings[0].prop_name, "expanded");
+/// assert_eq!(bindings[0].state_key, "open");
+/// ```
+pub fn collect_state_bindings<M: AppMessage>(view: &WidgetView<M>) -> Vec<StateBinding> {
+    let mut bindings = Vec::new();
+    collect_state_bindings_recursive(view, &mut bindings);
+    bindings
+}
+
+/// 检测表达式是否为 `state.*` 形式（RS07）。
+///
+/// `{state.open}` → true、`{username.value}` → false。
+/// 规则：必须以 `state.` 开头，且后面至少有一个字符。
+pub fn is_state_expr(expr: &str) -> bool {
+    expr.starts_with("state.") && expr.len() > "state.".len()
+}
+
 /// 递归辅助函数：遍历 WidgetView 树，收集 id 属性。
 fn collect_widget_ids_recursive<M: AppMessage>(
     view: &WidgetView<M>,
@@ -179,6 +229,48 @@ fn collect_widget_ids_recursive<M: AppMessage>(
     // 递归处理子节点
     for child in &view.children {
         collect_widget_ids_recursive(child, bimap);
+    }
+}
+
+/// 递归辅助函数：遍历 WidgetView 树，收集 state 绑定（RS07）。
+///
+/// 检查每个 prop 值，若存储为 `${expr:state.xxx}` 标记格式，
+/// 则提取 state key 并创建 StateBinding。
+fn collect_state_bindings_recursive<M: AppMessage>(
+    view: &WidgetView<M>,
+    bindings: &mut Vec<StateBinding>,
+) {
+    // 检查当前节点的所有 props
+    for (&prop_name_static, prop_value) in &view.props {
+        let prop_name = prop_name_static.to_string();
+        if let PropValue::Str(value_str) = prop_value {
+            // 检查是否为 ${expr:state.xxx} 标记格式
+            if let Some(state_key) = extract_state_key_from_marker(value_str) {
+                bindings.push(StateBinding {
+                    prop_name,
+                    state_key: state_key.to_string(),
+                    widget_id: view.id,
+                });
+            }
+        }
+    }
+    // 递归处理子节点
+    for child in &view.children {
+        collect_state_bindings_recursive(child, bindings);
+    }
+}
+
+/// 从 `${expr:state.xxx}` 标记中提取 state key。
+///
+/// 成功提取返回 `Some("xxx")`，非 state 绑定返回 `None`。
+fn extract_state_key_from_marker(marker: &str) -> Option<&str> {
+    // marker 格式：${expr:state.xxx}
+    let expr = marker.strip_prefix("${expr:")?.strip_suffix('}')?;
+    if is_state_expr(expr) {
+        // 去除 "state." 前缀
+        Some(&expr["state.".len()..])
+    } else {
+        None
     }
 }
 
@@ -530,7 +622,7 @@ fn text_node<M: AppMessage>(text: &str) -> WidgetView<M> {
 /// - 十六进制颜色 `#RRGGBB` / `#RRGGBBAA` → `PropValue::Color`
 /// - `"WxH"` 格式 → `PropValue::Size`
 /// - 其他 → `PropValue::Str`
-fn infer_prop_value(literal: &str) -> PropValue {
+pub fn infer_prop_value(literal: &str) -> PropValue {
     // 布尔值
     if literal == "true" {
         return PropValue::Bool(true);
@@ -980,5 +1072,74 @@ mod tests {
 
         let id = bimap.get_id("btn_ok").unwrap();
         assert_eq!(bimap.get_name(id), Some("btn_ok"));
+    }
+
+    // --- collect_state_bindings 测试（RS07）---
+
+    #[test]
+    fn collect_state_bindings_single() {
+        let mut view =
+            parse_rgui_str::<TestMsg>(r#"<WaAccordionItem expanded="${state.open}"/>"#).unwrap();
+        assign_widget_ids(&mut view);
+        let bindings = collect_state_bindings(&view);
+
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].prop_name, "expanded");
+        assert_eq!(bindings[0].state_key, "open");
+        assert!(bindings[0].widget_id.is_some());
+    }
+
+    #[test]
+    fn collect_state_bindings_multiple() {
+        let mut view = parse_rgui_str::<TestMsg>(
+            r#"<Column>
+                <WaAccordionItem id="s1" expanded="${state.s1_open}"/>
+                <WaAccordionItem id="s2" expanded="${state.s2_open}"/>
+               </Column>"#,
+        )
+        .unwrap();
+        assign_widget_ids(&mut view);
+        let bindings = collect_state_bindings(&view);
+
+        assert_eq!(bindings.len(), 2);
+        // 两个绑定应有不同的 state keys
+        let keys: Vec<&str> = bindings.iter().map(|b| b.state_key.as_str()).collect();
+        assert!(keys.contains(&"s1_open"));
+        assert!(keys.contains(&"s2_open"));
+    }
+
+    #[test]
+    fn collect_state_bindings_mixed_with_non_state_exprs() {
+        let mut view = parse_rgui_str::<TestMsg>(
+            r#"<Column>
+                <Label text="${username.value}"/>
+                <WaAccordionItem expanded="${state.open}"/>
+               </Column>"#,
+        )
+        .unwrap();
+        assign_widget_ids(&mut view);
+        let bindings = collect_state_bindings(&view);
+
+        // 只有 state.open 是 state binding，username.value 是普通表达式
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].state_key, "open");
+    }
+
+    #[test]
+    fn collect_state_bindings_no_bindings() {
+        let mut view =
+            parse_rgui_str::<TestMsg>(r#"<Button label="Save"/>"#).unwrap();
+        assign_widget_ids(&mut view);
+        let bindings = collect_state_bindings(&view);
+        assert!(bindings.is_empty());
+    }
+
+    #[test]
+    fn is_state_expr_detects_state_prefix() {
+        assert!(is_state_expr("state.open"));
+        assert!(is_state_expr("state.s1_open"));
+        assert!(!is_state_expr("username.value"));
+        assert!(!is_state_expr(""));
+        assert!(!is_state_expr("state")); // 必须有 . 分隔符
     }
 }

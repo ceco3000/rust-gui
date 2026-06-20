@@ -228,6 +228,69 @@ fn intern_prop_key(key: &str) -> &'static str {
     }
 }
 
+/// RS07: 从 StateStore 读取 rhai_state 并注入到 WidgetView props。
+///
+/// 遍历 WidgetView 树，对其中的 state 绑定项（`${expr:state.xxx}` 标记），
+/// 从 StateStore 读取对应的 rhai_state 值，注入为普通 prop。
+#[cfg(feature = "devtools")]
+fn inject_state_bindings<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    id_map: &Arc<std::sync::Mutex<WidgetIdBimap>>,
+    state_store: &Arc<RwLock<rgui_state::StateStore>>,
+) {
+    inject_state_bindings_recursive(view, id_map, state_store);
+}
+
+/// RS07: 递归辅助——遍历 WidgetView 树，将 state 绑定值注入为 props。
+#[cfg(feature = "devtools")]
+fn inject_state_bindings_recursive<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    id_map: &Arc<std::sync::Mutex<WidgetIdBimap>>,
+    state_store: &Arc<RwLock<rgui_state::StateStore>>,
+) {
+    use rgui_core::view::PropValue;
+
+    // 检查当前节点的所有 props，寻找 ${expr:state.xxx} 标记
+    let store = state_store
+        .read()
+        .expect("StateStore RwLock poisoned");
+    let bimap = id_map
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let mut injections: Vec<(&'static str, PropValue)> = Vec::new();
+    for (&prop_name, prop_value) in &view.props {
+        if let PropValue::Str(marker) = prop_value {
+            if let Some(expr) = marker
+                .strip_prefix("${expr:")
+                .and_then(|s| s.strip_suffix('}'))
+            {
+                if rgui_devtools::rgui_parser::is_state_expr(expr) {
+                    let state_key = &expr["state.".len()..];
+                    if let Some(state_id) = bimap.get_id(state_key) {
+                        if let Some(value) = store.read_rhai_state(state_id) {
+                            let injected = rgui_devtools::rgui_parser::infer_prop_value(value);
+                            injections.push((prop_name, injected));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    drop(bimap);
+    drop(store);
+
+    // 注入 props
+    for (prop_name, value) in injections {
+        view.props.insert(prop_name, value);
+    }
+
+    // 递归子节点
+    for child in &mut view.children {
+        inject_state_bindings_recursive(child, id_map, state_store);
+    }
+}
+
 impl App {
     /// 创建应用实例。
     #[must_use]
@@ -369,13 +432,21 @@ impl App {
     ///
     /// `M` 为 AppMessage 类型，用于解析器泛型参数。
     /// 内部创建 [`RguiHotReload`]，每帧轮询文件变更，
-    /// 变更时重新解析 → `compute_view_layout` → `build_scene_from_view` → `SceneGraph`。
+    /// 变更时重新解析 → `compute_view_layout` → `build_scene_from_view_incremental` → `SceneGraph`。
     ///
     /// ## RS04: PropRegistry 注入
     ///
     /// 每帧调用 [`PropRegistry::drain()`] 获取 Rhai 脚本通过 `set_prop` 写入的待更新 prop，
     /// 通过 RS03 的字符串→WidgetId 映射定位节点，注入到 WidgetView 树。
     /// **⚠️ 临时捷径：RS05-RS06 实施后，此路径降级为 fallback。**
+    ///
+    /// ## RS07: 声明式数据绑定
+    ///
+    /// `.rgui` 中 `expanded="{state.open}"` 语法自动：
+    /// 1. 收集为 `StateBinding`（`collect_state_bindings`）
+    /// 2. 通过 `StateStore::subscribe` 连接 dirty 传播
+    /// 3. 每帧从 `StateStore.rhai_state` 读取值 → 注入 `PropRegistry`
+    /// 4. 使用 `build_scene_from_view_incremental` 实现增量渲染
     ///
     /// 必须在 `run()` 之前调用。返回 `Err` 如果 config 未设置 `rgui_path`。
     ///
@@ -385,8 +456,10 @@ impl App {
         &mut self,
     ) -> Result<(), rgui_devtools::rgui_hot_reload::RguiHotReloadError> {
         use rgui_core::geometry::Size;
+        use rgui_core::id::WidgetId;
         use rgui_devtools::config::HotReloadConfig;
         use rgui_devtools::rgui_hot_reload::RguiHotReload;
+        use rgui_devtools::rgui_parser::{self};
 
         let rgui_path = self.config.rgui_path.as_ref().ok_or_else(|| {
             rgui_devtools::rgui_hot_reload::RguiHotReloadError::Watch(
@@ -408,6 +481,10 @@ impl App {
         let prop_registry = self.prop_registry.clone();
         let id_map = Arc::clone(&self.id_map);
 
+        // RS06/RS07: 共享的 StateStore 和 PaintCache
+        let state_store = Arc::clone(&self.state_store);
+        let mut paint_cache = rgui_render::PaintCache::new();
+
         // 初始帧：填充 WidgetIdBimap
         {
             let bimap = rgui_devtools::rgui_parser::collect_widget_ids(&current_view);
@@ -426,6 +503,67 @@ impl App {
             rgui_render::compute_view_layout(&mut view, available, None)
         };
 
+        // RS07: 收集声明式 state 绑定
+        // state_key → Vec<(bound_widget_id, prop_name)>
+        let mut state_bindings: std::collections::HashMap<
+            String,
+            Vec<(WidgetId, String)>,
+        > = std::collections::HashMap::new();
+        {
+            let bindings = rgui_parser::collect_state_bindings(&current_view);
+            for binding in &bindings {
+                if let Some(wid) = binding.widget_id {
+                    state_bindings
+                        .entry(binding.state_key.clone())
+                        .or_default()
+                        .push((wid, binding.prop_name.clone()));
+                }
+            }
+            // RS07: 为每个 state key 分配 WidgetId（若 id_map 中不存在）
+            let mut bimap_lock = id_map
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            for state_key in state_bindings.keys() {
+                if !bimap_lock.contains_name(state_key) {
+                    let new_id = WidgetId::new();
+                    bimap_lock.insert(state_key, new_id);
+                }
+            }
+            drop(bimap_lock);
+
+            // RS07: 创建 StateStore 订阅——state widget dirty → bound widget dirty
+            let mut store = state_store
+                .write()
+                .expect("StateStore RwLock poisoned");
+            for (state_key, bound_widgets) in &state_bindings {
+                if let Some(state_id) = {
+                    let bimap = id_map
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    bimap.get_id(state_key)
+                } {
+                    for &(bound_widget_id, _) in bound_widgets {
+                        if bound_widget_id != state_id {
+                            store.subscribe(bound_widget_id, state_id);
+                        }
+                    }
+                }
+            }
+            // 写入初始 state 值到 rhai_state（默认空字符串）
+            for state_key in state_bindings.keys() {
+                if let Some(state_id) = {
+                    let bimap = id_map
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    bimap.get_id(state_key)
+                } {
+                    if store.read_rhai_state(state_id).is_none() {
+                        store.write_rhai_state(state_id, "");
+                    }
+                }
+            }
+        }
+
         let builder = move |frame_count: u64,
                             width: u32,
                             height: u32,
@@ -443,6 +581,8 @@ impl App {
                     let mut view = new_view.clone();
                     // RS04: 注入 Rhai 写入的待更新 prop
                     inject_props_from_registry(&mut view, &prop_registry.drain());
+                    // RS07: 从 StateStore 注入 state 绑定 prop
+                    inject_state_bindings(&mut view, &id_map, &state_store);
                     let engine =
                         rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
                     layout_engine = engine;
@@ -451,17 +591,22 @@ impl App {
                 Ok(None) => {
                     // 无变更，但 Rhai 可能已写入 prop → 每帧注入
                     let mut view = current_view.clone();
+
+                    // RS07: 从 StateStore 注入 state 绑定 prop
+                    inject_state_bindings(&mut view, &id_map, &state_store);
+
+                    // RS04: 注入 PropRegistry 待更新 prop
                     let pending = prop_registry.drain();
                     if !pending.is_empty() {
                         inject_props_from_registry(&mut view, &pending);
-                        // prop 变更后需重算布局
-                        let available = Size::new(f64::from(width), f64::from(height));
-                        layout_engine = rgui_render::compute_view_layout(
-                            &mut view,
-                            available,
-                            Some(text_renderer),
-                        );
                     }
+                    // prop 变更后需重算布局
+                    let available = Size::new(f64::from(width), f64::from(height));
+                    layout_engine = rgui_render::compute_view_layout(
+                        &mut view,
+                        available,
+                        Some(text_renderer),
+                    );
                     current_view = view;
                 },
                 Err(e) => {
@@ -471,13 +616,44 @@ impl App {
             }
 
             let paint_fn = crate::paint_factory::default_paint_fn::<M>();
-            rgui_render::build_scene_from_view(
-                &current_view,
-                &layout_engine,
-                &paint_fn,
-                frame_count,
-                Some(text_renderer),
-            )
+
+            // RS07: 使用增量渲染——仅重绘 dirty widget
+            let dirty_set = {
+                let store = state_store
+                    .read()
+                    .expect("StateStore RwLock poisoned");
+                store.dirty_widgets().clone()
+            };
+
+            let scene = if dirty_set.is_empty() {
+                rgui_render::build_scene_from_view(
+                    &current_view,
+                    &layout_engine,
+                    &paint_fn,
+                    frame_count,
+                    Some(text_renderer),
+                )
+            } else {
+                rgui_render::build_scene_from_view_incremental(
+                    &current_view,
+                    &layout_engine,
+                    &paint_fn,
+                    frame_count,
+                    Some(text_renderer),
+                    Some(&dirty_set),
+                    &mut paint_cache,
+                )
+            };
+
+            // 清除本帧脏标记
+            {
+                let mut store = state_store
+                    .write()
+                    .expect("StateStore RwLock poisoned");
+                store.clear_dirty();
+            }
+
+            scene
         };
 
         self.set_view_scene_builder(builder);
