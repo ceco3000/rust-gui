@@ -278,6 +278,17 @@ pub trait RenderBackend: Send + Sync {
     /// 释放纹理
     fn unregister_texture(&mut self, id: TextureId);
 
+    /// 更新纹理内容（用于字形 Atlas 动态增长）。
+    fn update_texture(
+        &mut self,
+        id: TextureId,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    );
+
     /// 当前后端名称（用于调试和 fallback 决策）
     fn backend_name(&self) -> &'static str;
 }
