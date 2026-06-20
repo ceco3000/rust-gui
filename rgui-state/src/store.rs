@@ -193,7 +193,7 @@ impl StateStore {
     }
 
     /// 清除本帧脏标记。
-    pub(crate) fn clear_dirty(&mut self) {
+    pub fn clear_dirty(&mut self) {
         self.dirty.clear();
     }
 
@@ -1248,5 +1248,71 @@ mod tests {
 
         binding1.store_write(id, "shared");
         assert_eq!(binding2.store_read(id), "shared");
+    }
+
+    // --- RS06: propagate_dirty cycle safety ---
+
+    #[test]
+    fn propagate_dirty_handles_cycles_without_infinite_loop() {
+        let mut store = StateStore::new();
+        let id_a = store.allocate_id();
+        let id_b = store.allocate_id();
+        let id_c = store.allocate_id();
+
+        // A → B → C → A (cycle)
+        store.insert_persistent(id_a, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(id_b, Box::new(TestCounter { count: 0 }));
+        store.insert_persistent(id_c, Box::new(TestCounter { count: 0 }));
+
+        store.apply_subscriptions(
+            id_a,
+            vec![(
+                id_b,
+                Subscription {
+                    subscriber: id_a,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+        store.apply_subscriptions(
+            id_b,
+            vec![(
+                id_c,
+                Subscription {
+                    subscriber: id_b,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+        store.apply_subscriptions(
+            id_c,
+            vec![(
+                id_a,
+                Subscription {
+                    subscriber: id_c,
+                    lifetime: SubscriptionLifetime::Persistent,
+                },
+            )],
+        );
+
+        // 验证确实检测到循环
+        let cycles = store.detect_cycles();
+        assert!(!cycles.is_empty(), "should detect cycle");
+
+        // propagate_dirty 不应无限循环——通过 dirty 去重保证
+        store.mark_dirty(id_a);
+        store.propagate_dirty(id_a);
+
+        // A、B、C 都应在脏集合中
+        assert!(store.dirty_widgets().contains(&id_a));
+        assert!(store.dirty_widgets().contains(&id_b));
+        assert!(store.dirty_widgets().contains(&id_c));
+
+        // 没有重复标记——每个 widget 只出现一次
+        assert_eq!(store.dirty_widgets().len(), 3);
+
+        // 清除后正常
+        store.clear_dirty();
+        assert!(store.dirty_widgets().is_empty());
     }
 }

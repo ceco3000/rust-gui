@@ -14,6 +14,7 @@ use std::fmt;
 // ============================================================================
 
 /// 场景图：Widget 树 → 绘制指令的中间表示（D3 §3.1）。
+#[derive(Clone)]
 pub struct SceneGraph {
     pub layers: Vec<SceneLayer>,
     pub dirty_layers: Vec<usize>,
@@ -215,6 +216,12 @@ impl SceneGraphBuilder {
         if is_dirty {
             self.dirty_layers.push(layer_index);
         }
+    }
+
+    /// 返回当前已构建的图层列表（只读）。
+    #[must_use]
+    pub fn layers(&self) -> &[SceneLayer] {
+        &self.layers
     }
 
     /// 完成构建，产出 SceneGraph。

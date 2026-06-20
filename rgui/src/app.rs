@@ -23,6 +23,7 @@ use std::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::RwLock;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton as WinitMouseButton, WindowEvent};
@@ -162,6 +163,9 @@ pub struct App {
     /// Rhai 脚本热重载管理器（load_rhai_scripts 创建，AppHandler::new() 时 .take() 移入）。
     #[cfg(feature = "devtools")]
     rhai_hot_reload: Option<rgui_devtools::rhai_hot_reload::RhaiHotReload>,
+    /// 共享状态存储（RS06：Rhai↔渲染 dirty 追踪）。
+    /// Rhai `store_write` 标记脏，渲染管线读取脏集合并增量重绘。
+    state_store: Arc<RwLock<rgui_state::StateStore>>,
 }
 
 /// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
@@ -248,6 +252,7 @@ impl App {
             command_registry: None,
             #[cfg(feature = "devtools")]
             rhai_hot_reload: None,
+            state_store: Arc::new(RwLock::new(rgui_state::StateStore::new())),
         }
     }
 
@@ -523,6 +528,14 @@ impl App {
         let registry =
             CommandRegistry::with_state(self.prop_registry.clone(), Arc::clone(&self.id_map));
 
+        // RS06: 注册 StateStore 绑定，让 Rhai `store_read`/`store_write` 操作共享状态
+        {
+            let binding: Arc<dyn rgui_core::StateBinding> = Arc::new(
+                rgui_state::StateStoreBinding::new(Arc::clone(&self.state_store)),
+            );
+            registry.register_state_binding(binding);
+        }
+
         let mut hot_reload = RhaiHotReload::with_registry(&config, registry)?;
         for path in paths {
             hot_reload.watch(path.as_ref())?;
@@ -635,6 +648,14 @@ struct AppHandler {
     /// 每帧调用 check_and_reload() 检测 .rhai 文件变更。
     #[cfg(feature = "devtools")]
     rhai_hot_reload: Option<rgui_devtools::rhai_hot_reload::RhaiHotReload>,
+    /// 共享状态存储（从 App 移入，RS06）。
+    /// 渲染管线读取脏集合，Rhai `store_write` 标记脏。
+    state_store: Arc<RwLock<rgui_state::StateStore>>,
+    /// 逐 widget 绘制结果缓存（RS06）。
+    #[allow(dead_code)]
+    paint_cache: rgui_render::PaintCache,
+    /// 前一帧场景图（RS06：脏集合为空时复用，避免全量重建）。
+    prev_scene: Option<SceneGraph>,
 }
 
 impl AppHandler {
@@ -644,6 +665,8 @@ impl AppHandler {
         let command_registry = app.command_registry.take();
         #[cfg(feature = "devtools")]
         let rhai_hot_reload = app.rhai_hot_reload.take();
+        // RS06: 将共享 StateStore 从 App 移入 AppHandler
+        let state_store = app.state_store.clone();
         Self {
             app,
             window: None,
@@ -660,6 +683,9 @@ impl AppHandler {
             command_registry,
             #[cfg(feature = "devtools")]
             rhai_hot_reload,
+            state_store,
+            paint_cache: rgui_render::PaintCache::new(),
+            prev_scene: None,
         }
     }
 
@@ -1066,8 +1092,19 @@ impl ApplicationHandler for AppHandler {
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
                     let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
                     let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
+
+                    // RS06: 检查脏集合——无脏 widget 且已有上一帧场景时跳过重建
+                    let has_dirty = {
+                        let store = self.state_store.read().expect("StateStore RwLock poisoned");
+                        !store.dirty_widgets().is_empty()
+                    };
+                    let can_reuse = !has_dirty && self.prev_scene.is_some();
+
                     // 场景构建回调，带异常隔离（D1 §11.3）
-                    let scene = if let Some(ref mut view_builder) = self.view_scene_builder {
+                    let scene = if can_reuse {
+                        // RS06: 无脏 widget → 复用上一帧场景
+                        self.prev_scene.clone().unwrap()
+                    } else if let Some(ref mut view_builder) = self.view_scene_builder {
                         let text_renderer = &self.text_renderer;
                         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             view_builder(frame, logical_w as u32, logical_h as u32, text_renderer)
@@ -1088,6 +1125,18 @@ impl ApplicationHandler for AppHandler {
                     } else {
                         SceneGraph::new(frame)
                     };
+
+                    // RS06: 缓存本帧场景供下一帧复用
+                    self.prev_scene = Some(scene.clone());
+
+                    // RS06: 渲染后清除脏标记
+                    {
+                        let mut store = self
+                            .state_store
+                            .write()
+                            .expect("StateStore RwLock poisoned");
+                        store.clear_dirty();
+                    }
                     let params = RenderParams {
                         width: self.width,
                         height: self.height,

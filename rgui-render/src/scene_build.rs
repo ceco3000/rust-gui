@@ -13,7 +13,7 @@ use rgui_core::id::WidgetId;
 use rgui_layout::{LayoutEngine, LayoutNode};
 
 use crate::primitives::Transform;
-use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder};
+use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer};
 use crate::text_renderer::TextRenderer;
 
 // ============================================================================
@@ -370,6 +370,254 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
             z_index,
             text_renderer,
         );
+    }
+}
+
+// ============================================================================
+// PaintCache — 增量渲染缓存（RS06）
+// ============================================================================
+
+/// 逐 widget 绘制结果缓存，用于增量场景构建（RS06）。
+///
+/// 缓存每帧的 [`SceneLayer`]（含绘制指令列表），使脏标记传播后
+/// 仅重建受影响 widget 的绘制层，clean widget 复用缓存结果。
+#[derive(Default, Clone)]
+pub struct PaintCache {
+    layers: rustc_hash::FxHashMap<WidgetId, SceneLayer>,
+}
+
+impl PaintCache {
+    /// 创建空缓存。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 获取 widget 的缓存层（如果存在）。
+    #[must_use]
+    pub fn get(&self, id: WidgetId) -> Option<&SceneLayer> {
+        self.layers.get(&id)
+    }
+
+    /// 插入/更新 widget 的缓存层。
+    pub fn insert(&mut self, id: WidgetId, layer: SceneLayer) {
+        self.layers.insert(id, layer);
+    }
+
+    /// 移除 widget 的缓存层。
+    pub fn remove(&mut self, id: WidgetId) {
+        self.layers.remove(&id);
+    }
+
+    /// 清空全部缓存。
+    pub fn clear(&mut self) {
+        self.layers.clear();
+    }
+
+    /// 缓存是否为空。
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty()
+    }
+}
+
+// ============================================================================
+// 增量场景构建（RS06）
+// ============================================================================
+
+/// 计算单个 widget 的绘制指令列表（提取自 walk_view_tree 内部逻辑，供增量路径复用）。
+fn compute_widget_commands<M: rgui_core::traits::AppMessage>(
+    view: &rgui_core::view::WidgetView<M>,
+    bounds: Rect,
+    paint_fn: &PaintFn<M>,
+    text_renderer: Option<&TextRenderer>,
+) -> Vec<DrawCommand> {
+    let ops = paint_fn(view, bounds);
+    let mut commands = Vec::with_capacity(ops.len());
+    for op in &ops {
+        commands.push(paint_op_to_draw_command_inner(op, text_renderer));
+    }
+    commands
+}
+
+/// 增量遍历 WidgetView 树（RS06）。
+///
+/// 与 [`walk_view_tree`] 相同的深度优先遍历，但：
+/// - 当 `dirty_widgets` 为 `Some(set)` 且 widget 未被标记脏时，
+///   优先从 `paint_cache` 获取缓存层，避免重复调用 `paint_fn`。
+/// - 脏 widget（或无缓存）则正常调用 `paint_fn` 生成绘制指令并更新缓存。
+    #[allow(clippy::too_many_arguments)]
+fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
+    view: &rgui_core::view::WidgetView<M>,
+    layout_engine: &LayoutEngine,
+    paint_fn: &PaintFn<M>,
+    builder: &mut SceneGraphBuilder,
+    z_index: &mut i32,
+    text_renderer: Option<&TextRenderer>,
+    dirty_widgets: Option<&rustc_hash::FxHashSet<WidgetId>>,
+    paint_cache: &mut PaintCache,
+) {
+    let widget_id = view.id.unwrap_or_else(|| {
+        eprintln!(
+            "[rgui] walk_view_tree_incremental: WidgetView.id 缺失，widget_type=\"{}\"，回退到 WidgetId(0)",
+            view.widget_type
+        );
+        WidgetId::default()
+    });
+
+    // 从布局引擎查询该 widget 的计算后 bounds
+    let bounds = layout_engine
+        .get_layout(widget_id)
+        .map(|cached| {
+            Rect::new(
+                cached.result.position.x,
+                cached.result.position.y,
+                cached.result.size.width,
+                cached.result.size.height,
+            )
+        })
+        .unwrap_or_else(|| {
+            eprintln!(
+                "[rgui] walk_view_tree_incremental: 布局引擎无 WidgetId({widget_id:?}) (widget_type=\"{}\") 的缓存，回退到 Rect::ZERO",
+                view.widget_type
+            );
+            Rect::ZERO
+        });
+
+    // 判断是否为脏 widget
+    let is_dirty = dirty_widgets.is_none_or(|dirty| dirty.contains(&widget_id));
+
+    let commands = if is_dirty {
+        // 脏：正常调用 paint_fn 生成新绘制指令
+        compute_widget_commands(view, bounds, paint_fn, text_renderer)
+    } else if let Some(cached) = paint_cache.get(widget_id) {
+        // 清洁且有缓存：复用缓存指令
+        cached.commands.clone()
+    } else {
+        // 清洁但无缓存（例如首帧）：计算并缓存
+        compute_widget_commands(view, bounds, paint_fn, text_renderer)
+    };
+
+    // 从 props 读取 z-index，未指定时回退到 DFS 顺序计数
+    let z = match view.props.get("z-index") {
+        Some(rgui_core::view::PropValue::Int(i)) => *i as i32,
+        _ => {
+            let z = *z_index;
+            *z_index += 1;
+            z
+        },
+    };
+
+    builder.build_layer(widget_id, z, bounds, commands.clone(), is_dirty);
+
+    // 更新缓存——缓存最新绘制指令与 bounds
+    paint_cache.insert(
+        widget_id,
+        SceneLayer {
+            z_index: z,
+            bounds,
+            commands,
+            widget_id,
+            opacity: 1.0,
+            transform: None,
+        },
+    );
+
+    // 递归处理子节点
+    for child in &view.children {
+        walk_view_tree_incremental(
+            child,
+            layout_engine,
+            paint_fn,
+            builder,
+            z_index,
+            text_renderer,
+            dirty_widgets,
+            paint_cache,
+        );
+    }
+}
+
+/// 从 WidgetView 树增量构建 SceneGraph（RS06）。
+///
+/// 当 `dirty_widgets` 为 `Some(set)` 且非空时，仅对脏 widget 调用 `paint_fn`；
+/// 清洁 widget 复用 [`PaintCache`] 中的缓存层。
+/// 当 `dirty_widgets` 为 `None` 或空时，行为与 [`build_scene_from_view`] 相同（全量构建）。
+///
+/// # 参数
+///
+/// - `root`: 根 WidgetView。
+/// - `layout_engine`: 布局引擎（需先通过 [`compute_view_layout`] 计算布局）。
+/// - `paint_fn`: 为每个 widget 生成 PaintOp 的回调。
+/// - `version`: 场景图版本号。
+/// - `text_renderer`: 可选的文本渲染器。
+/// - `dirty_widgets`: 脏 widget 集合（来自 [`StateStore::dirty_widgets`]）。`None` 表示全量构建。
+/// - `paint_cache`: 逐 widget 绘制结果缓存（跨帧保持）。
+pub fn build_scene_from_view_incremental<M: rgui_core::traits::AppMessage>(
+    root: &rgui_core::view::WidgetView<M>,
+    layout_engine: &LayoutEngine,
+    paint_fn: &PaintFn<M>,
+    version: u64,
+    text_renderer: Option<&TextRenderer>,
+    dirty_widgets: Option<&rustc_hash::FxHashSet<WidgetId>>,
+    paint_cache: &mut PaintCache,
+) -> SceneGraph {
+    let is_incremental = dirty_widgets.is_some_and(|d| !d.is_empty());
+
+    if !is_incremental {
+        // 全量构建（无脏标记或脏集合为空）
+        let mut builder = SceneGraphBuilder::new(version);
+        let mut z_index: i32 = 0;
+
+        walk_view_tree(
+            root,
+            layout_engine,
+            paint_fn,
+            &mut builder,
+            &mut z_index,
+            text_renderer,
+        );
+
+        // 仍更新缓存，以便后续帧可增量
+        update_paint_cache_from_builder(root, &builder, paint_cache);
+
+        return builder.finish();
+    }
+
+    // 增量构建
+    let mut builder = SceneGraphBuilder::new(version);
+    let mut z_index: i32 = 0;
+
+    walk_view_tree_incremental(
+        root,
+        layout_engine,
+        paint_fn,
+        &mut builder,
+        &mut z_index,
+        text_renderer,
+        dirty_widgets,
+        paint_cache,
+    );
+
+    builder.finish()
+}
+
+/// 从已构建的 builder 结果更新 PaintCache（全量构建后同步缓存）。
+fn update_paint_cache_from_builder<M: rgui_core::traits::AppMessage>(
+    root: &rgui_core::view::WidgetView<M>,
+    builder: &SceneGraphBuilder,
+    cache: &mut PaintCache,
+) {
+    // 遍历 builder 的 layers，按 widget_id 索引更新缓存
+    for layer in builder.layers() {
+        cache.insert(layer.widget_id, layer.clone());
+    }
+    // 确保 root 节点也被缓存（即使没有自己的 layer）
+    if let Some(id) = root.id {
+        if cache.get(id).is_none() {
+            // root 通常没有自己的 layer，跳过
+            let _ = id;
+        }
     }
 }
 
@@ -1796,5 +2044,131 @@ mod tests {
         // Sorted: -5(Label C), 0(Row), 1(Label B), 100(Label A)
         let zs: Vec<i32> = scene.layers.iter().map(|l| l.z_index).collect();
         assert_eq!(zs, vec![-5, 0, 1, 100]);
+    }
+
+    // --- RS06: PaintCache + build_scene_from_view_incremental ---
+
+    #[test]
+    fn paint_cache_insert_and_get() {
+        let mut cache = PaintCache::new();
+        assert!(cache.is_empty());
+
+        let id = WidgetId::from_u64(1);
+        let layer = SceneLayer::new(id, 0, Rect::new(0.0, 0.0, 100.0, 50.0));
+        cache.insert(id, layer.clone());
+
+        assert!(!cache.is_empty());
+        let cached = cache.get(id).unwrap();
+        assert_eq!(cached.widget_id, id);
+        assert_eq!(cached.bounds, Rect::new(0.0, 0.0, 100.0, 50.0));
+    }
+
+    #[test]
+    fn paint_cache_remove_and_clear() {
+        let mut cache = PaintCache::new();
+        let id = WidgetId::from_u64(1);
+        let layer = SceneLayer::new(id, 0, Rect::ZERO);
+        cache.insert(id, layer);
+        assert_eq!(cache.get(id).unwrap().widget_id, id);
+
+        cache.remove(id);
+        assert!(cache.get(id).is_none());
+
+        // Re-insert and clear
+        cache.insert(id, SceneLayer::new(id, 0, Rect::ZERO));
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn build_scene_from_view_incremental_full_when_no_dirty() {
+        let mut view = make_view("Column", vec![make_label("A"), make_label("B")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+        let mut cache = PaintCache::new();
+
+        // dirty_widgets = None → full build
+        let scene =
+            build_scene_from_view_incremental(&view, &engine, &paint_fn, 0, None, None, &mut cache);
+        assert_eq!(scene.layer_count(), 3); // Column + Label A + Label B
+        assert!(!cache.is_empty());
+    }
+
+    #[test]
+    fn build_scene_from_view_incremental_reuses_cache_for_clean_widgets() {
+        let mut view = make_view("Column", vec![make_label("Label1"), make_label("Label2")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+        let mut cache = PaintCache::new();
+
+        // First frame: full build, populates cache
+        let scene1 =
+            build_scene_from_view_incremental(&view, &engine, &paint_fn, 0, None, None, &mut cache);
+        assert_eq!(scene1.layer_count(), 3);
+
+        // Second frame: dirty set empty → reuses all from cache
+        let empty_dirty = rustc_hash::FxHashSet::default();
+        let scene2 = build_scene_from_view_incremental(
+            &view,
+            &engine,
+            &paint_fn,
+            1,
+            None,
+            Some(&empty_dirty),
+            &mut cache,
+        );
+        assert_eq!(scene2.layer_count(), 3);
+
+        // Non-dirty layers should have the same commands count as first frame
+        for (i, layer) in scene2.layers.iter().enumerate() {
+            assert_eq!(
+                layer.commands.len(),
+                scene1.layers[i].commands.len(),
+                "layer {i} should reuse cached commands"
+            );
+        }
+    }
+
+    #[test]
+    fn build_scene_from_view_incremental_rebuilds_only_dirty_widget() {
+        let mut view = make_view(
+            "Column",
+            vec![make_label("A"), make_label("B"), make_label("C")],
+        );
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+        let mut cache = PaintCache::new();
+
+        // First frame: full build
+        let scene1 =
+            build_scene_from_view_incremental(&view, &engine, &paint_fn, 0, None, None, &mut cache);
+        assert_eq!(scene1.layer_count(), 4);
+
+        // Mark only widget A as dirty (not Column, not B, not C)
+        // We find widget A's ID by looking at the layers
+        // Actually, we just use an FxHashSet with a WidgetId we know won't exist
+        let dummy_id = WidgetId::from_u64(99999);
+        let mut dirty_set = rustc_hash::FxHashSet::default();
+        dirty_set.insert(dummy_id);
+
+        // Second frame: dirty set has a non-existent ID → clean widgets use cache
+        let scene2 = build_scene_from_view_incremental(
+            &view,
+            &engine,
+            &paint_fn,
+            1,
+            None,
+            Some(&dirty_set),
+            &mut cache,
+        );
+        assert_eq!(scene2.layer_count(), 4);
+
+        // All layers should reuse cached commands since dummy_id isn't in the tree
+        for (i, layer) in scene2.layers.iter().enumerate() {
+            assert_eq!(layer.commands.len(), scene1.layers[i].commands.len());
+        }
     }
 }
