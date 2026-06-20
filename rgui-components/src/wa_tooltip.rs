@@ -162,10 +162,7 @@ impl WidgetSpec for WaTooltip {
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.open && !state.disabled {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -178,13 +175,13 @@ impl WidgetSpec for WaTooltip {
                 if !state.disabled {
                     state.open = true;
                 }
-            }
+            },
             WaTooltipMessage::Hide => {
                 state.open = false;
-            }
+            },
             // Phase 0: After 事件无额外行为
-            WaTooltipMessage::AfterShow => {}
-            WaTooltipMessage::AfterHide => {}
+            WaTooltipMessage::AfterShow => {},
+            WaTooltipMessage::AfterHide => {},
         }
     }
 
@@ -215,47 +212,47 @@ impl WidgetSpec for WaTooltip {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y - tooltip_h - state.distance;
                 (x, y)
-            }
+            },
             "top-end" => {
                 let x = bounds.origin.x + bounds.size.width - tooltip_w - state.skidding;
                 let y = bounds.origin.y - tooltip_h - state.distance;
                 (x, y)
-            }
+            },
             "bottom" | "bottom-start" | "" => {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "bottom-end" => {
                 let x = bounds.origin.x + bounds.size.width - tooltip_w - state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "right" | "right-start" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y + state.skidding;
                 (x, y)
-            }
+            },
             "right-end" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y + bounds.size.height - tooltip_h - state.skidding;
                 (x, y)
-            }
+            },
             "left" | "left-start" => {
                 let x = bounds.origin.x - tooltip_w - state.distance;
                 let y = bounds.origin.y + state.skidding;
                 (x, y)
-            }
+            },
             "left-end" => {
                 let x = bounds.origin.x - tooltip_w - state.distance;
                 let y = bounds.origin.y + bounds.size.height - tooltip_h - state.skidding;
                 (x, y)
-            }
+            },
             _ => {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
         };
 
         let tip_bounds = Rect::new(tip_x, tip_y, tooltip_w, tooltip_h);
@@ -274,48 +271,28 @@ impl WidgetSpec for WaTooltip {
                 "top" | "top-start" | "top-end" => {
                     let ax = tip_x + (tooltip_w - arrow_size) / 2.0;
                     let ay = tip_y + tooltip_h;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "bottom" | "bottom-start" | "bottom-end" | "" => {
                     let ax = tip_x + (tooltip_w - arrow_size) / 2.0;
                     let ay = tip_y - arrow_size;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "right" | "right-start" | "right-end" => {
                     let ax = tip_x - arrow_size;
                     let ay = tip_y + (tooltip_h - arrow_size) / 2.0;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "left" | "left-start" | "left-end" => {
                     let ax = tip_x + tooltip_w;
                     let ay = tip_y + (tooltip_h - arrow_size) / 2.0;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 _ => {
                     let ax = tip_x + (tooltip_w - arrow_size) / 2.0;
                     let ay = tip_y - arrow_size;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
             }
         }
     }
@@ -326,8 +303,7 @@ impl WidgetSpec for WaTooltip {
         } else {
             AccessibilityRole::None
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label("tooltip")
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label("tooltip")
     }
 }
 
@@ -557,7 +533,10 @@ mod tests {
             !v.props.contains_key("position"),
             "disabled 时不应有 position"
         );
-        assert!(!v.props.contains_key("z-index"), "disabled 时不应有 z-index");
+        assert!(
+            !v.props.contains_key("z-index"),
+            "disabled 时不应有 z-index"
+        );
     }
 
     #[test]

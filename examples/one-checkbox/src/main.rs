@@ -9,7 +9,9 @@ use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, AppMessage)]
 #[allow(dead_code)]
-enum Msg { Noop }
+enum Msg {
+    Noop,
+}
 
 fn register_click_interactions<M: AppMessage>(
     view: &rgui_core::view::WidgetView<M>,

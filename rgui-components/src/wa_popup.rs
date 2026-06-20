@@ -122,10 +122,7 @@ impl WidgetSpec for WaPopup {
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.active {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -136,7 +133,7 @@ impl WidgetSpec for WaPopup {
         match msg {
             WaPopupMessage::Reposition => {
                 // Phase 0: reposition 事件无实际计算行为
-            }
+            },
         }
     }
 
@@ -166,35 +163,35 @@ impl WidgetSpec for WaPopup {
                     let arrow_y = bounds.origin.y + bounds.size.height - arrow_size;
                     let arrow_bounds = Rect::new(arrow_x, arrow_y, arrow_size, arrow_size);
                     ctx.fill_rect(arrow_bounds, arrow_color, 0.0);
-                }
+                },
                 "bottom" | "bottom-start" | "bottom-end" | "" => {
                     // 箭头在顶部边缘
                     let arrow_x = bounds.origin.x + (bounds.size.width - arrow_size) / 2.0;
                     let arrow_y = bounds.origin.y;
                     let arrow_bounds = Rect::new(arrow_x, arrow_y, arrow_size, arrow_size);
                     ctx.fill_rect(arrow_bounds, arrow_color, 0.0);
-                }
+                },
                 "right" | "right-start" | "right-end" => {
                     // 箭头在左边边缘
                     let arrow_x = bounds.origin.x;
                     let arrow_y = bounds.origin.y + (bounds.size.height - arrow_size) / 2.0;
                     let arrow_bounds = Rect::new(arrow_x, arrow_y, arrow_size, arrow_size);
                     ctx.fill_rect(arrow_bounds, arrow_color, 0.0);
-                }
+                },
                 "left" | "left-start" | "left-end" => {
                     // 箭头在右边边缘
                     let arrow_x = bounds.origin.x + bounds.size.width - arrow_size;
                     let arrow_y = bounds.origin.y + (bounds.size.height - arrow_size) / 2.0;
                     let arrow_bounds = Rect::new(arrow_x, arrow_y, arrow_size, arrow_size);
                     ctx.fill_rect(arrow_bounds, arrow_color, 0.0);
-                }
+                },
                 _ => {
                     // 默认底部
                     let arrow_x = bounds.origin.x + (bounds.size.width - arrow_size) / 2.0;
                     let arrow_y = bounds.origin.y;
                     let arrow_bounds = Rect::new(arrow_x, arrow_y, arrow_size, arrow_size);
                     ctx.fill_rect(arrow_bounds, arrow_color, 0.0);
-                }
+                },
             }
         }
     }
@@ -205,8 +202,7 @@ impl WidgetSpec for WaPopup {
         } else {
             AccessibilityRole::None
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label("popup")
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label("popup")
     }
 }
 

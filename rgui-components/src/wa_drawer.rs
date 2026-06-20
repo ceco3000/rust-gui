@@ -113,10 +113,7 @@ impl WidgetSpec for WaDrawer {
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.open {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -127,12 +124,12 @@ impl WidgetSpec for WaDrawer {
         match msg {
             WaDrawerMessage::Close => {
                 state.open = false;
-            }
+            },
             // Phase 0: 其他事件无实际行为
-            WaDrawerMessage::Show => {}
-            WaDrawerMessage::AfterShow => {}
-            WaDrawerMessage::Hide => {}
-            WaDrawerMessage::AfterHide => {}
+            WaDrawerMessage::Show => {},
+            WaDrawerMessage::AfterShow => {},
+            WaDrawerMessage::Hide => {},
+            WaDrawerMessage::AfterHide => {},
         }
     }
 
@@ -163,7 +160,7 @@ impl WidgetSpec for WaDrawer {
             "top" => {
                 let h = drawer_size.min(bounds.size.height - 64.0).max(100.0);
                 (bounds.origin.x, bounds.origin.y, bounds.size.width, h)
-            }
+            },
             "end" => {
                 let w = drawer_size.min(bounds.size.width - 64.0).max(200.0);
                 (
@@ -172,7 +169,7 @@ impl WidgetSpec for WaDrawer {
                     w,
                     bounds.size.height,
                 )
-            }
+            },
             "bottom" => {
                 let h = drawer_size.min(bounds.size.height - 64.0).max(100.0);
                 (
@@ -181,11 +178,11 @@ impl WidgetSpec for WaDrawer {
                     bounds.size.width,
                     h,
                 )
-            }
+            },
             "start" => {
                 let w = drawer_size.min(bounds.size.width - 64.0).max(200.0);
                 (bounds.origin.x, bounds.origin.y, w, bounds.size.height)
-            }
+            },
             _ => {
                 // fallback: end
                 let w = drawer_size.min(bounds.size.width - 64.0).max(200.0);
@@ -195,7 +192,7 @@ impl WidgetSpec for WaDrawer {
                     w,
                     bounds.size.height,
                 )
-            }
+            },
         };
 
         let panel_bounds = Rect::new(panel_x, panel_y, panel_w, panel_h);
@@ -231,12 +228,7 @@ impl WidgetSpec for WaDrawer {
             };
 
             let title_font_size: f32 = 18.0;
-            let title_bounds = Rect::new(
-                panel_x + 20.0,
-                panel_y,
-                panel_w - 80.0,
-                header_h,
-            );
+            let title_bounds = Rect::new(panel_x + 20.0, panel_y, panel_w - 80.0, header_h);
             ctx.draw_text(display_label, title_bounds, text_color, title_font_size);
 
             // 关闭按钮 X（右上角）
@@ -460,11 +452,7 @@ mod tests {
             open: true,
             ..WaDrawerState::new()
         };
-        WaDrawer.update(
-            WaDrawerMessage::Show,
-            &mut s,
-            &mut UpdateContext::default(),
-        );
+        WaDrawer.update(WaDrawerMessage::Show, &mut s, &mut UpdateContext::default());
         assert!(s.open, "Show 不应改变 open 状态");
     }
 
@@ -485,11 +473,7 @@ mod tests {
             open: true,
             ..WaDrawerState::new()
         };
-        WaDrawer.update(
-            WaDrawerMessage::Hide,
-            &mut s,
-            &mut UpdateContext::default(),
-        );
+        WaDrawer.update(WaDrawerMessage::Hide, &mut s, &mut UpdateContext::default());
         assert!(s.open, "Phase 0: Hide 事件不自动关闭");
     }
 

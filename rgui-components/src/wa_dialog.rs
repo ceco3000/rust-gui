@@ -97,10 +97,7 @@ impl WidgetSpec for WaDialog {
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
         let mut v = WidgetView::new("rgui_components::WaDialog")
             .prop("label", PropValue::str(state.label.as_str()))
-            .prop(
-                "open",
-                PropValue::Bool(state.open),
-            );
+            .prop("open", PropValue::Bool(state.open));
 
         if state.without_header {
             v = v.prop("without-header", PropValue::Bool(true));
@@ -111,10 +108,7 @@ impl WidgetSpec for WaDialog {
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.open {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -125,7 +119,7 @@ impl WidgetSpec for WaDialog {
         match msg {
             WaDialogMessage::Close => {
                 state.open = false;
-            }
+            },
             // Phase 0: 其他事件无实际行为
             WaDialogMessage::Show => {},
             WaDialogMessage::AfterShow => {},
@@ -154,7 +148,9 @@ impl WidgetSpec for WaDialog {
         // ── 计算面板尺寸与位置 ──
         // 面板宽度：min(496px, bounds.w - 64px)
         let panel_w: f64 = (496.0_f64).min((bounds.size.width - 64.0).max(200.0));
-        let panel_h: f64 = (bounds.size.height * 0.8).max(200.0).min(bounds.size.height - 64.0);
+        let panel_h: f64 = (bounds.size.height * 0.8)
+            .max(200.0)
+            .min(bounds.size.height - 64.0);
         let panel_x: f64 = bounds.origin.x + (bounds.size.width - panel_w) / 2.0;
         let panel_y: f64 = bounds.origin.y + (bounds.size.height - panel_h) / 2.0;
 
@@ -182,12 +178,7 @@ impl WidgetSpec for WaDialog {
 
             // Header 底部分隔线
             let line_y = panel_y + header_h - 1.0;
-            let line_bounds = Rect::new(
-                panel_x + 16.0,
-                line_y,
-                panel_w - 32.0,
-                1.0,
-            );
+            let line_bounds = Rect::new(panel_x + 16.0, line_y, panel_w - 32.0, 1.0);
             ctx.fill_rect(line_bounds, header_border_color, 0.0);
 
             // 标题文本
@@ -199,12 +190,7 @@ impl WidgetSpec for WaDialog {
 
             let title_font_size: f32 = 18.0;
             // Title area: left-aligned with padding
-            let title_bounds = Rect::new(
-                panel_x + 20.0,
-                panel_y,
-                panel_w - 80.0,
-                header_h,
-            );
+            let title_bounds = Rect::new(panel_x + 20.0, panel_y, panel_w - 80.0, header_h);
             ctx.draw_text(display_label, title_bounds, text_color, title_font_size);
 
             // 关闭按钮 X（右上角）
@@ -240,8 +226,7 @@ impl WidgetSpec for WaDialog {
         } else {
             state.label.as_str()
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label(label)
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label(label)
     }
 }
 
@@ -406,11 +391,7 @@ mod tests {
             open: true,
             ..WaDialogState::new()
         };
-        WaDialog.update(
-            WaDialogMessage::Show,
-            &mut s,
-            &mut UpdateContext::default(),
-        );
+        WaDialog.update(WaDialogMessage::Show, &mut s, &mut UpdateContext::default());
         assert!(s.open, "Show 不应改变 open 状态");
     }
 
@@ -431,11 +412,7 @@ mod tests {
             open: true,
             ..WaDialogState::new()
         };
-        WaDialog.update(
-            WaDialogMessage::Hide,
-            &mut s,
-            &mut UpdateContext::default(),
-        );
+        WaDialog.update(WaDialogMessage::Hide, &mut s, &mut UpdateContext::default());
         assert!(s.open, "Phase 0: Hide 事件不自动关闭");
     }
 

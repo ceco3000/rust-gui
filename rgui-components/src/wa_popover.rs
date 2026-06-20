@@ -107,8 +107,8 @@ impl WidgetSpec for WaPopover {
     }
 
     fn view(&self, state: &Self::State, _: &ViewContext) -> WidgetView<Self::Message> {
-        let mut v = WidgetView::new("rgui_components::WaPopover")
-            .prop("open", PropValue::Bool(state.open));
+        let mut v =
+            WidgetView::new("rgui_components::WaPopover").prop("open", PropValue::Bool(state.open));
 
         if !state.placement.is_empty() {
             v = v.prop("placement", PropValue::str(state.placement.as_str()));
@@ -131,10 +131,7 @@ impl WidgetSpec for WaPopover {
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.open {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -145,12 +142,12 @@ impl WidgetSpec for WaPopover {
         match msg {
             WaPopoverMessage::Close => {
                 state.open = false;
-            }
+            },
             // Phase 0: 其他事件无实际行为
-            WaPopoverMessage::Show => {}
-            WaPopoverMessage::AfterShow => {}
-            WaPopoverMessage::Hide => {}
-            WaPopoverMessage::AfterHide => {}
+            WaPopoverMessage::Show => {},
+            WaPopoverMessage::AfterShow => {},
+            WaPopoverMessage::Hide => {},
+            WaPopoverMessage::AfterHide => {},
         }
     }
 
@@ -182,47 +179,47 @@ impl WidgetSpec for WaPopover {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y - panel_h - state.distance;
                 (x, y)
-            }
+            },
             "top-end" => {
                 let x = bounds.origin.x + bounds.size.width - panel_w - state.skidding;
                 let y = bounds.origin.y - panel_h - state.distance;
                 (x, y)
-            }
+            },
             "bottom" | "bottom-start" | "" => {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "bottom-end" => {
                 let x = bounds.origin.x + bounds.size.width - panel_w - state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "right" | "right-start" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y + state.skidding;
                 (x, y)
-            }
+            },
             "right-end" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y + bounds.size.height - panel_h - state.skidding;
                 (x, y)
-            }
+            },
             "left" | "left-start" => {
                 let x = bounds.origin.x - panel_w - state.distance;
                 let y = bounds.origin.y + state.skidding;
                 (x, y)
-            }
+            },
             "left-end" => {
                 let x = bounds.origin.x - panel_w - state.distance;
                 let y = bounds.origin.y + bounds.size.height - panel_h - state.skidding;
                 (x, y)
-            }
+            },
             _ => {
                 let x = bounds.origin.x + state.skidding;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
         };
 
         let panel_bounds = Rect::new(panel_x, panel_y, panel_w, panel_h);
@@ -270,48 +267,28 @@ impl WidgetSpec for WaPopover {
                 "top" | "top-start" | "top-end" => {
                     let ax = panel_x + (panel_w - arrow_size) / 2.0;
                     let ay = panel_y + panel_h;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "bottom" | "bottom-start" | "bottom-end" | "" => {
                     let ax = panel_x + (panel_w - arrow_size) / 2.0;
                     let ay = panel_y - arrow_size;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "right" | "right-start" | "right-end" => {
                     let ax = panel_x - arrow_size;
                     let ay = panel_y + (panel_h - arrow_size) / 2.0;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 "left" | "left-start" | "left-end" => {
                     let ax = panel_x + panel_w;
                     let ay = panel_y + (panel_h - arrow_size) / 2.0;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
                 _ => {
                     let ax = panel_x + (panel_w - arrow_size) / 2.0;
                     let ay = panel_y - arrow_size;
-                    ctx.fill_rect(
-                        Rect::new(ax, ay, arrow_size, arrow_size),
-                        arrow_color,
-                        0.0,
-                    );
-                }
+                    ctx.fill_rect(Rect::new(ax, ay, arrow_size, arrow_size), arrow_color, 0.0);
+                },
             }
         }
 
@@ -324,8 +301,7 @@ impl WidgetSpec for WaPopover {
         } else {
             AccessibilityRole::None
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label("popover")
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label("popover")
     }
 }
 

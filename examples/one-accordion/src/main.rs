@@ -31,8 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let s2_expanded = Arc::new(AtomicBool::new(false));
 
     // 初始布局（用于获取 WidgetId + Rect，注册交互）
-    let initial_layout =
-        compute_view_layout(&mut view, Size::new(350.0, 250.0), None);
+    let initial_layout = compute_view_layout(&mut view, Size::new(350.0, 250.0), None);
 
     // 创建 App
     let config = AppConfig::new()
@@ -57,7 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |frame: u64, width: u32, height: u32, tr: &rgui::TextRenderer| {
             // 从模板克隆，注入动态 expanded prop
             let mut v = template.clone();
-            inject_expanded_state(&mut v, s1.load(Ordering::Relaxed), s2.load(Ordering::Relaxed));
+            inject_expanded_state(
+                &mut v,
+                s1.load(Ordering::Relaxed),
+                s2.load(Ordering::Relaxed),
+            );
 
             let l = compute_view_layout(
                 &mut v,
@@ -74,7 +77,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// 遍历 WidgetView 树，找到 WaAccordionItem 并注入当前 expanded 状态。
-fn inject_expanded_state<M: AppMessage>(view: &mut rgui_core::view::WidgetView<M>, e1: bool, e2: bool) {
+fn inject_expanded_state<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    e1: bool,
+    e2: bool,
+) {
     if view.widget_type == "WaAccordionItem" {
         let label = match view.props.get("label") {
             Some(PropValue::Str(s)) => s.as_ref(),

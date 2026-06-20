@@ -181,8 +181,7 @@ impl WidgetSpec for WaDropdownItem {
         } else {
             state.value.as_str()
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label(label)
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label(label)
     }
 }
 
@@ -266,10 +265,7 @@ mod tests {
             ..WaDropdownItemState::new()
         };
         let v = WaDropdownItem.view(&s, &make_ctx());
-        assert!(
-            v.props.contains_key("value"),
-            "view 应包含 value prop"
-        );
+        assert!(v.props.contains_key("value"), "view 应包含 value prop");
     }
 
     #[test]
@@ -436,22 +432,13 @@ mod tests {
 
     #[test]
     fn derive_message_name() {
-        assert_eq!(
-            WaDropdownItemMessage::Focus.message_name(),
-            "focus"
-        );
-        assert_eq!(
-            WaDropdownItemMessage::Blur.message_name(),
-            "blur"
-        );
+        assert_eq!(WaDropdownItemMessage::Focus.message_name(), "focus");
+        assert_eq!(WaDropdownItemMessage::Blur.message_name(), "blur");
     }
 
     #[test]
     fn derive_schema_name() {
-        assert_eq!(
-            WaDropdownItemState::schema_name(),
-            "WaDropdownItemState"
-        );
+        assert_eq!(WaDropdownItemState::schema_name(), "WaDropdownItemState");
     }
 
     #[test]

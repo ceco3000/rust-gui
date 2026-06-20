@@ -173,15 +173,13 @@ impl WidgetSpec for WaTextarea {
         match msg {
             WaTextareaMessage::Change => {
                 // 值提交——由 IME/框架事件系统处理后调用
-            }
+            },
             WaTextareaMessage::Input => {
                 // 输入中——由 IME 驱动，state.value 由框架更新
-            }
-            WaTextareaMessage::Blur
-            | WaTextareaMessage::Focus
-            | WaTextareaMessage::Invalid => {
+            },
+            WaTextareaMessage::Blur | WaTextareaMessage::Focus | WaTextareaMessage::Invalid => {
                 // 这些事件由框架事件系统处理
-            }
+            },
         }
     }
 
@@ -346,11 +344,11 @@ impl WidgetSpec for WaTextarea {
                 Some(max) => {
                     let current = state.value.chars().count() as u32;
                     format!("{}/{}", current, max)
-                }
+                },
                 None => {
                     let current = state.value.chars().count();
                     format!("{}", current)
-                }
+                },
             };
             let count_rect = Rect::new(
                 bounds.origin.x + bounds.size.width - 60.0,
@@ -441,9 +439,7 @@ mod tests {
         let v = WaTextarea.view(&state, &ViewContext::new(Size::new(800.0, 600.0)));
         assert_eq!(
             v.props.get("hint"),
-            Some(&PropValue::Str(std::sync::Arc::from(
-                "Max 500 characters."
-            )))
+            Some(&PropValue::Str(std::sync::Arc::from("Max 500 characters.")))
         );
     }
 

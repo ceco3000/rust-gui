@@ -56,7 +56,10 @@ impl PropRegistry {
     /// - `key`: prop 名称
     /// - `value`: prop 值（`PropValue`）
     pub fn set(&self, id: WidgetId, key: String, value: PropValue) {
-        let mut guard = self.inner.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.entry(id).or_default().insert(key, value);
     }
 
@@ -75,7 +78,10 @@ impl PropRegistry {
     /// 渲染线程每帧调用一次，获取 Rhai 脚本写入的全部待更新 prop。
     #[must_use]
     pub fn drain(&self) -> HashMap<WidgetId, BTreeMap<String, PropValue>> {
-        let mut guard = self.inner.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut guard = self
+            .inner
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::mem::take(&mut *guard)
     }
 }

@@ -113,18 +113,21 @@ impl WidgetSpec for WaDropdown {
             v = v.prop("placement", PropValue::str(state.placement.as_str()));
         }
         if state.distance > 0.0 {
-            v = v.prop("distance", PropValue::Float(ordered_float::OrderedFloat(state.distance)));
+            v = v.prop(
+                "distance",
+                PropValue::Float(ordered_float::OrderedFloat(state.distance)),
+            );
         }
         if state.skidding > 0.0 {
-            v = v.prop("skidding", PropValue::Float(ordered_float::OrderedFloat(state.skidding)));
+            v = v.prop(
+                "skidding",
+                PropValue::Float(ordered_float::OrderedFloat(state.skidding)),
+            );
         }
 
         // 弹层组件：position=absolute + z-index 高值确保浮于内容之上
         if state.open {
-            v = v.prop(
-                "position",
-                PropValue::Str(std::sync::Arc::from("absolute")),
-            );
+            v = v.prop("position", PropValue::Str(std::sync::Arc::from("absolute")));
             v = v.prop("z-index", PropValue::Int(1000));
         }
 
@@ -135,7 +138,7 @@ impl WidgetSpec for WaDropdown {
         match msg {
             WaDropdownMessage::Close => {
                 state.open = false;
-            }
+            },
             // Phase 0: 其他事件无实际行为
             WaDropdownMessage::Show => {},
             WaDropdownMessage::AfterShow => {},
@@ -171,48 +174,48 @@ impl WidgetSpec for WaDropdown {
                 let x = bounds.origin.x;
                 let y = bounds.origin.y - menu_h - state.distance;
                 (x, y)
-            }
+            },
             "top-end" => {
                 let x = bounds.origin.x + bounds.size.width - menu_w;
                 let y = bounds.origin.y - menu_h - state.distance;
                 (x, y)
-            }
+            },
             "bottom" | "bottom-start" | "" => {
                 let x = bounds.origin.x;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "bottom-end" => {
                 let x = bounds.origin.x + bounds.size.width - menu_w;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
             "right" | "right-start" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y;
                 (x, y)
-            }
+            },
             "right-end" => {
                 let x = bounds.origin.x + bounds.size.width + state.distance;
                 let y = bounds.origin.y + bounds.size.height - menu_h;
                 (x, y)
-            }
+            },
             "left" | "left-start" => {
                 let x = bounds.origin.x - menu_w - state.distance;
                 let y = bounds.origin.y;
                 (x, y)
-            }
+            },
             "left-end" => {
                 let x = bounds.origin.x - menu_w - state.distance;
                 let y = bounds.origin.y + bounds.size.height - menu_h;
                 (x, y)
-            }
+            },
             _ => {
                 // 默认 bottom-start
                 let x = bounds.origin.x;
                 let y = bounds.origin.y + bounds.size.height + state.distance;
                 (x, y)
-            }
+            },
         };
 
         let menu_bounds = Rect::new(menu_x, menu_y, menu_w, menu_h);
@@ -259,8 +262,7 @@ impl WidgetSpec for WaDropdown {
         } else {
             AccessibilityRole::None
         };
-        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO)
-            .label("dropdown")
+        AccessibilityNode::new(WidgetId::from_u64(0), role, Rect::ZERO).label("dropdown")
     }
 }
 
@@ -525,10 +527,7 @@ mod tests {
         let bounds = Rect::new(100.0, 300.0, 200.0, 40.0);
         let mut ctx = PaintContext::new(bounds);
         WaDropdown.paint(&s, bounds, &mut ctx);
-        assert!(
-            ctx.op_count() >= 4,
-            "top placement 应正常绘制"
-        );
+        assert!(ctx.op_count() >= 4, "top placement 应正常绘制");
     }
 
     #[test]
@@ -541,10 +540,7 @@ mod tests {
         let bounds = Rect::new(100.0, 100.0, 200.0, 40.0);
         let mut ctx = PaintContext::new(bounds);
         WaDropdown.paint(&s, bounds, &mut ctx);
-        assert!(
-            ctx.op_count() >= 4,
-            "right placement 应正常绘制"
-        );
+        assert!(ctx.op_count() >= 4, "right placement 应正常绘制");
     }
 
     #[test]
@@ -557,10 +553,7 @@ mod tests {
         let bounds = Rect::new(300.0, 100.0, 200.0, 40.0);
         let mut ctx = PaintContext::new(bounds);
         WaDropdown.paint(&s, bounds, &mut ctx);
-        assert!(
-            ctx.op_count() >= 4,
-            "left placement 应正常绘制"
-        );
+        assert!(ctx.op_count() >= 4, "left placement 应正常绘制");
     }
 
     #[test]
