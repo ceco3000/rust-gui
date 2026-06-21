@@ -569,6 +569,24 @@ impl<M: AppMessage> WidgetView<M> {
         });
         self
     }
+
+    /// 转换为消息擦除的 `WidgetView<NoopMsg>`。
+    ///
+    /// 递归克隆整棵树结构（`widget_type`/`id`/`children`/`props`/`key`），
+    /// 但剥离所有消息绑定（`message_bindings` 置空），因为 [`NoopMsg`] 不可构造。
+    ///
+    /// 用于命中测试等仅需树结构的场景——不依赖用户消息类型。
+    #[must_use]
+    pub fn to_noop_view(&self) -> WidgetView<crate::message::NoopMsg> {
+        WidgetView {
+            widget_type: self.widget_type,
+            id: self.id,
+            key: self.key.clone(),
+            props: self.props.clone(),
+            children: self.children.iter().map(|c| c.to_noop_view()).collect(),
+            message_bindings: Vec::new(),
+        }
+    }
 }
 
 // ============================================================================

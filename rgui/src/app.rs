@@ -11,7 +11,6 @@ use rgui_core::traits::EventResult;
 use rgui_core::widget_id_map::WidgetIdBimap;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
-use rgui_platform::hit_test::HitTester;
 use rgui_render::{
     RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
 };
@@ -132,10 +131,12 @@ pub struct App {
     registry: WidgetRegistry,
     window_id: WindowId,
     events: Vec<Event>,
-    hit_tester: HitTester,
     focus: FocusManager,
-    /// 交互区域：widget_id → (Rect, 消息名, 回调)
-    interactions: FxHashMap<WidgetId, (Rect, String, InteractionCallback)>,
+    /// 交互区域：widget_id → (消息名, 回调)
+    interactions: FxHashMap<WidgetId, (String, InteractionCallback)>,
+    /// 交互区域边界（仅用于 fallback 命中测试，current_view 未设置时使用）。
+    /// 生产路径中由 load_rgui 提供的 current_view + current_layout 替代。
+    interaction_bounds: FxHashMap<WidgetId, Rect>,
     /// Widget 实例更新处理器（WidgetSpec 路径）。
     /// 如果存在，handle_click 优先通过此处理器调用 update()，再根据 EventResult 决定是否回调旧路径。
     widget_instances: FxHashMap<WidgetId, WidgetUpdateHandler>,
@@ -178,6 +179,10 @@ pub struct App {
     pub(crate) widget_state_store: crate::widget_state::WidgetStateStore,
     /// 最新布局引擎——每帧渲染后更新，供 handle_click 做树形命中测试。
     pub(crate) current_layout: Arc<std::sync::Mutex<Option<rgui_layout::LayoutEngine>>>,
+    /// 当前 WidgetView 树（消息擦除）——每帧渲染后更新，供 handle_click 做 DFS 树遍历命中测试。
+    /// 使用 `NoopMsg` 擦除用户消息类型，保留完整树结构（widget_type/id/children）。
+    pub(crate) current_view:
+        Arc<std::sync::Mutex<Option<rgui_core::view::WidgetView<rgui_core::message::NoopMsg>>>>,
 }
 
 /// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
@@ -263,9 +268,7 @@ fn inject_state_bindings_recursive<M: AppMessage>(
     use rgui_core::view::PropValue;
 
     // 检查当前节点的所有 props，寻找 ${expr:state.xxx} 标记
-    let store = state_store
-        .read()
-        .expect("StateStore RwLock poisoned");
+    let store = state_store.read().expect("StateStore RwLock poisoned");
     let bimap = id_map
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -363,25 +366,29 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     let paint_fn = default_paint_fn_with_state::<M>(store.clone());
     let template = view;
     let current_layout = Arc::clone(&app.current_layout);
+    let current_view = Arc::clone(&app.current_view);
 
-    app.set_view_scene_builder(
-        move |frame, width, height, tr| {
-            let mut v = template.clone();
-            sync_store_to_props(&mut v, &store);
-            let l = compute_view_layout(
-                &mut v,
-                Size::new(f64::from(width), f64::from(height)),
-                Some(tr),
-            );
-            // 更新当前布局，供 handle_click 做树形命中测试
-            *current_layout.lock().unwrap() = Some(l);
-            // Note: l 已被 move，重新获取
-            let l = current_layout.lock().unwrap().take().unwrap();
-            let scene = build_scene_from_view(&v, &l, &paint_fn, frame, Some(tr));
-            *current_layout.lock().unwrap() = Some(l);
-            scene
-        },
-    );
+    // 初始存储：首次 noop 视图（避免首帧前 handle_click 命中无数据）
+    *current_view.lock().unwrap() = Some(template.to_noop_view());
+
+    app.set_view_scene_builder(move |frame, width, height, tr| {
+        let mut v = template.clone();
+        sync_store_to_props(&mut v, &store);
+        let l = compute_view_layout(
+            &mut v,
+            Size::new(f64::from(width), f64::from(height)),
+            Some(tr),
+        );
+        // 更新当前布局和视图，供 handle_click 做树形命中测试
+        let noop = v.to_noop_view();
+        *current_view.lock().unwrap() = Some(noop);
+        *current_layout.lock().unwrap() = Some(l);
+        // Note: l 已被 move，重新获取
+        let l = current_layout.lock().unwrap().take().unwrap();
+        let scene = build_scene_from_view(&v, &l, &paint_fn, frame, Some(tr));
+        *current_layout.lock().unwrap() = Some(l);
+        scene
+    });
 
     // 7. 启动事件循环
     app.run()
@@ -403,7 +410,8 @@ fn sync_store_to_props<M: AppMessage>(
     if view.widget_type == "WaAccordionItem" {
         if let Some(widget_id) = view.id {
             if let Some(state) = store.read::<WaAccordionItemState>(widget_id) {
-                view.props.insert("expanded", PropValue::Bool(state.expanded));
+                view.props
+                    .insert("expanded", PropValue::Bool(state.expanded));
             }
         }
     }
@@ -421,9 +429,9 @@ impl App {
             registry: WidgetRegistry::new(),
             window_id: WindowId::new(),
             events: Vec::new(),
-            hit_tester: HitTester::new(),
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
+            interaction_bounds: FxHashMap::new(),
             widget_instances: FxHashMap::new(),
             overlay_ids: std::collections::HashSet::new(),
             view_scene_builder: None,
@@ -440,6 +448,7 @@ impl App {
             needs_redraw: false,
             widget_state_store: crate::widget_state::WidgetStateStore::new(),
             current_layout: Arc::new(std::sync::Mutex::new(None)),
+            current_view: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -495,7 +504,7 @@ impl App {
     /// 注册可交互区域。
     ///
     /// - `id`: widget ID
-    /// - `bounds`: 在窗口中的边界矩形
+    /// - `bounds`: 在窗口中的边界矩形（用于 fallback 命中测试）
     /// - `action`: 触发时传递给回调的事件名
     /// - `cb`: 交互回调
     pub fn register_interaction(
@@ -505,9 +514,8 @@ impl App {
         action: impl Into<String>,
         cb: impl FnMut(&str) + Send + 'static,
     ) {
-        self.hit_tester.register(id, bounds);
-        self.interactions
-            .insert(id, (bounds, action.into(), Box::new(cb)));
+        self.interaction_bounds.insert(id, bounds);
+        self.interactions.insert(id, (action.into(), Box::new(cb)));
     }
 
     /// 注册 WidgetSpec 实例的更新处理器。
@@ -645,10 +653,8 @@ impl App {
 
         // RS07: 收集声明式 state 绑定
         // state_key → Vec<(bound_widget_id, prop_name)>
-        let mut state_bindings: std::collections::HashMap<
-            String,
-            Vec<(WidgetId, String)>,
-        > = std::collections::HashMap::new();
+        let mut state_bindings: std::collections::HashMap<String, Vec<(WidgetId, String)>> =
+            std::collections::HashMap::new();
         {
             let bindings = rgui_parser::collect_state_bindings(&current_view);
             for binding in &bindings {
@@ -672,9 +678,7 @@ impl App {
             drop(bimap_lock);
 
             // RS07: 创建 StateStore 订阅——state widget dirty → bound widget dirty
-            let mut store = state_store
-                .write()
-                .expect("StateStore RwLock poisoned");
+            let mut store = state_store.write().expect("StateStore RwLock poisoned");
             for (state_key, bound_widgets) in &state_bindings {
                 if let Some(state_id) = {
                     let bimap = id_map
@@ -742,11 +746,8 @@ impl App {
                     }
                     // prop 变更后需重算布局
                     let available = Size::new(f64::from(width), f64::from(height));
-                    layout_engine = rgui_render::compute_view_layout(
-                        &mut view,
-                        available,
-                        Some(text_renderer),
-                    );
+                    layout_engine =
+                        rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
                     current_view = view;
                 },
                 Err(e) => {
@@ -759,9 +760,7 @@ impl App {
 
             // RS07: 使用增量渲染——仅重绘 dirty widget
             let dirty_set = {
-                let store = state_store
-                    .read()
-                    .expect("StateStore RwLock poisoned");
+                let store = state_store.read().expect("StateStore RwLock poisoned");
                 store.dirty_widgets().clone()
             };
 
@@ -787,9 +786,7 @@ impl App {
 
             // 清除本帧脏标记
             {
-                let mut store = state_store
-                    .write()
-                    .expect("StateStore RwLock poisoned");
+                let mut store = state_store.write().expect("StateStore RwLock poisoned");
                 store.clear_dirty();
             }
 
@@ -903,7 +900,6 @@ impl App {
         for event in &events {
             self.events.push(event.clone());
         }
-        self.hit_tester.clear();
         layout_fn(self);
         a11y_fn(self);
         render_fn(self, &events)?;
@@ -1009,37 +1005,94 @@ impl AppHandler {
     ///
     /// 遍历所有注册了 widget_instance handler 的 widget，用当前布局引擎的绝对坐标
     /// 检查点是否在 bounds 内，返回面积最小的（最深层级）匹配。
+    /// DFS 树遍历命中测试（D5 §4 算法）。
+    ///
+    /// 基于当前 WidgetView 树（`current_view`）和布局引擎（`current_layout`）
+    /// 递归遍历树结构，返回包含该点的最深 widget ID。
+    ///
+    /// 算法步骤：
+    /// 1. 从根节点开始
+    /// 2. 检查当前节点 bounds 是否包含该点（LayoutEngine 绝对坐标）
+    /// 3. 反向遍历 children（`.rev()`——后渲染在上层）递归命中
+    /// 4. 子节点命中则返回子节点，否则返回当前节点
     fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
-        let layout = self.app.current_layout.lock().unwrap();
-        let layout = layout.as_ref()?;
-
+        // 主路径：DFS 树遍历命中测试（生产环境，current_view + current_layout 均设置）
+        let layout_guard = self.app.current_layout.lock().unwrap();
+        let view_guard = self.app.current_view.lock().unwrap();
+        if let (Some(view), Some(layout)) = (view_guard.as_ref(), layout_guard.as_ref()) {
+            return Self::hit_test_recursive(view, position, layout);
+        }
+        // 回退路径 A：current_layout 已设置但 current_view 未设置（半集成测试）
+        if let Some(layout) = layout_guard.as_ref() {
+            return self
+                .app
+                .interactions
+                .keys()
+                .filter_map(|&id| {
+                    let cached = layout.get_layout(id)?;
+                    let abs_pos = layout.absolute_position(id)?;
+                    let rect = Rect::new(
+                        abs_pos.x,
+                        abs_pos.y,
+                        cached.result.size.width,
+                        cached.result.size.height,
+                    );
+                    if rect.contains(position) {
+                        Some((id, rect.size.width * rect.size.height))
+                    } else {
+                        None
+                    }
+                })
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(id, _)| id);
+        }
+        // 回退路径 B：纯单元测试——使用 register_interaction 存储的 interaction_bounds
         self.app
-            .widget_instances
-            .keys()
-            .filter_map(|&id| {
-                let cached = layout.get_layout(id)?;
-                let abs_pos = layout.absolute_position(id)?;
-                let rect = Rect::new(
-                    abs_pos.x,
-                    abs_pos.y,
-                    cached.result.size.width,
-                    cached.result.size.height,
-                );
-                if rect.contains(position) {
-                    Some((id, rect.size.width * rect.size.height))
-                } else {
-                    None
+            .interaction_bounds
+            .iter()
+            .find(|(_, bounds)| bounds.contains(position))
+            .map(|(&id, _)| id)
+    }
+
+    /// 递归辅助函数：在 WidgetView 子树上执行命中测试。
+    fn hit_test_recursive(
+        view: &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
+        point: Point,
+        layout: &rgui_layout::LayoutEngine,
+    ) -> Option<WidgetId> {
+        // 未分配 ID 的节点（如匿名容器）不参与命中，但子节点仍可命中
+        if let Some(widget_id) = view.id {
+            let cached = layout.get_layout(widget_id)?;
+            let abs_pos = layout.absolute_position(widget_id)?;
+            let rect = Rect::new(
+                abs_pos.x,
+                abs_pos.y,
+                cached.result.size.width,
+                cached.result.size.height,
+            );
+            if !rect.contains(point) {
+                return None;
+            }
+            // 检查子节点（反向，z-order 后渲染在上层）
+            for child in view.children.iter().rev() {
+                if let Some(hit) = Self::hit_test_recursive(child, point, layout) {
+                    return Some(hit);
                 }
-            })
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(id, _)| id)
+            }
+            return Some(widget_id);
+        }
+        // 匿名节点（无 WidgetId）：递归检查子节点
+        for child in view.children.iter().rev() {
+            if let Some(hit) = Self::hit_test_recursive(child, point, layout) {
+                return Some(hit);
+            }
+        }
+        None
     }
 
     fn handle_click(&mut self, position: Point) {
-        // 使用当前布局引擎做树形命中测试（代替过时的 hit_tester）
-        let hit_id = self
-            .find_widget_at_point(position)
-            .or_else(|| self.app.hit_tester.hit_test(position));
+        // DFS 树遍历命中测试（基于 WidgetView 树 + LayoutEngine 绝对坐标）
+        let hit_id = self.find_widget_at_point(position);
 
         if let Some(hit_id) = hit_id {
             // 新路径：如果命中 widget 有 WidgetSpec 实例处理器，优先调用
@@ -1049,7 +1102,7 @@ impl AppHandler {
                     .app
                     .interactions
                     .get(&hit_id)
-                    .map(|(_, a, _)| a.clone())
+                    .map(|(a, _)| a.clone())
                     .unwrap_or_else(|| {
                         eprintln!(
                             "[rgui] handle_click: WidgetId({hit_id:?}) 未注册交互，action 回退为空字符串"
@@ -1086,7 +1139,7 @@ impl AppHandler {
             // 让 `.rhai` 脚本函数有机会消费事件。
             #[cfg(feature = "devtools")]
             if let Some(ref mut registry) = self.command_registry {
-                if let Some((_, action, _)) = self.app.interactions.get(&hit_id) {
+                if let Some((action, _)) = self.app.interactions.get(&hit_id) {
                     // 防御：移除 onclick="..." 中可能携带的 () 后缀
                     let fn_name = action.strip_suffix("()").unwrap_or(action);
                     match registry.call_fn::<()>(fn_name, ()) {
@@ -1110,7 +1163,7 @@ impl AppHandler {
             }
 
             // 旧路径：register_interaction 回调（fallback）
-            if let Some((_bounds, action, cb)) = self.app.interactions.get_mut(&hit_id) {
+            if let Some((action, cb)) = self.app.interactions.get_mut(&hit_id) {
                 // 交互回调带异常隔离（D1 §11.3）
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     cb(action);
@@ -1460,7 +1513,8 @@ impl ApplicationHandler for AppHandler {
                         let store = self.state_store.read().expect("StateStore RwLock poisoned");
                         !store.dirty_widgets().is_empty()
                     };
-                    let can_reuse = !has_dirty && !self.app.needs_redraw && self.prev_scene.is_some();
+                    let can_reuse =
+                        !has_dirty && !self.app.needs_redraw && self.prev_scene.is_some();
 
                     // 场景构建回调，带异常隔离（D1 §11.3）
                     let scene = if can_reuse {
@@ -2469,13 +2523,16 @@ mod tests {
         let mut app = App::new(AppConfig::default());
         assert!(!app.needs_redraw, "needs_redraw should start false");
         app.request_redraw();
-        assert!(app.needs_redraw, "needs_redraw should be true after request_redraw()");
+        assert!(
+            app.needs_redraw,
+            "needs_redraw should be true after request_redraw()"
+        );
     }
 
     #[test]
     fn interaction_callback_triggers_redraw_request() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let toggled = Arc::new(AtomicBool::new(false));
         let toggled_clone = Arc::clone(&toggled);
@@ -2484,21 +2541,19 @@ mod tests {
         let widget_id = WidgetId::from_u64(42);
         let bounds = Rect::new(10.0, 10.0, 100.0, 50.0);
 
-        app.register_interaction(
-            widget_id,
-            bounds,
-            "toggle",
-            move |_action| {
-                toggled_clone.store(true, Ordering::SeqCst);
-            },
-        );
+        app.register_interaction(widget_id, bounds, "toggle", move |_action| {
+            toggled_clone.store(true, Ordering::SeqCst);
+        });
 
         assert!(!app.needs_redraw, "needs_redraw should start false");
 
         let mut handler = AppHandler::new(app);
         handler.handle_click(Point::new(50.0, 30.0));
 
-        assert!(toggled.load(Ordering::SeqCst), "AtomicBool should be toggled");
+        assert!(
+            toggled.load(Ordering::SeqCst),
+            "AtomicBool should be toggled"
+        );
         assert!(
             handler.app.needs_redraw,
             "interaction callback should trigger needs_redraw"
@@ -2509,6 +2564,9 @@ mod tests {
     fn needs_redraw_cleared_after_scene_rebuild() {
         // Verify that needs_redraw starts false (in a fresh App)
         let app = App::new(AppConfig::default());
-        assert!(!app.needs_redraw, "needs_redraw should be false on fresh App");
+        assert!(
+            !app.needs_redraw,
+            "needs_redraw should be false on fresh App"
+        );
     }
 }

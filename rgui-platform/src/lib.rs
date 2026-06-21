@@ -4,7 +4,6 @@
 
 pub mod event;
 pub mod focus;
-pub mod hit_test;
 pub mod ime;
 pub mod router;
 pub mod shortcut;
@@ -15,7 +14,6 @@ pub mod clipboard;
 
 pub use event::{Event, EventSender, Key, Modifiers, MouseButton};
 pub use focus::FocusManager;
-pub use hit_test::HitTester;
 pub use router::EventRouter;
 pub use widget_tree::WidgetTree;
 

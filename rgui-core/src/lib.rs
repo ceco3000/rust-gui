@@ -22,6 +22,7 @@ pub mod context;
 pub mod geometry;
 pub mod id;
 pub mod locale;
+pub mod message;
 pub mod registry;
 pub mod state_binding;
 pub mod traits;
@@ -48,6 +49,9 @@ pub use widget_id_map::WidgetIdBimap;
 pub use traits::{
     AppMessage, EventResult, FormField, FormFieldError, PersistState, WidgetLifecycle, WidgetSpec,
 };
+
+// 内置消息类型
+pub use message::NoopMsg;
 
 // Context 类型
 pub use context::{
@@ -86,6 +90,7 @@ pub mod prelude {
     };
     pub use crate::id::{NodeHandle, WidgetId, WindowId};
     pub use crate::locale::Locale;
+    pub use crate::message::NoopMsg;
     pub use crate::registry::{RegistryError, WidgetRegistry};
     pub use crate::state_binding::StateBinding;
     pub use crate::traits::{
