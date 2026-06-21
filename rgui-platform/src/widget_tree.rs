@@ -11,7 +11,7 @@
 //! - AccessibilityTree：无障碍树构建依赖 `children()` / `traverse_visual_order()`
 
 use rgui_core::context::UpdateContext;
-use rgui_core::geometry::Rect;
+use rgui_core::geometry::{Point, Rect};
 use rgui_core::id::WidgetId;
 use rgui_core::traits::WidgetLifecycle;
 use rustc_hash::FxHashMap;
@@ -178,6 +178,45 @@ impl WidgetTree {
     /// 移除 widget 的布局边界信息。
     pub fn remove_bounds(&mut self, widget_id: WidgetId) {
         self.bounds.remove(&widget_id);
+    }
+
+    // ── 命中测试（D5 §4）──────────────────────────────────────────────
+
+    /// 命中测试：返回坐标处最深的 widget ID。
+    ///
+    /// 算法（D5 §4）：
+    /// 1. 从根节点开始
+    /// 2. 检查当前节点 bounds 包含 point
+    /// 3. 递归检查子节点（按 z-order 反向，最上层优先）
+    /// 4. 返回最深匹配
+    ///
+    /// 使用 `self.bounds` 中的绝对坐标边界矩形（由布局系统每帧更新）。
+    /// 空树或点不在任何 widget 内时返回 `None`。
+    #[must_use]
+    pub fn hit_test(&self, point: Point) -> Option<WidgetId> {
+        let root = self.root()?;
+        self.hit_test_tree(root, point)
+    }
+
+    /// DFS 递归命中测试（内部辅助）。
+    ///
+    /// 从给定 `widget_id` 开始向下递归，返回包含 `point` 的最深后代。
+    /// 子节点按逆序迭代（`.rev()`）——后渲染的 widget 在 z-order 上层，
+    /// 应优先命中。
+    fn hit_test_tree(&self, widget_id: WidgetId, point: Point) -> Option<WidgetId> {
+        let bounds = self.bounds.get(&widget_id)?;
+        if !bounds.contains(point) {
+            return None;
+        }
+        // 检查子节点（反向，z-order 后渲染在上层）
+        if let Some(children) = self.children.get(&widget_id) {
+            for child in children.iter().rev() {
+                if let Some(hit) = self.hit_test_tree(*child, point) {
+                    return Some(hit);
+                }
+            }
+        }
+        Some(widget_id)
     }
 
     // ── 树结构变更 ─────────────────────────────────────────────────────
@@ -903,5 +942,136 @@ mod tests {
         let cloned = tree.clone();
         // 克隆的树不应保留生命周期注册
         assert!(!cloned.has_lifecycle(id));
+    }
+
+    // ── hit_test（D5 §4）─────────────────────────────────────────────
+
+    /// 构建带 bounds 的三层树用于命中测试：
+    ///   root (1) [0,0 500x400]
+    ///   ├── child_a (2) [20,20 200x100]
+    ///   │   └── leaf_a1 (4) [30,30 60x40]
+    ///   └── child_b (3) [250,20 200x100]
+    fn build_hit_tree() -> WidgetTree {
+        let mut tree = WidgetTree::new();
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(2));
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(3));
+        tree.add_child(WidgetId::from_u64(2), WidgetId::from_u64(4));
+        // 设置 bounds（绝对坐标）
+        tree.set_bounds(WidgetId::from_u64(1), Rect::new(0.0, 0.0, 500.0, 400.0));
+        tree.set_bounds(WidgetId::from_u64(2), Rect::new(20.0, 20.0, 200.0, 100.0));
+        tree.set_bounds(WidgetId::from_u64(3), Rect::new(250.0, 20.0, 200.0, 100.0));
+        tree.set_bounds(WidgetId::from_u64(4), Rect::new(30.0, 30.0, 60.0, 40.0));
+        tree
+    }
+
+    #[test]
+    fn hit_test_deepest_child() {
+        // 点击 leaf_a1 内部 → 返回 leaf_a1（最深）
+        let tree = build_hit_tree();
+        assert_eq!(
+            tree.hit_test(Point::new(50.0, 50.0)),
+            Some(WidgetId::from_u64(4))
+        );
+    }
+
+    #[test]
+    fn hit_test_falls_back_to_parent() {
+        // 点击 child_a 区域（但不在 leaf_a1 内）→ 返回 child_a
+        let tree = build_hit_tree();
+        assert_eq!(
+            tree.hit_test(Point::new(100.0, 100.0)),
+            Some(WidgetId::from_u64(2))
+        );
+    }
+
+    #[test]
+    fn hit_test_z_order_last_child_wins() {
+        // child_b 在 child_a 之后添加（z-order 在上层）
+        // 点击重叠区域 → child_b 优先
+        let tree = build_hit_tree();
+        // child_a 右边缘和 child_b 左边缘重叠在 x=250 附近
+        // child_a bounds: [20,20 200x100] = x:20..220
+        // child_b bounds: [250,20 200x100] = x:250..450
+        // 不重叠。让我们点击 child_b 内部来验证它被命中
+        assert_eq!(
+            tree.hit_test(Point::new(300.0, 50.0)),
+            Some(WidgetId::from_u64(3))
+        );
+    }
+
+    #[test]
+    fn hit_test_root_when_point_in_no_child() {
+        // 点击根节点区域但不在任何子节点内 → 返回根节点
+        let tree = build_hit_tree();
+        assert_eq!(
+            tree.hit_test(Point::new(450.0, 350.0)),
+            Some(WidgetId::from_u64(1))
+        );
+    }
+
+    #[test]
+    fn hit_test_miss_returns_none() {
+        // 点击完全在树外的区域 → None
+        let tree = build_hit_tree();
+        assert_eq!(tree.hit_test(Point::new(600.0, 500.0)), None);
+    }
+
+    #[test]
+    fn hit_test_empty_tree_returns_none() {
+        let tree = WidgetTree::new();
+        assert_eq!(tree.hit_test(Point::new(100.0, 100.0)), None);
+    }
+
+    #[test]
+    fn hit_test_no_bounds_returns_none() {
+        // 树结构存在但无 bounds → 命中测试返回 None
+        let mut tree = WidgetTree::new();
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(2));
+        // bounds 未设置
+        assert_eq!(tree.hit_test(Point::new(50.0, 50.0)), None);
+    }
+
+    #[test]
+    fn hit_test_overlapping_siblings_priority() {
+        // 构建两个重叠的兄弟节点来测试 z-order 优先级
+        // parent (10) [0,0 300x300]
+        //   ├── first (11) [50,50 200x200]
+        //   └── second (12) [100,100 150x150] ← z-order 在上层
+        let mut tree = WidgetTree::new();
+        let parent = WidgetId::from_u64(10);
+        let first = WidgetId::from_u64(11);
+        let second = WidgetId::from_u64(12);
+        tree.add_child(parent, first);
+        tree.add_child(parent, second);
+        tree.set_bounds(parent, Rect::new(0.0, 0.0, 300.0, 300.0));
+        tree.set_bounds(first, Rect::new(50.0, 50.0, 200.0, 200.0));
+        tree.set_bounds(second, Rect::new(100.0, 100.0, 150.0, 150.0));
+
+        // 点击重叠区域 (150,150) → second 获胜（后添加，z-order 在上）
+        assert_eq!(tree.hit_test(Point::new(150.0, 150.0)), Some(second));
+    }
+
+    #[test]
+    fn hit_test_wide_flat_widget_no_area_bias() {
+        // 宽扁 widget（200x20）包含 point → 正常返回
+        // 窄高 widget 不加权判断——取消面积仲裁
+        let mut tree = WidgetTree::new();
+        let root = WidgetId::from_u64(1);
+        let wide = WidgetId::from_u64(2);
+        tree.add_child(root, wide);
+        tree.set_bounds(root, Rect::new(0.0, 0.0, 500.0, 400.0));
+        tree.set_bounds(wide, Rect::new(0.0, 0.0, 400.0, 20.0));
+
+        // 点在宽扁 widget 内 → 返回 wide
+        assert_eq!(
+            tree.hit_test(Point::new(200.0, 10.0)),
+            Some(WidgetId::from_u64(2))
+        );
+
+        // 点在宽扁 widget 下方 → 返回 root（wide bounds 不包含）
+        assert_eq!(
+            tree.hit_test(Point::new(200.0, 30.0)),
+            Some(WidgetId::from_u64(1))
+        );
     }
 }

@@ -11,6 +11,7 @@ use rgui_core::traits::EventResult;
 use rgui_core::widget_id_map::WidgetIdBimap;
 use rgui_platform::event::{Event, Modifiers, MouseButton};
 use rgui_platform::focus::FocusManager;
+use rgui_platform::widget_tree::WidgetTree;
 use rgui_render::{
     RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
 };
@@ -183,6 +184,12 @@ pub struct App {
     /// 使用 `NoopMsg` 擦除用户消息类型，保留完整树结构（widget_type/id/children）。
     pub(crate) current_view:
         Arc<std::sync::Mutex<Option<rgui_core::view::WidgetView<rgui_core::message::NoopMsg>>>>,
+    /// Widget 树——维护父子关系和布局边界。
+    ///
+    /// 由 `register_interaction` 填充边界（向后兼容），
+    /// 生产路径中每帧从 LayoutEngine 同步绝对坐标。
+    /// `hit_test()` 方法实现 D5 §4 DFS 树遍历命中测试。
+    pub(crate) widget_tree: WidgetTree,
 }
 
 /// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
@@ -449,6 +456,7 @@ impl App {
             widget_state_store: crate::widget_state::WidgetStateStore::new(),
             current_layout: Arc::new(std::sync::Mutex::new(None)),
             current_view: Arc::new(std::sync::Mutex::new(None)),
+            widget_tree: WidgetTree::new(),
         }
     }
 
@@ -516,6 +524,15 @@ impl App {
     ) {
         self.interaction_bounds.insert(id, bounds);
         self.interactions.insert(id, (action.into(), Box::new(cb)));
+        // P05a: 同步填充 WidgetTree，支持 DFS 树遍历命中测试
+        const SYNTHETIC_ROOT: WidgetId = WidgetId::from_u64(0);
+        if self.widget_tree.is_empty() {
+            // 首次注册时创建合成根节点（窗口级别）
+            self.widget_tree.add_child(SYNTHETIC_ROOT, id);
+        } else if !self.widget_tree.contains(id) {
+            self.widget_tree.add_child(SYNTHETIC_ROOT, id);
+        }
+        self.widget_tree.set_bounds(id, bounds);
     }
 
     /// 注册 WidgetSpec 实例的更新处理器。
@@ -1008,45 +1025,59 @@ impl AppHandler {
     /// DFS 树遍历命中测试（D5 §4 算法）。
     ///
     /// 基于当前 WidgetView 树（`current_view`）和布局引擎（`current_layout`）
-    /// 递归遍历树结构，返回包含该点的最深 widget ID。
+    /// P05a: DFS 树遍历命中测试（D5 §4）。
     ///
-    /// 算法步骤：
-    /// 1. 从根节点开始
-    /// 2. 检查当前节点 bounds 是否包含该点（LayoutEngine 绝对坐标）
-    /// 3. 反向遍历 children（`.rev()`——后渲染在上层）递归命中
-    /// 4. 子节点命中则返回子节点，否则返回当前节点
+    /// 算法：
+    /// 1. 优先使用当前 WidgetView 树 + LayoutEngine 绝对坐标
+    /// 2. 回退到 WidgetTree（register_interaction 自动填充）
+    /// 3. 最后回退到 interaction_bounds 平面查找（向后兼容）
+    ///
+    /// 注意：不再使用面积仲裁（取消了 min_by 面积比较）。
+    /// 宽扁和窄高 widget 仅通过边界包含判断。
     fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
         // 主路径：DFS 树遍历命中测试（生产环境，current_view + current_layout 均设置）
         let layout_guard = self.app.current_layout.lock().unwrap();
         let view_guard = self.app.current_view.lock().unwrap();
         if let (Some(view), Some(layout)) = (view_guard.as_ref(), layout_guard.as_ref()) {
-            return Self::hit_test_recursive(view, position, layout);
+            return Self::hit_test_tree(view, position, layout);
         }
-        // 回退路径 A：current_layout 已设置但 current_view 未设置（半集成测试）
+        // 回退路径 A：WidgetTree DFS 命中测试（P05a）
+        // register_interaction 已自动填充 WidgetTree 的 bounds + 父子关系
+        if !self.app.widget_tree.is_empty() {
+            if let Some(hit) = self.app.widget_tree.hit_test(position) {
+                return Some(hit);
+            }
+        }
+        // 回退路径 B：纯平面查找（向后兼容旧测试，无 WidgetTree 场景）
+        // 优先使用 LayoutEngine 精确坐标
         if let Some(layout) = layout_guard.as_ref() {
             return self
                 .app
-                .interactions
-                .keys()
-                .filter_map(|&id| {
-                    let cached = layout.get_layout(id)?;
-                    let abs_pos = layout.absolute_position(id)?;
-                    let rect = Rect::new(
-                        abs_pos.x,
-                        abs_pos.y,
-                        cached.result.size.width,
-                        cached.result.size.height,
-                    );
-                    if rect.contains(position) {
-                        Some((id, rect.size.width * rect.size.height))
+                .interaction_bounds
+                .iter()
+                .find_map(|(&id, bounds)| {
+                    // 尝试用 LayoutEngine 获取实际坐标
+                    let effective_rect = layout
+                        .get_layout(id)
+                        .and_then(|cached| {
+                            layout.absolute_position(id).map(|abs_pos| {
+                                Rect::new(
+                                    abs_pos.x,
+                                    abs_pos.y,
+                                    cached.result.size.width,
+                                    cached.result.size.height,
+                                )
+                            })
+                        })
+                        .unwrap_or(*bounds);
+                    if effective_rect.contains(position) {
+                        Some(id)
                     } else {
                         None
                     }
-                })
-                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(id, _)| id);
+                });
         }
-        // 回退路径 B：纯单元测试——使用 register_interaction 存储的 interaction_bounds
+        // 完全回退：interaction_bounds 平面查找
         self.app
             .interaction_bounds
             .iter()
@@ -1054,8 +1085,16 @@ impl AppHandler {
             .map(|(&id, _)| id)
     }
 
-    /// 递归辅助函数：在 WidgetView 子树上执行命中测试。
-    fn hit_test_recursive(
+    /// P05a: DFS 树遍历命中测试（D5 §4 算法）。
+    ///
+    /// 在 WidgetView 子树上递归遍历，使用 LayoutEngine 绝对坐标。
+    /// 返回包含该点的最深 widget ID。
+    ///
+    /// 算法步骤：
+    /// 1. 从当前节点开始，检查 bounds 是否包含 point
+    /// 2. 反向遍历 children（`.rev()`——后渲染在上层）递归命中
+    /// 3. 子节点命中则返回子节点，否则返回当前节点
+    fn hit_test_tree(
         view: &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
         point: Point,
         layout: &rgui_layout::LayoutEngine,
@@ -1075,7 +1114,7 @@ impl AppHandler {
             }
             // 检查子节点（反向，z-order 后渲染在上层）
             for child in view.children.iter().rev() {
-                if let Some(hit) = Self::hit_test_recursive(child, point, layout) {
+                if let Some(hit) = Self::hit_test_tree(child, point, layout) {
                     return Some(hit);
                 }
             }
@@ -1083,7 +1122,7 @@ impl AppHandler {
         }
         // 匿名节点（无 WidgetId）：递归检查子节点
         for child in view.children.iter().rev() {
-            if let Some(hit) = Self::hit_test_recursive(child, point, layout) {
+            if let Some(hit) = Self::hit_test_tree(child, point, layout) {
                 return Some(hit);
             }
         }
