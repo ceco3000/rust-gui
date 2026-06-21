@@ -1277,9 +1277,7 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
 /// 优先从 `store` 读取持久状态，而非每帧从 WidgetView.props 创建临时状态。
 /// 这使得组件能够跨帧自主管理交互状态（如展开/折叠）。
 #[must_use]
-pub fn default_paint_fn_with_state<M: AppMessage>(
-    store: WidgetStateStore,
-) -> PaintFn<M> {
+pub fn default_paint_fn_with_state<M: AppMessage>(store: WidgetStateStore) -> PaintFn<M> {
     paint_fn_impl(Some(store))
 }
 

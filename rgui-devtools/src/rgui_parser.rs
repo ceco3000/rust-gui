@@ -1127,8 +1127,7 @@ mod tests {
 
     #[test]
     fn collect_state_bindings_no_bindings() {
-        let mut view =
-            parse_rgui_str::<TestMsg>(r#"<Button label="Save"/>"#).unwrap();
+        let mut view = parse_rgui_str::<TestMsg>(r#"<Button label="Save"/>"#).unwrap();
         assign_widget_ids(&mut view);
         let bindings = collect_state_bindings(&view);
         assert!(bindings.is_empty());

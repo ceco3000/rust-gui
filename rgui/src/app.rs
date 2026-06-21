@@ -1036,11 +1036,19 @@ impl AppHandler {
     /// 宽扁和窄高 widget 仅通过边界包含判断。
     fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
         // 主路径：DFS 树遍历命中测试（生产环境，current_view + current_layout 均设置）
-        let layout_guard = self.app.current_layout.lock().unwrap();
-        let view_guard = self.app.current_view.lock().unwrap();
-        if let (Some(view), Some(layout)) = (view_guard.as_ref(), layout_guard.as_ref()) {
-            return Self::hit_test_tree(view, position, layout);
+        // 锁在嵌套作用域结束时立即释放，避免阻塞渲染线程
+        let tree_hit = {
+            let layout_guard = self.app.current_layout.lock().unwrap();
+            let view_guard = self.app.current_view.lock().unwrap();
+            match (view_guard.as_ref(), layout_guard.as_ref()) {
+                (Some(view), Some(layout)) => Self::hit_test_tree(view, position, layout),
+                _ => None,
+            }
+        };
+        if let Some(hit) = tree_hit {
+            return Some(hit);
         }
+
         // 回退路径 A：WidgetTree DFS 命中测试（P05a）
         // register_interaction 已自动填充 WidgetTree 的 bounds + 父子关系
         if !self.app.widget_tree.is_empty() {
@@ -1048,34 +1056,38 @@ impl AppHandler {
                 return Some(hit);
             }
         }
-        // 回退路径 B：纯平面查找（向后兼容旧测试，无 WidgetTree 场景）
-        // 优先使用 LayoutEngine 精确坐标
-        if let Some(layout) = layout_guard.as_ref() {
-            return self
-                .app
-                .interaction_bounds
-                .iter()
-                .find_map(|(&id, bounds)| {
-                    // 尝试用 LayoutEngine 获取实际坐标
-                    let effective_rect = layout
-                        .get_layout(id)
-                        .and_then(|cached| {
-                            layout.absolute_position(id).map(|abs_pos| {
-                                Rect::new(
-                                    abs_pos.x,
-                                    abs_pos.y,
-                                    cached.result.size.width,
-                                    cached.result.size.height,
-                                )
+        // 回退路径 B：LayoutEngine 精确坐标查找（向后兼容旧测试）
+        {
+            let layout_guard = self.app.current_layout.lock().unwrap();
+            if let Some(layout) = layout_guard.as_ref() {
+                if let Some(hit) = self
+                    .app
+                    .interaction_bounds
+                    .iter()
+                    .find_map(|(&id, bounds)| {
+                        let effective_rect = layout
+                            .get_layout(id)
+                            .and_then(|cached| {
+                                layout.absolute_position(id).map(|abs_pos| {
+                                    Rect::new(
+                                        abs_pos.x,
+                                        abs_pos.y,
+                                        cached.result.size.width,
+                                        cached.result.size.height,
+                                    )
+                                })
                             })
-                        })
-                        .unwrap_or(*bounds);
-                    if effective_rect.contains(position) {
-                        Some(id)
-                    } else {
-                        None
-                    }
-                });
+                            .unwrap_or(*bounds);
+                        if effective_rect.contains(position) {
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    })
+                {
+                    return Some(hit);
+                }
+            }
         }
         // 完全回退：interaction_bounds 平面查找
         self.app
@@ -1092,13 +1104,16 @@ impl AppHandler {
     ///
     /// 算法步骤：
     /// 1. 从当前节点开始，检查 bounds 是否包含 point
-    /// 2. 反向遍历 children（`.rev()`——后渲染在上层）递归命中
-    /// 3. 子节点命中则返回子节点，否则返回当前节点
+    /// 2. 子节点按 z-index 降序排列（无 z-index 时按 child 索引递增作为默认值）
+    /// 3. 高 z-index 子节点优先命中，同 z-index 按稳定排序保持原始相对顺序
+    /// 4. 子节点命中则返回子节点，否则返回当前节点
     fn hit_test_tree(
         view: &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
         point: Point,
         layout: &rgui_layout::LayoutEngine,
     ) -> Option<WidgetId> {
+        use rgui_core::view::PropValue;
+
         // 未分配 ID 的节点（如匿名容器）不参与命中，但子节点仍可命中
         if let Some(widget_id) = view.id {
             let cached = layout.get_layout(widget_id)?;
@@ -1112,16 +1127,54 @@ impl AppHandler {
             if !rect.contains(point) {
                 return None;
             }
-            // 检查子节点（反向，z-order 后渲染在上层）
-            for child in view.children.iter().rev() {
+            // 按 z-index 降序排列子节点
+            // - 有显式 z-index prop 的 widget：用其值（通常 > 0，如弹层）
+            // - 无 z-index 的 widget：用 child 索引作为默认值（后添加→更大→上层）
+            // 效果：与 SceneGraph 的 z-order 排序（scene_build.rs）一致
+            let mut indexed: Vec<(
+                i32,
+                &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
+            )> = view
+                .children
+                .iter()
+                .enumerate()
+                .map(|(i, child)| {
+                    let z = match child.props.get("z-index") {
+                        Some(PropValue::Int(zi)) => *zi as i32,
+                        _ => i as i32,
+                    };
+                    (z, child)
+                })
+                .collect();
+            // 降序排列（高 z-index 优先命中）
+            indexed.sort_by_key(|(z, _)| std::cmp::Reverse(*z));
+
+            for (_, child) in &indexed {
                 if let Some(hit) = Self::hit_test_tree(child, point, layout) {
                     return Some(hit);
                 }
             }
             return Some(widget_id);
         }
-        // 匿名节点（无 WidgetId）：递归检查子节点
-        for child in view.children.iter().rev() {
+        // 匿名节点（无 WidgetId）：递归检查子节点（同样按 z-index 排序）
+        let mut indexed: Vec<(
+            i32,
+            &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
+        )> = view
+            .children
+            .iter()
+            .enumerate()
+            .map(|(i, child)| {
+                let z = match child.props.get("z-index") {
+                    Some(PropValue::Int(zi)) => *zi as i32,
+                    _ => i as i32,
+                };
+                (z, child)
+            })
+            .collect();
+        indexed.sort_by_key(|(z, _)| std::cmp::Reverse(*z));
+
+        for (_, child) in &indexed {
             if let Some(hit) = Self::hit_test_tree(child, point, layout) {
                 return Some(hit);
             }

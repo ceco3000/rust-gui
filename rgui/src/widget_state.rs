@@ -38,10 +38,7 @@ impl WidgetStateStore {
     #[must_use]
     pub fn read<T: Send + Clone + 'static>(&self, id: WidgetId) -> Option<T> {
         let guard = self.inner.lock().expect("WidgetStateStore lock poisoned");
-        guard
-            .get(&id)
-            .and_then(|b| b.downcast_ref::<T>())
-            .cloned()
+        guard.get(&id).and_then(|b| b.downcast_ref::<T>()).cloned()
     }
 
     /// 通过回调更新指定 widget 的状态。

@@ -51,23 +51,25 @@ fn init_recursive<M: AppMessage>(
                 init_recursive(app, child, layout, store, accordion_ctx);
             }
             return;
-        }
+        },
     };
 
     match view.widget_type {
         "WaAccordion" => {
-            let mode = get_str(&view.props, "mode").unwrap_or("multiple").to_string();
+            let mode = get_str(&view.props, "mode")
+                .unwrap_or("multiple")
+                .to_string();
             let sibling_ids = collect_accordion_item_ids(&view.children);
             let ctx = AccordionCtx { mode, sibling_ids };
             for child in &view.children {
                 init_recursive(app, child, layout, store, Some(&ctx));
             }
             return;
-        }
+        },
         "WaAccordionItem" => {
             init_accordion_item(app, view, widget_id, layout, store, accordion_ctx);
-        }
-        _ => {}
+        },
+        _ => {},
     }
 
     register_onclick_if_present(app, view, widget_id, layout);

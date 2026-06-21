@@ -362,10 +362,9 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
 
     // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
     let skip_children = view.widget_type == "WaAccordionItem"
-        && !view
-            .props
-            .get("expanded")
-            .map_or(false, |v| matches!(v, rgui_core::view::PropValue::Bool(true)));
+        && !view.props.get("expanded").map_or(false, |v| {
+            matches!(v, rgui_core::view::PropValue::Bool(true))
+        });
 
     if !skip_children {
         for child in &view.children {
@@ -454,7 +453,7 @@ fn compute_widget_commands<M: rgui_core::traits::AppMessage>(
 /// - 当 `dirty_widgets` 为 `Some(set)` 且 widget 未被标记脏时，
 ///   优先从 `paint_cache` 获取缓存层，避免重复调用 `paint_fn`。
 /// - 脏 widget（或无缓存）则正常调用 `paint_fn` 生成绘制指令并更新缓存。
-    #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
     view: &rgui_core::view::WidgetView<M>,
     layout_engine: &LayoutEngine,
@@ -533,10 +532,9 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
 
     // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
     let skip_children = view.widget_type == "WaAccordionItem"
-        && !view
-            .props
-            .get("expanded")
-            .map_or(false, |v| matches!(v, rgui_core::view::PropValue::Bool(true)));
+        && !view.props.get("expanded").map_or(false, |v| {
+            matches!(v, rgui_core::view::PropValue::Bool(true))
+        });
 
     if !skip_children {
         for child in &view.children {
@@ -699,9 +697,10 @@ fn has_str_prop(
     props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
     key: &str,
 ) -> bool {
-    props.get(key).map_or(false, |v| {
-        matches!(v, rgui_core::view::PropValue::Str(s) if !s.is_empty())
-    })
+    props.get(key).map_or(
+        false,
+        |v| matches!(v, rgui_core::view::PropValue::Str(s) if !s.is_empty()),
+    )
 }
 
 /// 从 `WidgetView.props` 中提取 CSS 布局属性并转换为 Taffy `Style`。
