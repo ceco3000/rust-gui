@@ -42,6 +42,8 @@ pub struct WaAccordionItemState {
     pub appearance: String,
     /// 标题级别（1-6 或 none），由父 Accordion 设置
     pub heading_level: String,
+    /// 可折叠内容文本（展开时渲染）
+    pub content: String,
 }
 
 impl WaAccordionItemState {
@@ -54,6 +56,7 @@ impl WaAccordionItemState {
             icon_placement: "end".into(),
             appearance: "outlined".into(),
             heading_level: "3".into(),
+            content: String::new(),
         }
     }
 }
@@ -113,6 +116,7 @@ impl WidgetSpec for WaAccordionItem {
                 "heading-level",
                 PropValue::str(state.heading_level.as_str()),
             )
+            .prop("content", PropValue::str(state.content.as_str()))
     }
 
     fn update(&self, msg: Self::Message, state: &mut Self::State, _: &mut UpdateContext) {
@@ -230,6 +234,23 @@ impl WidgetSpec for WaAccordionItem {
                 };
                 let panel_rect = Rect::new(bounds.origin.x, panel_y, w, panel_h);
                 ctx.fill_rect(panel_rect, panel_bg, 0.0);
+
+                // 渲染内容文本
+                if !state.content.is_empty() {
+                    let content_font_size: f32 = (HEADER_HEIGHT * 0.36) as f32;
+                    let content_rect = Rect::new(
+                        bounds.origin.x + 16.0,
+                        panel_y + 8.0,
+                        w - 32.0,
+                        panel_h - 16.0,
+                    );
+                    ctx.draw_text(
+                        state.content.as_str(),
+                        content_rect,
+                        Color::new(0.2, 0.2, 0.2, 1.0),
+                        content_font_size,
+                    );
+                }
             }
         }
     }

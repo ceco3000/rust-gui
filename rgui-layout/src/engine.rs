@@ -134,6 +134,27 @@ impl LayoutEngine {
         self.cache.get(&widget_id)
     }
 
+    /// 获取 widget 在窗口中的绝对坐标（累加所有祖先节点偏移）。
+    ///
+    /// `get_layout().position` 返回的是相对父节点的本地坐标。
+    /// 此方法从 Taffy 树沿父链累加，得到窗口绝对坐标，供 hit_test 使用。
+    #[must_use]
+    pub fn absolute_position(&self, widget_id: WidgetId) -> Option<Point> {
+        let node = self.widget_to_node.get(&widget_id)?;
+        let layout = self.tree.layout(node.0).ok()?;
+        let mut x = layout.location.x as f64;
+        let mut y = layout.location.y as f64;
+        let mut parent = self.tree.parent(node.0);
+        while let Some(p) = parent {
+            if let Ok(pl) = self.tree.layout(p) {
+                x += pl.location.x as f64;
+                y += pl.location.y as f64;
+            }
+            parent = self.tree.parent(p);
+        }
+        Some(Point::new(x, y))
+    }
+
     pub fn clear(&mut self) {
         self.tree = TaffyTree::new();
         self.widget_to_node.clear();

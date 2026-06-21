@@ -170,6 +170,14 @@ pub struct App {
     /// register_interaction 回调触发后由 handle_click 设为 true，
     /// RedrawRequested 中迫使 can_reuse=false，重建后清除。
     pub(crate) needs_redraw: bool,
+    /// 组件实例状态存储——跨帧持久化 WidgetSpec 组件的交互状态。
+    ///
+    /// .rgui 渲染路径中，paint_factory 每帧从 WidgetView.props 创建临时 state。
+    /// widget_state_store 使交互组件（如 WaAccordionItem）能在此持久化自己的状态，
+    /// paint_factory 读取 + widget_instance handler 写入，实现组件行为自包含。
+    pub(crate) widget_state_store: crate::widget_state::WidgetStateStore,
+    /// 最新布局引擎——每帧渲染后更新，供 handle_click 做树形命中测试。
+    pub(crate) current_layout: Arc<std::sync::Mutex<Option<rgui_layout::LayoutEngine>>>,
 }
 
 /// RS04: 将 PropRegistry drain 的结果注入到 WidgetView 树。
@@ -295,6 +303,115 @@ fn inject_state_bindings_recursive<M: AppMessage>(
     }
 }
 
+/// 运行 .rgui + .rhai 声明式应用（一行初始化）。
+///
+/// 自动完成标准初始化管线：
+/// 1. 解析 .rgui → WidgetView 树
+/// 2. 计算初始布局
+/// 3. 创建 App
+/// 4. 初始化交互组件（WaAccordionItem 等）和 onclick 注册
+/// 5. 加载 .rhai 脚本
+/// 6. 设置声明式渲染管道（每帧 layout → paint → scene）
+/// 7. 调用 `app.run()` 进入事件循环
+///
+/// `.rgui` 路径从 `config.rgui_path` 读取，`.rhai` 脚本从 `config.rhai_paths` 读取。
+///
+/// 适合 demo 和原型开发。需要自定义渲染行为时请手动调用各个步骤。
+///
+/// # Type Parameters
+///
+/// - `M`: 应用消息类型（必须实现 `AppMessage`）。
+#[cfg(feature = "devtools")]
+pub fn run_simple_app<M: AppMessage + 'static>(
+    config: AppConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use rgui_core::geometry::Size;
+    use rgui_devtools::rgui_parser::parse_rgui_file;
+    use rgui_render::{build_scene_from_view, compute_view_layout};
+
+    use crate::interactive::init_widget_instances;
+    use crate::paint_factory::default_paint_fn_with_state;
+
+    // 0. 从 config 读取路径（先提取，再移动 config）
+    let rgui_path = config.rgui_path.clone().ok_or(".rgui 路径未设置")?;
+    let rhai_paths = config.rhai_paths.clone();
+
+    // 1. 解析 .rgui
+    let mut view: rgui_core::view::WidgetView<M> = parse_rgui_file(&rgui_path)?;
+
+    // 2. 初始布局
+    let initial_layout = compute_view_layout(
+        &mut view,
+        Size::new(config.window_size.width, config.window_size.height),
+        None,
+    );
+
+    // 3. 创建 App
+    let mut app = App::new(config);
+
+    // 4. 初始化交互组件
+    init_widget_instances(&mut app, &view, &initial_layout);
+
+    // 5. 加载 Rhai 脚本
+    if !rhai_paths.is_empty() {
+        let rhai_refs: Vec<&std::path::Path> = rhai_paths.iter().map(|p| p.as_path()).collect();
+        app.load_rhai_scripts(&rhai_refs)?;
+    }
+
+    // 6. 设置渲染管道
+    let store = app.widget_state_store().clone();
+    let paint_fn = default_paint_fn_with_state::<M>(store.clone());
+    let template = view;
+    let current_layout = Arc::clone(&app.current_layout);
+
+    app.set_view_scene_builder(
+        move |frame, width, height, tr| {
+            let mut v = template.clone();
+            sync_store_to_props(&mut v, &store);
+            let l = compute_view_layout(
+                &mut v,
+                Size::new(f64::from(width), f64::from(height)),
+                Some(tr),
+            );
+            // 更新当前布局，供 handle_click 做树形命中测试
+            *current_layout.lock().unwrap() = Some(l);
+            // Note: l 已被 move，重新获取
+            let l = current_layout.lock().unwrap().take().unwrap();
+            let scene = build_scene_from_view(&v, &l, &paint_fn, frame, Some(tr));
+            *current_layout.lock().unwrap() = Some(l);
+            scene
+        },
+    );
+
+    // 7. 启动事件循环
+    app.run()
+}
+
+/// 将 WidgetStateStore 中的组件状态同步到 WidgetView.props。
+///
+/// walk_view_tree 条件渲染（如 WaAccordionItem 折叠跳过子节点）
+/// 依赖 props 中的 expanded 值。handler 修改 store 后，此函数确保
+/// 每帧渲染前 props 反映最新状态。
+#[cfg(feature = "devtools")]
+fn sync_store_to_props<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    store: &crate::widget_state::WidgetStateStore,
+) {
+    use rgui_components::wa_accordion_item::WaAccordionItemState;
+    use rgui_core::view::PropValue;
+
+    if view.widget_type == "WaAccordionItem" {
+        if let Some(widget_id) = view.id {
+            if let Some(state) = store.read::<WaAccordionItemState>(widget_id) {
+                view.props.insert("expanded", PropValue::Bool(state.expanded));
+            }
+        }
+    }
+    for child in &mut view.children {
+        sync_store_to_props(child, store);
+    }
+}
+
 impl App {
     /// 创建应用实例。
     #[must_use]
@@ -321,6 +438,8 @@ impl App {
             rhai_hot_reload: None,
             state_store: Arc::new(RwLock::new(rgui_state::StateStore::new())),
             needs_redraw: false,
+            widget_state_store: crate::widget_state::WidgetStateStore::new(),
+            current_layout: Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -342,6 +461,13 @@ impl App {
     #[must_use]
     pub fn window_id(&self) -> WindowId {
         self.window_id
+    }
+    /// 返回 widget 实例状态存储的引用。
+    ///
+    /// 外部代码可借此初始化组件状态或读取当前交互状态。
+    #[must_use]
+    pub fn widget_state_store(&self) -> &crate::widget_state::WidgetStateStore {
+        &self.widget_state_store
     }
     /// 返回当前 DPI 缩放因子。
     ///
@@ -879,8 +1005,43 @@ impl AppHandler {
         }
     }
 
+    /// 树形命中测试——基于当前布局引擎找包含点的最小 widget。
+    ///
+    /// 遍历所有注册了 widget_instance handler 的 widget，用当前布局引擎的绝对坐标
+    /// 检查点是否在 bounds 内，返回面积最小的（最深层级）匹配。
+    fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
+        let layout = self.app.current_layout.lock().unwrap();
+        let layout = layout.as_ref()?;
+
+        self.app
+            .widget_instances
+            .keys()
+            .filter_map(|&id| {
+                let cached = layout.get_layout(id)?;
+                let abs_pos = layout.absolute_position(id)?;
+                let rect = Rect::new(
+                    abs_pos.x,
+                    abs_pos.y,
+                    cached.result.size.width,
+                    cached.result.size.height,
+                );
+                if rect.contains(position) {
+                    Some((id, rect.size.width * rect.size.height))
+                } else {
+                    None
+                }
+            })
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(id, _)| id)
+    }
+
     fn handle_click(&mut self, position: Point) {
-        if let Some(hit_id) = self.app.hit_tester.hit_test(position) {
+        // 使用当前布局引擎做树形命中测试（代替过时的 hit_tester）
+        let hit_id = self
+            .find_widget_at_point(position)
+            .or_else(|| self.app.hit_tester.hit_test(position));
+
+        if let Some(hit_id) = hit_id {
             // 新路径：如果命中 widget 有 WidgetSpec 实例处理器，优先调用
             let mut update_ctx = UpdateContext::new();
             if let Some(handler) = self.app.widget_instances.get_mut(&hit_id) {
@@ -940,10 +1101,9 @@ impl AppHandler {
                             });
                             return;
                         },
-                        Err(e) => {
-                            eprintln!(
-                                "[rgui] handle_click: Rhai call_fn(\"{action}\") 失败: {e}，继续传播到旧回调"
-                            );
+                        Err(_e) => {
+                            // Rhai 函数未定义，fall through 到旧回调路径
+                            // 这是正常情况：Rust-only 交互（如 AtomicBool 桥接）不依赖 Rhai
                         },
                     }
                 }

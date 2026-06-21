@@ -360,16 +360,24 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
 
     builder.build_layer(widget_id, z, bounds, commands, true);
 
-    // 递归处理子节点——传递同一 layout_engine 引用
-    for child in &view.children {
-        walk_view_tree(
-            child,
-            layout_engine,
-            paint_fn,
-            builder,
-            z_index,
-            text_renderer,
-        );
+    // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
+    let skip_children = view.widget_type == "WaAccordionItem"
+        && !view
+            .props
+            .get("expanded")
+            .map_or(false, |v| matches!(v, rgui_core::view::PropValue::Bool(true)));
+
+    if !skip_children {
+        for child in &view.children {
+            walk_view_tree(
+                child,
+                layout_engine,
+                paint_fn,
+                builder,
+                z_index,
+                text_renderer,
+            );
+        }
     }
 }
 
@@ -523,18 +531,26 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
         },
     );
 
-    // 递归处理子节点
-    for child in &view.children {
-        walk_view_tree_incremental(
-            child,
-            layout_engine,
-            paint_fn,
-            builder,
-            z_index,
-            text_renderer,
-            dirty_widgets,
-            paint_cache,
-        );
+    // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
+    let skip_children = view.widget_type == "WaAccordionItem"
+        && !view
+            .props
+            .get("expanded")
+            .map_or(false, |v| matches!(v, rgui_core::view::PropValue::Bool(true)));
+
+    if !skip_children {
+        for child in &view.children {
+            walk_view_tree_incremental(
+                child,
+                layout_engine,
+                paint_fn,
+                builder,
+                z_index,
+                text_renderer,
+                dirty_widgets,
+                paint_cache,
+            );
+        }
     }
 }
 
@@ -670,12 +686,22 @@ fn build_layout_tree<M: rgui_core::traits::AppMessage>(
     // 从 props 提取 Taffy Style
     let style = extract_taffy_style(view.widget_type, &view.props, text_renderer);
 
-    // 分配唯一 WidgetId
-    let widget_id = WidgetId::new();
+    // 分配唯一 WidgetId（已有则保留，确保帧间稳定）
+    let widget_id = view.id.unwrap_or_else(WidgetId::new);
     view.id = Some(widget_id);
 
     // 创建 Taffy 节点
     engine.create_node(widget_id, style, &child_nodes)
+}
+
+/// 检查 `props` 中是否存在非空字符串属性。
+fn has_str_prop(
+    props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
+    key: &str,
+) -> bool {
+    props.get(key).map_or(false, |v| {
+        matches!(v, rgui_core::view::PropValue::Str(s) if !s.is_empty())
+    })
 }
 
 /// 从 `WidgetView.props` 中提取 CSS 布局属性并转换为 Taffy `Style`。
@@ -891,6 +917,13 @@ fn extract_taffy_style(
         }
     }
 
+    // 第四步：WaAccordionItem 内容面板高度——有 content 时始终预留空间，
+    // 避免折叠/展开导致布局变化，使 hit_test rect 失效。
+    if widget_type == "WaAccordionItem" && has_str_prop(props, "content") {
+        let content_h: f32 = 64.0;
+        style.min_size.height = taffy::Dimension::Length(44.0 + content_h);
+    }
+
     style
 }
 
@@ -1025,7 +1058,8 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             ..Style::default()
         },
-        // WaAccordionItem：标题栏 44px 最小高度，宽度由父容器 Accordion（flex column）驱动
+        // WaAccordionItem：标题栏 44px 最小高度，宽度由父容器 Accordion（flex column）驱动。
+        // 展开时内容面板额外高度在 extract_taffy_style 中根据 props 动态调整。
         "WaAccordionItem" => Style {
             display: Display::Flex,
             flex_direction: FlexDirection::Column,

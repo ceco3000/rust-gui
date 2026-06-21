@@ -12,12 +12,14 @@ use rgui_core::traits::AppMessage;
 use rgui_core::view::PropValue;
 use rgui_render::PaintFn;
 
-/// 创建默认的 PaintFn。
+use crate::widget_state::WidgetStateStore;
+
+/// 内部实现：PaintFn 工厂（共享 match 体，避免代码重复）。
 ///
-/// 调度到已翻译组件的 paint() 方法。
-/// 未翻译类型返回空 Vec。
+/// 当 `store` 为 `Some` 时，WaAccordionItem 从持久存储读取状态；
+/// 为 `None` 时，所有组件从 WidgetView.props 创建临时状态。
 #[must_use]
-pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
+fn paint_fn_impl<M: AppMessage>(store: Option<WidgetStateStore>) -> PaintFn<M> {
     fn get_str<'a>(
         props: &'a std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
         key: &str,
@@ -917,29 +919,68 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
                     use rgui_components::wa_accordion_item::{
                         WaAccordionItem, WaAccordionItemState,
                     };
-                    let mut state = WaAccordionItemState::new();
-                    if let Some(l) = get_str(&view.props, "label") {
-                        state.label = l.to_string();
-                    }
-                    if let Some(expanded) = view.props.get("expanded") {
-                        if let PropValue::Bool(b) = expanded {
-                            state.expanded = *b;
+
+                    // 若有持久存储则读已有状态；否则每帧从 props 创建
+                    let state = if let Some(ref store) = store {
+                        let widget_id = view.id.unwrap_or_default();
+                        store.get_or_init(widget_id, || {
+                            let mut s = WaAccordionItemState::new();
+                            if let Some(l) = get_str(&view.props, "label") {
+                                s.label = l.to_string();
+                            }
+                            if let Some(expanded) = view.props.get("expanded") {
+                                if let PropValue::Bool(b) = expanded {
+                                    s.expanded = *b;
+                                }
+                            }
+                            if let Some(disabled) = view.props.get("disabled") {
+                                if let PropValue::Bool(b) = disabled {
+                                    s.disabled = *b;
+                                }
+                            }
+                            if let Some(ip) = get_str(&view.props, "icon-placement") {
+                                s.icon_placement = ip.to_string();
+                            }
+                            if let Some(a) = get_str(&view.props, "appearance") {
+                                s.appearance = a.to_string();
+                            }
+                            if let Some(hl) = get_str(&view.props, "heading-level") {
+                                s.heading_level = hl.to_string();
+                            }
+                            if let Some(c) = get_str(&view.props, "content") {
+                                s.content = c.to_string();
+                            }
+                            s
+                        })
+                    } else {
+                        let mut s = WaAccordionItemState::new();
+                        if let Some(l) = get_str(&view.props, "label") {
+                            s.label = l.to_string();
                         }
-                    }
-                    if let Some(disabled) = view.props.get("disabled") {
-                        if let PropValue::Bool(b) = disabled {
-                            state.disabled = *b;
+                        if let Some(expanded) = view.props.get("expanded") {
+                            if let PropValue::Bool(b) = expanded {
+                                s.expanded = *b;
+                            }
                         }
-                    }
-                    if let Some(ip) = get_str(&view.props, "icon-placement") {
-                        state.icon_placement = ip.to_string();
-                    }
-                    if let Some(a) = get_str(&view.props, "appearance") {
-                        state.appearance = a.to_string();
-                    }
-                    if let Some(hl) = get_str(&view.props, "heading-level") {
-                        state.heading_level = hl.to_string();
-                    }
+                        if let Some(disabled) = view.props.get("disabled") {
+                            if let PropValue::Bool(b) = disabled {
+                                s.disabled = *b;
+                            }
+                        }
+                        if let Some(ip) = get_str(&view.props, "icon-placement") {
+                            s.icon_placement = ip.to_string();
+                        }
+                        if let Some(a) = get_str(&view.props, "appearance") {
+                            s.appearance = a.to_string();
+                        }
+                        if let Some(hl) = get_str(&view.props, "heading-level") {
+                            s.heading_level = hl.to_string();
+                        }
+                        if let Some(c) = get_str(&view.props, "content") {
+                            s.content = c.to_string();
+                        }
+                        s
+                    };
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
                     rgui_core::traits::WidgetSpec::paint(
                         &WaAccordionItem,
@@ -1219,6 +1260,27 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
             }
         },
     )
+}
+
+/// 创建默认的 PaintFn（无持久状态存储）。
+///
+/// 调度到已翻译组件的 paint() 方法。所有组件从 WidgetView.props 创建临时状态。
+/// 需要持久交互状态时请使用 [`default_paint_fn_with_state`]。
+#[must_use]
+pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
+    paint_fn_impl(None)
+}
+
+/// 创建带实例状态存储的 PaintFn。
+///
+/// 与 [`default_paint_fn`] 相同，但对于交互式组件（如 WaAccordionItem），
+/// 优先从 `store` 读取持久状态，而非每帧从 WidgetView.props 创建临时状态。
+/// 这使得组件能够跨帧自主管理交互状态（如展开/折叠）。
+#[must_use]
+pub fn default_paint_fn_with_state<M: AppMessage>(
+    store: WidgetStateStore,
+) -> PaintFn<M> {
+    paint_fn_impl(Some(store))
 }
 
 // ============================================================================

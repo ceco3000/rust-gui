@@ -4,11 +4,15 @@
 
 pub mod app;
 pub mod error_boundary;
+pub mod interactive;
 pub mod paint_factory;
 pub mod render;
 pub mod widget_node;
+pub mod widget_state;
 
 pub use app::{App, AppConfig};
+#[cfg(feature = "devtools")]
+pub use app::run_simple_app;
 pub use rgui_a11y::*;
 pub use rgui_components::*;
 pub use rgui_core::*;
