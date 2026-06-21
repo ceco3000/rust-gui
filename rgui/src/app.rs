@@ -2661,4 +2661,322 @@ mod tests {
             "needs_redraw should be false on fresh App"
         );
     }
+
+    // ========================================================================
+    // P04b: handle_click 三阶段事件路由测试
+    // ========================================================================
+
+    /// 祖孙三层 widget：验证捕获→目标→冒泡顺序。
+    #[test]
+    fn three_phase_capture_target_bubble_order() {
+        use std::sync::{Arc, Mutex};
+
+        let call_order = Arc::new(Mutex::new(Vec::new()));
+
+        let root_id = WidgetId::from_u64(100);
+        let child_id = WidgetId::from_u64(200);
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+
+        // Set up widget tree: root → child → target
+        app.widget_tree.add_child(root_id, child_id);
+        app.widget_tree.add_child(child_id, target_id);
+        app.widget_tree.set_bounds(root_id, Rect::new(0.0, 0.0, 400.0, 300.0));
+        app.widget_tree.set_bounds(child_id, Rect::new(50.0, 50.0, 300.0, 200.0));
+        app.widget_tree.set_bounds(target_id, Rect::new(100.0, 100.0, 100.0, 50.0));
+
+        // Register handlers that record call order
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(root_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("root:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(child_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("child:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(target_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("target:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+
+        // Register interactions to provide action names
+        app.register_interaction(root_id, Rect::new(0.0, 0.0, 400.0, 300.0), "click", |_| {});
+        app.register_interaction(child_id, Rect::new(50.0, 50.0, 300.0, 200.0), "click", |_| {});
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(150.0, 125.0));
+
+        let order = call_order.lock().unwrap();
+        assert_eq!(
+            *order,
+            vec![
+                "root:click".to_string(),   // capture
+                "target:click".to_string(), // target
+                "child:click".to_string(),  // bubble
+                "root:click".to_string(),   // bubble (root bubbles too)
+            ],
+            "Expected capture→target→bubble order. Got: {order:?}"
+        );
+    }
+
+    /// 捕获阶段 Handled 应阻止目标和冒泡。
+    #[test]
+    fn capture_handled_stops_target_and_bubble() {
+        use std::sync::{Arc, Mutex};
+
+        let call_order = Arc::new(Mutex::new(Vec::new()));
+
+        let root_id = WidgetId::from_u64(100);
+        let child_id = WidgetId::from_u64(200);
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+        app.widget_tree.add_child(root_id, child_id);
+        app.widget_tree.add_child(child_id, target_id);
+        app.widget_tree.set_bounds(root_id, Rect::new(0.0, 0.0, 400.0, 300.0));
+        app.widget_tree.set_bounds(child_id, Rect::new(50.0, 50.0, 300.0, 200.0));
+        app.widget_tree.set_bounds(target_id, Rect::new(100.0, 100.0, 100.0, 50.0));
+
+        // Root returns Handled → should stop everything
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(root_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("root:{action}"));
+                EventResult::Handled
+            });
+        }
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(child_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("child:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(target_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("target:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+
+        app.register_interaction(root_id, Rect::new(0.0, 0.0, 400.0, 300.0), "click", |_| {});
+        app.register_interaction(child_id, Rect::new(50.0, 50.0, 300.0, 200.0), "click", |_| {});
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(150.0, 125.0));
+
+        let order = call_order.lock().unwrap();
+        assert_eq!(
+            *order,
+            vec!["root:click".to_string()],
+            "Capture Handled should stop target and bubble. Got: {order:?}"
+        );
+    }
+
+    /// 冒泡阶段 Handled 应停止后续冒泡。
+    #[test]
+    fn bubble_handled_stops_further_bubble() {
+        use std::sync::{Arc, Mutex};
+
+        let call_order = Arc::new(Mutex::new(Vec::new()));
+
+        let root_id = WidgetId::from_u64(100);
+        let child_id = WidgetId::from_u64(200);
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+        app.widget_tree.add_child(root_id, child_id);
+        app.widget_tree.add_child(child_id, target_id);
+        app.widget_tree.set_bounds(root_id, Rect::new(0.0, 0.0, 400.0, 300.0));
+        app.widget_tree.set_bounds(child_id, Rect::new(50.0, 50.0, 300.0, 200.0));
+        app.widget_tree.set_bounds(target_id, Rect::new(100.0, 100.0, 100.0, 50.0));
+
+        // Child returns Handled in bubble → root should not get event
+        let child_phase = Arc::new(Mutex::new(0i32)); // 0=capture, 1=bubble
+        {
+            let order = Arc::clone(&call_order);
+            let phase = Arc::clone(&child_phase);
+            app.register_widget_instance(child_id, move |action, _ctx| {
+                let mut p = phase.lock().unwrap();
+                let current = *p;
+                *p = 1;
+                order.lock().unwrap().push(format!("child:{action}:p{current}"));
+                if current == 0 {
+                    EventResult::Continue(String::new())
+                } else {
+                    EventResult::Handled // bubble phase → stop
+                }
+            });
+        }
+        let root_phase = Arc::new(Mutex::new(0i32));
+        {
+            let order = Arc::clone(&call_order);
+            let phase = Arc::clone(&root_phase);
+            app.register_widget_instance(root_id, move |action, _ctx| {
+                let mut p = phase.lock().unwrap();
+                let current = *p;
+                *p = 1;
+                order.lock().unwrap().push(format!("root:{action}:p{current}"));
+                EventResult::Continue(String::new())
+            });
+        }
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(target_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("target:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+
+        app.register_interaction(root_id, Rect::new(0.0, 0.0, 400.0, 300.0), "click", |_| {});
+        app.register_interaction(child_id, Rect::new(50.0, 50.0, 300.0, 200.0), "click", |_| {});
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(150.0, 125.0));
+
+        let order = call_order.lock().unwrap();
+        // capture: root:p0, child:p0
+        // target: target:click
+        // bubble: child:p1 (Handled) → stops, root never bubbles
+        assert!(
+            order.iter().filter(|s| s.starts_with("root")).count() == 1,
+            "Root should only be called once (capture only). Got: {order:?}"
+        );
+        assert!(
+            order.iter().filter(|s| s.starts_with("child")).count() == 2,
+            "Child should be called twice (capture + bubble). Got: {order:?}"
+        );
+    }
+
+    /// Prevented 阻止默认行为但不停止冒泡。
+    #[test]
+    fn prevented_continues_bubble_but_skips_default() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let old_cb_called = Arc::new(AtomicBool::new(false));
+        let old_cb_called_clone = Arc::clone(&old_cb_called);
+
+        let root_id = WidgetId::from_u64(100);
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+        app.widget_tree.add_child(root_id, target_id);
+        app.widget_tree.set_bounds(root_id, Rect::new(0.0, 0.0, 400.0, 300.0));
+        app.widget_tree.set_bounds(target_id, Rect::new(100.0, 100.0, 100.0, 50.0));
+
+        // Root handler in bubble should still run
+        let root_called = Arc::new(AtomicBool::new(false));
+        let root_called_clone = Arc::clone(&root_called);
+
+        app.register_widget_instance(root_id, move |_action, _ctx| {
+            root_called_clone.store(true, Ordering::SeqCst);
+            EventResult::Continue(String::new())
+        });
+
+        // Target returns Prevented
+        app.register_widget_instance(target_id, move |_action, _ctx| {
+            EventResult::Prevented
+        });
+
+        // Old callback should NOT be called (Prevented blocks default)
+        app.register_interaction(root_id, Rect::new(0.0, 0.0, 400.0, 300.0), "click", |_| {});
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", move |_| {
+            old_cb_called_clone.store(true, Ordering::SeqCst);
+        });
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(150.0, 125.0));
+
+        assert!(
+            root_called.load(Ordering::SeqCst),
+            "Bubble phase root handler should still be called after Prevented"
+        );
+        assert!(
+            !old_cb_called.load(Ordering::SeqCst),
+            "Old callback should NOT be called when Prevented"
+        );
+    }
+
+    /// 无 handler 的祖先不影响传播链。
+    #[test]
+    fn ancestors_without_handlers_do_not_affect_propagation() {
+        use std::sync::{Arc, Mutex};
+
+        let call_order = Arc::new(Mutex::new(Vec::new()));
+
+        let root_id = WidgetId::from_u64(100);
+        let mid_id = WidgetId::from_u64(200);   // no handler
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+        app.widget_tree.add_child(root_id, mid_id);
+        app.widget_tree.add_child(mid_id, target_id);
+        app.widget_tree.set_bounds(root_id, Rect::new(0.0, 0.0, 400.0, 300.0));
+        app.widget_tree.set_bounds(mid_id, Rect::new(50.0, 50.0, 300.0, 200.0));
+        app.widget_tree.set_bounds(target_id, Rect::new(100.0, 100.0, 100.0, 50.0));
+
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(root_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("root:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+        // mid_id: NO handler registered
+        {
+            let order = Arc::clone(&call_order);
+            app.register_widget_instance(target_id, move |action, _ctx| {
+                order.lock().unwrap().push(format!("target:{action}"));
+                EventResult::Continue(String::new())
+            });
+        }
+
+        app.register_interaction(root_id, Rect::new(0.0, 0.0, 400.0, 300.0), "click", |_| {});
+        app.register_interaction(mid_id, Rect::new(50.0, 50.0, 300.0, 200.0), "click", |_| {});
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        handler.handle_click(Point::new(150.0, 125.0));
+
+        let order = call_order.lock().unwrap();
+        assert_eq!(
+            *order,
+            vec![
+                "root:click".to_string(),   // capture
+                "target:click".to_string(), // target
+                "root:click".to_string(),   // bubble (mid skipped)
+            ],
+            "Mid without handler should be skipped. Got: {order:?}"
+        );
+    }
+
+    /// 空路径（widget 不在树中）不 panic。
+    #[test]
+    fn empty_path_no_panic() {
+        let target_id = WidgetId::from_u64(300);
+
+        let mut app = App::new(AppConfig::default());
+        // Widget NOT added to widget_tree — path will be empty
+        app.register_interaction(target_id, Rect::new(100.0, 100.0, 100.0, 50.0), "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        // Should not panic even without tree structure
+        handler.handle_click(Point::new(150.0, 125.0));
+        assert_eq!(handler.app.event_count(), 1, "Event should still be recorded");
+    }
 }
