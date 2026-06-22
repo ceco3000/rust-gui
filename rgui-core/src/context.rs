@@ -3,7 +3,7 @@
 //! 定义源自 D0 §5.5。各 Context 提供 WidgetSpec 方法所需的
 //! 只读环境信息或可变操作句柄。
 
-use crate::geometry::{Rect, Size};
+use crate::geometry::{Point, Rect, Size};
 use crate::id::WidgetId;
 use crate::locale::Locale;
 use crate::view::Color;
@@ -60,6 +60,12 @@ pub struct UpdateContext {
     /// 由框架根据 `MouseEnter`/`MouseLeave` 事件维护。
     /// 组件在 `update()` 中可查询当前悬停状态。
     pub hover: Option<WidgetId>,
+    /// 当前事件对应的窗口逻辑坐标。
+    pub cursor_window_position: Option<Point>,
+    /// 当前事件对应的接收者局部逻辑坐标。
+    pub cursor_local_position: Option<Point>,
+    /// 当前事件保留的原始平台窗口坐标或自动化原始注入点。
+    pub cursor_platform_position: Option<Point>,
 }
 
 impl UpdateContext {
@@ -69,13 +75,22 @@ impl UpdateContext {
         Self {
             focus: None,
             hover: None,
+            cursor_window_position: None,
+            cursor_local_position: None,
+            cursor_platform_position: None,
         }
     }
 
     /// 创建带焦点和悬停信息的 UpdateContext。
     #[must_use]
     pub fn with_focus_and_hover(focus: Option<WidgetId>, hover: Option<WidgetId>) -> Self {
-        Self { focus, hover }
+        Self {
+            focus,
+            hover,
+            cursor_window_position: None,
+            cursor_local_position: None,
+            cursor_platform_position: None,
+        }
     }
 }
 
@@ -402,6 +417,14 @@ mod tests {
     fn update_context_default_hover_is_none() {
         let ctx = UpdateContext::default();
         assert_eq!(ctx.hover, None);
+    }
+
+    #[test]
+    fn update_context_default_cursor_positions_are_none() {
+        let ctx = UpdateContext::default();
+        assert_eq!(ctx.cursor_window_position, None);
+        assert_eq!(ctx.cursor_local_position, None);
+        assert_eq!(ctx.cursor_platform_position, None);
     }
 
     #[test]

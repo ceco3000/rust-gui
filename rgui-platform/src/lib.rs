@@ -12,7 +12,11 @@ pub mod widget_tree;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod clipboard;
 
-pub use event::{Event, EventSender, Key, Modifiers, MouseButton};
+pub use event::{
+    CoordinateNormalization, Event, EventSender, Key, Modifiers, MouseButton, MouseEventCoords,
+    MouseInputOrigin, NormalizedWindowPoint, logical_window_size_from_physical_size,
+    normalize_platform_window_point,
+};
 pub use focus::FocusManager;
 pub use router::EventRouter;
 pub use widget_tree::WidgetTree;

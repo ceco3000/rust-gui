@@ -9,11 +9,15 @@ use rgui_core::traits::AppMessage;
 use rgui_core::traits::EventResult;
 #[cfg(feature = "devtools")]
 use rgui_core::widget_id_map::WidgetIdBimap;
-use rgui_platform::event::{Event, Modifiers, MouseButton};
+use rgui_platform::event::{
+    Event, Modifiers, MouseButton, MouseEventCoords, MouseInputOrigin,
+    logical_window_size_from_physical_size, normalize_platform_window_point,
+};
 use rgui_platform::focus::FocusManager;
 use rgui_platform::widget_tree::WidgetTree;
 use rgui_render::{
     RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
+    compute_view_layout,
 };
 #[cfg(feature = "devtools")]
 use rgui_script::PropRegistry;
@@ -39,6 +43,88 @@ pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 /// 接收动作名称和 UpdateContext，返回 EventResult 控制事件传播。
 pub type WidgetUpdateHandler =
     Box<dyn FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CoordinateTransformStep {
+    Translate { offset: Point },
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct CoordinateTransformChain {
+    steps: Vec<CoordinateTransformStep>,
+}
+
+impl CoordinateTransformChain {
+    #[must_use]
+    pub(crate) fn translated(&self, offset: Point) -> Self {
+        let mut next = self.clone();
+        next.steps
+            .push(CoordinateTransformStep::Translate { offset });
+        next
+    }
+
+    #[must_use]
+    fn window_to_local(&self, point: Point) -> Point {
+        self.steps.iter().fold(point, |current, step| match step {
+            CoordinateTransformStep::Translate { offset } => {
+                Point::new(current.x - offset.x, current.y - offset.y)
+            },
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct InteractionRegion {
+    candidate_rect: Rect,
+    window_to_local: CoordinateTransformChain,
+}
+
+impl InteractionRegion {
+    #[must_use]
+    fn from_bounds(bounds: Rect) -> Self {
+        Self {
+            candidate_rect: bounds,
+            window_to_local: CoordinateTransformChain::default().translated(bounds.origin),
+        }
+    }
+
+    #[must_use]
+    fn resolve(&self, widget_id: WidgetId, position: Point) -> Option<ResolvedHitTest> {
+        if !self.candidate_rect.contains(position) {
+            return None;
+        }
+        Some(ResolvedHitTest {
+            widget_id,
+            candidate_rect: self.candidate_rect,
+            local_logical: self.window_to_local.window_to_local(position),
+            window_to_local: self.window_to_local.clone(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct ResolvedHitTest {
+    widget_id: WidgetId,
+    candidate_rect: Rect,
+    local_logical: Point,
+    window_to_local: CoordinateTransformChain,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DragLifecycleEvent {
+    Enter,
+    Over,
+    Drop,
+}
+
+impl ResolvedHitTest {
+    #[must_use]
+    fn from_absolute_bounds(widget_id: WidgetId, bounds: Rect, position: Point) -> Self {
+        InteractionRegion::from_bounds(bounds)
+            .resolve(widget_id, position)
+            .expect("bounds contains(position) should hold before resolving hit test")
+    }
+}
 
 /// 视图场景构建回调类型。
 ///
@@ -138,6 +224,8 @@ pub struct App {
     /// 交互区域边界（仅用于 fallback 命中测试，current_view 未设置时使用）。
     /// 生产路径中由 load_rgui 提供的 current_view + current_layout 替代。
     interaction_bounds: FxHashMap<WidgetId, Rect>,
+    /// 交互区域的候选判定与局部坐标恢复信息。
+    interaction_regions: FxHashMap<WidgetId, InteractionRegion>,
     /// Widget 实例更新处理器（WidgetSpec 路径）。
     /// 如果存在，handle_click 优先通过此处理器调用 update()，再根据 EventResult 决定是否回调旧路径。
     widget_instances: FxHashMap<WidgetId, WidgetUpdateHandler>,
@@ -337,7 +425,7 @@ pub fn run_simple_app<M: AppMessage + 'static>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use rgui_core::geometry::Size;
     use rgui_devtools::rgui_parser::parse_rgui_file;
-    use rgui_render::{build_scene_from_view, compute_view_layout};
+    use rgui_render::build_scene_from_view;
 
     use crate::interactive::init_widget_instances;
     use crate::paint_factory::default_paint_fn_with_state;
@@ -427,6 +515,288 @@ fn sync_store_to_props<M: AppMessage>(
     }
 }
 
+/// 交互自动化 Harness。
+///
+/// 用于在不启动真实窗口的情况下：
+/// - 从 `.rgui` 构建示例视图和布局
+/// - 注入程序化 hover / click
+/// - 读取命中结果与组件持久状态
+///
+/// 主要服务于示例与回归测试中的 HiDPI 命中验证。
+#[cfg(feature = "devtools")]
+pub struct InteractionAutomationHarness<M: AppMessage + Clone> {
+    handler: AppHandler,
+    template: rgui_core::view::WidgetView<M>,
+    id_map: WidgetIdBimap,
+    logical_window_size: Size,
+}
+
+#[cfg(feature = "devtools")]
+impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
+    /// 从 `AppConfig.rgui_path` 创建自动化 Harness。
+    pub fn from_config(config: AppConfig) -> Result<Self, Box<dyn std::error::Error>> {
+        use rgui_devtools::rgui_parser::{collect_widget_ids, parse_rgui_file};
+
+        let rgui_path = config.rgui_path.clone().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, ".rgui 路径未设置")
+        })?;
+        let rhai_paths = config.rhai_paths.clone();
+        let logical_window_size = config.window_size;
+
+        let mut view: rgui_core::view::WidgetView<M> = parse_rgui_file(&rgui_path)?;
+        let initial_layout =
+            rgui_render::scene_build::compute_view_layout(&mut view, logical_window_size, None);
+        let id_map = collect_widget_ids(&view);
+
+        let mut app = App::new(config);
+        crate::interactive::init_widget_instances(&mut app, &view, &initial_layout);
+        if !rhai_paths.is_empty() {
+            let rhai_refs: Vec<&std::path::Path> = rhai_paths.iter().map(|p| p.as_path()).collect();
+            app.load_rhai_scripts(&rhai_refs)?;
+        }
+
+        *app.current_view.lock().unwrap() = Some(view.to_noop_view());
+        *app.current_layout.lock().unwrap() = Some(initial_layout);
+
+        Ok(Self {
+            handler: AppHandler::new(app),
+            template: view,
+            id_map,
+            logical_window_size,
+        })
+    }
+
+    /// 更新当前缩放因子。
+    pub fn set_scale_factor(&mut self, scale_factor: f64) {
+        self.handler.sync_scale_factor(scale_factor);
+    }
+
+    /// 返回当前缩放因子。
+    #[must_use]
+    pub fn scale_factor(&self) -> f64 {
+        self.handler.app.scale_factor()
+    }
+
+    /// 通过 `.rgui id` 查询运行时 `WidgetId`。
+    #[must_use]
+    pub fn widget_id(&self, name: &str) -> Option<WidgetId> {
+        self.id_map.get_id(name)
+    }
+
+    /// 通过 `WidgetId` 反查 `.rgui id`。
+    #[must_use]
+    pub fn widget_name(&self, widget_id: WidgetId) -> Option<&str> {
+        self.id_map.get_name(widget_id)
+    }
+
+    /// 返回 widget 的当前逻辑像素边界。
+    #[must_use]
+    pub fn widget_rect(&self, widget_id: WidgetId) -> Option<Rect> {
+        let layout_guard = self.handler.app.current_layout.lock().unwrap();
+        let layout = layout_guard.as_ref()?;
+        let cached = layout.get_layout(widget_id)?;
+        let abs_pos = layout.absolute_position(widget_id)?;
+        Some(Rect::new(
+            abs_pos.x,
+            abs_pos.y,
+            cached.result.size.width,
+            cached.result.size.height,
+        ))
+    }
+
+    /// 对当前视图执行逻辑像素命中测试。
+    #[must_use]
+    pub fn hit_test_logical(&self, position: Point) -> Option<WidgetId> {
+        self.handler.find_widget_at_point(position)
+    }
+
+    /// 注入逻辑像素 hover。
+    pub fn inject_hover_logical(&mut self, position: Point) -> Option<WidgetId> {
+        self.handler.sync_pointer_from_logical_injection(position);
+        self.handler.update_hover();
+        self.handler.last_hover
+    }
+
+    /// 注入平台原始窗口坐标 hover。
+    ///
+    /// 参数语义与真实 `WindowEvent::CursorMoved.position` 保持一致：
+    /// - macOS：原始值已是窗口逻辑坐标
+    /// - 其他平台：原始值通常需要在平台边界除以 `scale_factor`
+    pub fn inject_hover_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .sync_pointer_from_physical_injection(raw_window_position);
+        self.handler.update_hover();
+        self.handler.last_hover
+    }
+
+    /// 兼容旧命名：注入“platform raw window position” hover。
+    pub fn inject_hover_physical(&mut self, physical: Point) -> Option<WidgetId> {
+        self.inject_hover_platform_window_raw(physical)
+    }
+
+    /// 注入逻辑像素点击。
+    pub fn inject_click_logical(&mut self, position: Point) -> Option<WidgetId> {
+        self.inject_hover_logical(position);
+        let hit = self.handler.find_widget_at_point(position);
+        self.handler.handle_click(position);
+        self.rebuild_from_store();
+        hit
+    }
+
+    /// 注入平台原始窗口坐标点击。
+    ///
+    /// 参数语义与真实 `WindowEvent::CursorMoved.position` / 缓存点击位置一致。
+    pub fn inject_click_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.inject_hover_platform_window_raw(raw_window_position);
+        let hit = self
+            .handler
+            .find_widget_at_point(self.handler.mouse_window_position);
+        self.handler
+            .handle_click(self.handler.mouse_window_position);
+        self.rebuild_from_store();
+        hit
+    }
+
+    /// 兼容旧命名：注入“platform raw window position”点击。
+    pub fn inject_click_physical(&mut self, physical: Point) -> Option<WidgetId> {
+        self.inject_click_platform_window_raw(physical)
+    }
+
+    /// 回放真实窗口 `CursorMoved` 事件。
+    ///
+    /// 该入口与运行时 `window_event()` 的坐标语义保持一致：
+    /// 原始平台窗口坐标先在平台边界归一化，再记录 `MouseMove` 事件。
+    pub fn replay_cursor_moved_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .replay_cursor_moved_from_platform_window_event(raw_window_position)
+    }
+
+    /// 回放真实窗口左键点击。
+    ///
+    /// 行为等价于先回放 `CursorMoved`，再回放一次基于缓存位置的左键按下。
+    pub fn replay_left_click_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        let hit = self
+            .handler
+            .replay_left_click_from_platform_window_event(raw_window_position);
+        self.rebuild_from_store();
+        hit
+    }
+
+    /// 注入逻辑像素 DragEnter。
+    pub fn inject_drag_enter_logical(&mut self, position: Point) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_logical(position, DragLifecycleEvent::Enter)
+    }
+
+    /// 注入逻辑像素 DragOver。
+    pub fn inject_drag_over_logical(&mut self, position: Point) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_logical(position, DragLifecycleEvent::Over)
+    }
+
+    /// 注入逻辑像素 Drop。
+    pub fn inject_drop_logical(&mut self, position: Point) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_logical(position, DragLifecycleEvent::Drop)
+    }
+
+    /// 注入平台原始窗口坐标 DragEnter。
+    pub fn inject_drag_enter_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Enter)
+    }
+
+    /// 注入平台原始窗口坐标 DragOver。
+    pub fn inject_drag_over_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Over)
+    }
+
+    /// 注入平台原始窗口坐标 Drop。
+    pub fn inject_drop_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Drop)
+    }
+
+    /// 回放真实窗口 DragEnter。
+    pub fn replay_drag_enter_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Enter)
+    }
+
+    /// 回放真实窗口 DragOver。
+    pub fn replay_drag_over_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Over)
+    }
+
+    /// 回放真实窗口 Drop。
+    pub fn replay_drop_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.handler
+            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Drop)
+    }
+
+    /// 读取组件持久状态。
+    #[must_use]
+    pub fn widget_state<T: Send + Clone + 'static>(&self, widget_id: WidgetId) -> Option<T> {
+        self.handler.app.widget_state_store().read(widget_id)
+    }
+
+    /// 返回当前事件列表。
+    #[must_use]
+    pub fn events(&self) -> &[Event] {
+        self.handler.app.events()
+    }
+
+    /// 清空当前事件列表。
+    pub fn clear_events(&mut self) {
+        self.handler.app.clear_events();
+    }
+
+    fn rebuild_from_store(&mut self) {
+        let mut view = self.template.clone();
+        let store = self.handler.app.widget_state_store().clone();
+        sync_store_to_props(&mut view, &store);
+        let layout = rgui_render::scene_build::compute_view_layout(
+            &mut view,
+            self.logical_window_size,
+            None,
+        );
+        *self.handler.app.current_view.lock().unwrap() = Some(view.to_noop_view());
+        *self.handler.app.current_layout.lock().unwrap() = Some(layout);
+    }
+}
+
 impl App {
     /// 创建应用实例。
     #[must_use]
@@ -439,6 +809,7 @@ impl App {
             focus: FocusManager::new(),
             interactions: FxHashMap::new(),
             interaction_bounds: FxHashMap::new(),
+            interaction_regions: FxHashMap::new(),
             widget_instances: FxHashMap::new(),
             overlay_ids: std::collections::HashSet::new(),
             view_scene_builder: None,
@@ -446,13 +817,13 @@ impl App {
             prop_registry: PropRegistry::new(),
             #[cfg(feature = "devtools")]
             id_map: Arc::new(std::sync::Mutex::new(WidgetIdBimap::new())),
-            scale_factor: 1.0,
             #[cfg(feature = "devtools")]
             command_registry: None,
             #[cfg(feature = "devtools")]
             rhai_hot_reload: None,
             state_store: Arc::new(RwLock::new(rgui_state::StateStore::new())),
             needs_redraw: false,
+            scale_factor: 1.0,
             widget_state_store: crate::widget_state::WidgetStateStore::new(),
             current_layout: Arc::new(std::sync::Mutex::new(None)),
             current_view: Arc::new(std::sync::Mutex::new(None)),
@@ -522,8 +893,33 @@ impl App {
         action: impl Into<String>,
         cb: impl FnMut(&str) + Send + 'static,
     ) {
+        self.register_interaction_with_chain(
+            id,
+            bounds,
+            CoordinateTransformChain::default().translated(bounds.origin),
+            action,
+            cb,
+        );
+    }
+
+    pub(crate) fn register_interaction_with_chain(
+        &mut self,
+        id: WidgetId,
+        bounds: Rect,
+        window_to_local: CoordinateTransformChain,
+        action: impl Into<String>,
+        cb: impl FnMut(&str) + Send + 'static,
+    ) {
+        let action = action.into();
         self.interaction_bounds.insert(id, bounds);
-        self.interactions.insert(id, (action.into(), Box::new(cb)));
+        self.interaction_regions.insert(
+            id,
+            InteractionRegion {
+                candidate_rect: bounds,
+                window_to_local,
+            },
+        );
+        self.interactions.insert(id, (action, Box::new(cb)));
         // P05a: 同步填充 WidgetTree，支持 DFS 树遍历命中测试
         const SYNTHETIC_ROOT: WidgetId = WidgetId::from_u64(0);
         if self.widget_tree.is_empty() {
@@ -532,6 +928,11 @@ impl App {
         } else if !self.widget_tree.contains(id) {
             self.widget_tree.add_child(SYNTHETIC_ROOT, id);
         }
+        let root_bounds = self
+            .widget_tree
+            .get_bounds(SYNTHETIC_ROOT)
+            .map_or(bounds, |existing| existing.union(bounds));
+        self.widget_tree.set_bounds(SYNTHETIC_ROOT, root_bounds);
         self.widget_tree.set_bounds(id, bounds);
     }
 
@@ -573,7 +974,7 @@ impl App {
 
     /// 设置视图场景构建回调（html! 声明式路径）。
     ///
-    /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（像素），
+    /// 回调在每帧渲染前调用，接收帧计数、窗口宽度和高度（逻辑像素），
     /// 直接返回 `SceneGraph`。
     ///
     /// 与 `build_scene_from_view` 配合使用，实现 WidgetView → SceneGraph 的端到端管线。
@@ -665,7 +1066,7 @@ impl App {
         );
         let mut layout_engine = {
             let mut view = current_view.clone();
-            rgui_render::compute_view_layout(&mut view, available, None)
+            compute_view_layout(&mut view, available, None)
         };
 
         // RS07: 收集声明式 state 绑定
@@ -744,8 +1145,7 @@ impl App {
                     inject_props_from_registry(&mut view, &prop_registry.drain());
                     // RS07: 从 StateStore 注入 state 绑定 prop
                     inject_state_bindings(&mut view, &id_map, &state_store);
-                    let engine =
-                        rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
+                    let engine = compute_view_layout(&mut view, available, Some(text_renderer));
                     layout_engine = engine;
                     current_view = view;
                 },
@@ -763,8 +1163,7 @@ impl App {
                     }
                     // prop 变更后需重算布局
                     let available = Size::new(f64::from(width), f64::from(height));
-                    layout_engine =
-                        rgui_render::compute_view_layout(&mut view, available, Some(text_renderer));
+                    layout_engine = compute_view_layout(&mut view, available, Some(text_renderer));
                     current_view = view;
                 },
                 Err(e) => {
@@ -959,12 +1358,17 @@ struct AppHandler {
     /// 在每帧渲染时传递给 scene_builder，启用真正的字形渲染。
     text_renderer: TextRenderer,
     frame_count: u64,
-    mouse_pos: Point,
+    mouse_window_position: Point,
+    /// 最近一次原始平台窗口坐标。
+    ///
+    /// 仅在平台边界或物理注入边界保留，用于 `ScaleFactorChanged` 后重算窗口逻辑坐标。
+    last_raw_window_position: Option<Point>,
+    /// 最近一次鼠标输入来源。
+    ///
+    /// 高层事件记录使用它保留“平台原始坐标 / 自动化注入来源”信息。
+    last_mouse_origin: Option<MouseInputOrigin>,
     /// 上一帧的悬停 widget ID（P04e：用于计算 MouseEnter/MouseLeave 变迁）。
     last_hover: Option<WidgetId>,
-    /// DPI 缩放因子（逻辑像素 → 物理像素比例）。
-    /// 从 winit `window.scale_factor()` 读取，默认 1.0。
-    scale_factor: f64,
     /// 当前窗口宽度（物理像素），用于构造 RenderParams。
     width: u32,
     /// 当前窗口高度（物理像素），用于构造 RenderParams。
@@ -1005,9 +1409,10 @@ impl AppHandler {
             backend_fallback_pending: false,
             text_renderer: TextRenderer::new(rgui_render::TextureId(0)),
             frame_count: 0,
-            mouse_pos: Point::ZERO,
+            mouse_window_position: Point::ZERO,
+            last_raw_window_position: None,
+            last_mouse_origin: None,
             last_hover: None,
-            scale_factor: 1.0,
             width: 0,
             height: 0,
             view_scene_builder,
@@ -1037,26 +1442,41 @@ impl AppHandler {
     ///
     /// 注意：不再使用面积仲裁（取消了 min_by 面积比较）。
     /// 宽扁和窄高 widget 仅通过边界包含判断。
-    fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
+    fn hit_test_result_at_point(&self, position: Point) -> Option<ResolvedHitTest> {
         // 主路径：DFS 树遍历命中测试（生产环境，current_view + current_layout 均设置）
         // 锁在嵌套作用域结束时立即释放，避免阻塞渲染线程
         let tree_hit = {
             let layout_guard = self.app.current_layout.lock().unwrap();
             let view_guard = self.app.current_view.lock().unwrap();
             match (view_guard.as_ref(), layout_guard.as_ref()) {
-                (Some(view), Some(layout)) => Self::hit_test_tree(view, position, layout),
+                (Some(view), Some(layout)) => Self::hit_test_tree(
+                    view,
+                    position,
+                    position,
+                    &CoordinateTransformChain::default(),
+                    layout,
+                ),
                 _ => None,
             }
         };
-        if let Some(hit) = tree_hit {
-            return Some(hit);
+        if tree_hit.is_some() {
+            return tree_hit;
         }
 
         // 回退路径 A：WidgetTree DFS 命中测试（P05a）
         // register_interaction 已自动填充 WidgetTree 的 bounds + 父子关系
         if !self.app.widget_tree.is_empty() {
             if let Some(hit) = self.app.widget_tree.hit_test(position) {
-                return Some(hit);
+                if let Some(region) = self.app.interaction_regions.get(&hit) {
+                    if let Some(resolved) = region.resolve(hit, position) {
+                        return Some(resolved);
+                    }
+                }
+                if let Some(bounds) = self.app.interaction_bounds.get(&hit) {
+                    return Some(ResolvedHitTest::from_absolute_bounds(
+                        hit, *bounds, position,
+                    ));
+                }
             }
         }
         // 回退路径 B：LayoutEngine 精确坐标查找（向后兼容旧测试）
@@ -1088,16 +1508,24 @@ impl AppHandler {
                         }
                     })
                 {
-                    return Some(hit);
+                    return Some(ResolvedHitTest::from_absolute_bounds(
+                        hit,
+                        *self.app.interaction_bounds.get(&hit).unwrap(),
+                        position,
+                    ));
                 }
             }
         }
         // 完全回退：interaction_bounds 平面查找
         self.app
-            .interaction_bounds
+            .interaction_regions
             .iter()
-            .find(|(_, bounds)| bounds.contains(position))
-            .map(|(&id, _)| id)
+            .find_map(|(&id, region)| region.resolve(id, position))
+    }
+
+    fn find_widget_at_point(&self, position: Point) -> Option<WidgetId> {
+        self.hit_test_result_at_point(position)
+            .map(|hit| hit.widget_id)
     }
 
     /// P05a: DFS 树遍历命中测试（D5 §4 算法）。
@@ -1112,24 +1540,31 @@ impl AppHandler {
     /// 4. 子节点命中则返回子节点，否则返回当前节点
     fn hit_test_tree(
         view: &rgui_core::view::WidgetView<rgui_core::message::NoopMsg>,
-        point: Point,
+        window_point: Point,
+        parent_local_point: Point,
+        parent_chain: &CoordinateTransformChain,
         layout: &rgui_layout::LayoutEngine,
-    ) -> Option<WidgetId> {
+    ) -> Option<ResolvedHitTest> {
         use rgui_core::view::PropValue;
 
         // 未分配 ID 的节点（如匿名容器）不参与命中，但子节点仍可命中
         if let Some(widget_id) = view.id {
             let cached = layout.get_layout(widget_id)?;
-            let abs_pos = layout.absolute_position(widget_id)?;
-            let rect = Rect::new(
-                abs_pos.x,
-                abs_pos.y,
+            let offset = cached.result.position;
+            let local_point = Point::new(
+                parent_local_point.x - offset.x,
+                parent_local_point.y - offset.y,
+            );
+            let local_rect = Rect::new(
+                0.0,
+                0.0,
                 cached.result.size.width,
                 cached.result.size.height,
             );
-            if !rect.contains(point) {
+            if !local_rect.contains(local_point) {
                 return None;
             }
+            let widget_chain = parent_chain.translated(offset);
             // 按 z-index 降序排列子节点
             // - 有显式 z-index prop 的 widget：用其值（通常 > 0，如弹层）
             // - 无 z-index 的 widget：用 child 索引作为默认值（后添加→更大→上层）
@@ -1153,11 +1588,27 @@ impl AppHandler {
             indexed.sort_by_key(|(z, _)| std::cmp::Reverse(*z));
 
             for (_, child) in &indexed {
-                if let Some(hit) = Self::hit_test_tree(child, point, layout) {
+                if let Some(hit) =
+                    Self::hit_test_tree(child, window_point, local_point, &widget_chain, layout)
+                {
                     return Some(hit);
                 }
             }
-            return Some(widget_id);
+            let candidate_origin = Point::new(
+                window_point.x - local_point.x,
+                window_point.y - local_point.y,
+            );
+            return Some(ResolvedHitTest {
+                widget_id,
+                candidate_rect: Rect::new(
+                    candidate_origin.x,
+                    candidate_origin.y,
+                    cached.result.size.width,
+                    cached.result.size.height,
+                ),
+                local_logical: local_point,
+                window_to_local: widget_chain,
+            });
         }
         // 匿名节点（无 WidgetId）：递归检查子节点（同样按 z-index 排序）
         let mut indexed: Vec<(
@@ -1178,7 +1629,13 @@ impl AppHandler {
         indexed.sort_by_key(|(z, _)| std::cmp::Reverse(*z));
 
         for (_, child) in &indexed {
-            if let Some(hit) = Self::hit_test_tree(child, point, layout) {
+            if let Some(hit) = Self::hit_test_tree(
+                child,
+                window_point,
+                parent_local_point,
+                parent_chain,
+                layout,
+            ) {
                 return Some(hit);
             }
         }
@@ -1188,12 +1645,28 @@ impl AppHandler {
     fn handle_click(&mut self, position: Point) {
         // DFS 树遍历命中测试（基于 WidgetView 树 + LayoutEngine 绝对坐标）
         // D5 §3: Qt Signal/Slot 显式连接模型——点击直接路由到目标 widget。
-        let hit_id = self.find_widget_at_point(position);
+        let hit_test = self.hit_test_result_at_point(position);
+        let hit_id = hit_test.as_ref().map(|hit| hit.widget_id);
+        let mouse_coords =
+            self.mouse_event_coords_at(position, hit_test.as_ref(), self.current_mouse_origin());
 
         if let Some(hit_id) = hit_id {
             let mut update_ctx = UpdateContext::new();
             // P04e: 同步当前悬停状态到 UpdateContext
             update_ctx.hover = self.last_hover;
+            update_ctx.cursor_window_position = Some(mouse_coords.window_logical);
+            update_ctx.cursor_local_position = mouse_coords.local_logical;
+            update_ctx.cursor_platform_position = match mouse_coords.origin {
+                MouseInputOrigin::PlatformWindowEvent {
+                    raw_window_position,
+                    ..
+                }
+                | MouseInputOrigin::PhysicalInjection {
+                    raw_window_position,
+                    ..
+                } => Some(raw_window_position),
+                MouseInputOrigin::LogicalInjection => None,
+            };
             let mut skip_default = false;
 
             // ─── 目标阶段：WidgetSpec 实例处理器 ───
@@ -1215,7 +1688,7 @@ impl AppHandler {
                         // RS06 回归修复：WidgetSpec handler 可能改变了外部状态
                         self.app.request_redraw();
                         self.app.events.push(Event::MouseDown {
-                            position,
+                            coords: mouse_coords,
                             button: MouseButton::Left,
                             modifiers: Modifiers::new(),
                         });
@@ -1247,7 +1720,7 @@ impl AppHandler {
                             // RS06 回归修复：Rhai 函数可能改变了外部状态
                             self.app.request_redraw();
                             self.app.events.push(Event::MouseDown {
-                                position,
+                                coords: mouse_coords,
                                 button: MouseButton::Left,
                                 modifiers: Modifiers::new(),
                             });
@@ -1284,7 +1757,7 @@ impl AppHandler {
                     self.app.request_redraw();
                     // 记录事件
                     self.app.events.push(Event::MouseDown {
-                        position,
+                        coords: mouse_coords,
                         button: MouseButton::Left,
                         modifiers: Modifiers::new(),
                     });
@@ -1310,7 +1783,7 @@ impl AppHandler {
                 }
                 // 记录点击事件
                 self.app.events.push(Event::MouseDown {
-                    position,
+                    coords: mouse_coords,
                     button: MouseButton::Left,
                     modifiers: Modifiers::new(),
                 });
@@ -1323,7 +1796,9 @@ impl AppHandler {
     /// D5 §3.1 悬停事件算法：每帧比较鼠标位置，自动计算 enter/leave 关系，
     /// 直接发送到目标 widget（不传播）。如有变更，向事件队列 push MouseEnter/MouseLeave。
     fn update_hover(&mut self) {
-        let current_hover = self.find_widget_at_point(self.mouse_pos);
+        let current_hover = self
+            .hit_test_result_at_point(self.mouse_window_position)
+            .map(|hit| hit.widget_id);
         if current_hover != self.last_hover {
             if let Some(old_id) = self.last_hover {
                 self.app
@@ -1339,6 +1814,49 @@ impl AppHandler {
         }
     }
 
+    fn current_mouse_origin(&self) -> MouseInputOrigin {
+        self.last_mouse_origin
+            .unwrap_or(MouseInputOrigin::LogicalInjection)
+    }
+
+    fn mouse_event_coords_at(
+        &self,
+        window_logical: Point,
+        hit_test: Option<&ResolvedHitTest>,
+        origin: MouseInputOrigin,
+    ) -> MouseEventCoords {
+        let mut coords = MouseEventCoords::new(window_logical, origin);
+        if let Some(hit_test) = hit_test {
+            debug_assert_eq!(
+                hit_test.window_to_local.window_to_local(window_logical),
+                hit_test.local_logical,
+                "命中测试链路必须可逆恢复接收者局部坐标"
+            );
+            coords = coords.with_local(hit_test.local_logical);
+        }
+        coords
+    }
+
+    fn current_mouse_event_coords(&self, hit_test: Option<&ResolvedHitTest>) -> MouseEventCoords {
+        self.mouse_event_coords_at(
+            self.mouse_window_position,
+            hit_test,
+            self.current_mouse_origin(),
+        )
+    }
+
+    fn emit_drag_lifecycle_event(&mut self, event: DragLifecycleEvent) -> Option<WidgetId> {
+        let target_hit = self.hit_test_result_at_point(self.mouse_window_position);
+        let target_widget = target_hit.as_ref().map(|hit| hit.widget_id);
+        let coords = self.current_mouse_event_coords(target_hit.as_ref());
+        self.app.events.push(match event {
+            DragLifecycleEvent::Enter => Event::DragEnter { coords },
+            DragLifecycleEvent::Over => Event::DragOver { coords },
+            DragLifecycleEvent::Drop => Event::Drop { coords },
+        });
+        target_widget
+    }
+
     /// Skia fallback 切换（D3 §12.5）。
     ///
     /// 当 Vello 渲染失败时，在下一帧边界切换到备用后端。
@@ -1348,7 +1866,7 @@ impl AppHandler {
         let params = RenderParams {
             width: self.width.max(1),
             height: self.height.max(1),
-            scale_factor: self.scale_factor,
+            scale_factor: self.app.scale_factor,
             ..Default::default()
         };
         match RenderBackendFactory::create(&params) {
@@ -1380,14 +1898,121 @@ impl AppHandler {
                 .is_none_or(|ctx| !ctx.is_available())
     }
 
+    fn sync_pointer_from_logical_injection(&mut self, window_logical: Point) {
+        self.mouse_window_position = window_logical;
+        self.last_raw_window_position = None;
+        self.last_mouse_origin = Some(MouseInputOrigin::LogicalInjection);
+    }
+
+    fn sync_pointer_from_platform_window_event(&mut self, raw_window_position: Point) {
+        let normalized =
+            normalize_platform_window_point(raw_window_position, self.app.scale_factor);
+        self.mouse_window_position = normalized.window_logical;
+        self.last_raw_window_position = Some(raw_window_position);
+        self.last_mouse_origin = Some(MouseInputOrigin::PlatformWindowEvent {
+            raw_window_position,
+            normalization: normalized.normalization,
+        });
+    }
+
+    fn sync_pointer_from_physical_injection(&mut self, raw_window_position: Point) {
+        let normalized =
+            normalize_platform_window_point(raw_window_position, self.app.scale_factor);
+        self.mouse_window_position = normalized.window_logical;
+        self.last_raw_window_position = Some(raw_window_position);
+        self.last_mouse_origin = Some(MouseInputOrigin::PhysicalInjection {
+            raw_window_position,
+            normalization: normalized.normalization,
+        });
+    }
+
+    fn inject_drag_lifecycle_logical(
+        &mut self,
+        window_logical: Point,
+        event: DragLifecycleEvent,
+    ) -> Option<WidgetId> {
+        self.sync_pointer_from_logical_injection(window_logical);
+        self.update_hover();
+        self.emit_drag_lifecycle_event(event)
+    }
+
+    fn inject_drag_lifecycle_platform_window_raw(
+        &mut self,
+        raw_window_position: Point,
+        event: DragLifecycleEvent,
+    ) -> Option<WidgetId> {
+        self.sync_pointer_from_physical_injection(raw_window_position);
+        self.update_hover();
+        self.emit_drag_lifecycle_event(event)
+    }
+
+    fn sync_scale_factor(&mut self, scale_factor: f64) {
+        self.app.scale_factor = scale_factor;
+        if let Some(raw_window_position) = self.last_raw_window_position {
+            let normalized =
+                normalize_platform_window_point(raw_window_position, self.app.scale_factor);
+            self.mouse_window_position = normalized.window_logical;
+            self.last_mouse_origin = Some(match self.current_mouse_origin() {
+                MouseInputOrigin::PhysicalInjection { .. } => MouseInputOrigin::PhysicalInjection {
+                    raw_window_position,
+                    normalization: normalized.normalization,
+                },
+                _ => MouseInputOrigin::PlatformWindowEvent {
+                    raw_window_position,
+                    normalization: normalized.normalization,
+                },
+            });
+        }
+    }
+
+    fn replay_cursor_moved_from_platform_window_event(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.sync_pointer_from_platform_window_event(raw_window_position);
+        self.update_hover();
+        let target_hit = self.hit_test_result_at_point(self.mouse_window_position);
+        let target_widget = target_hit.as_ref().map(|hit| hit.widget_id);
+        self.app.events.push(Event::MouseMove {
+            coords: self.current_mouse_event_coords(target_hit.as_ref()),
+            delta_window_logical: Point::new(0.0, 0.0),
+            modifiers: Modifiers::new(),
+        });
+        target_widget
+    }
+
+    fn replay_left_click_from_cached_pointer(&mut self) -> Option<WidgetId> {
+        let hit = self.find_widget_at_point(self.mouse_window_position);
+        self.handle_click(self.mouse_window_position);
+        hit
+    }
+
+    fn replay_left_click_from_platform_window_event(
+        &mut self,
+        raw_window_position: Point,
+    ) -> Option<WidgetId> {
+        self.replay_cursor_moved_from_platform_window_event(raw_window_position);
+        self.replay_left_click_from_cached_pointer()
+    }
+
+    fn replay_drag_lifecycle_from_platform_window_event(
+        &mut self,
+        raw_window_position: Point,
+        event: DragLifecycleEvent,
+    ) -> Option<WidgetId> {
+        self.sync_pointer_from_platform_window_event(raw_window_position);
+        self.update_hover();
+        self.emit_drag_lifecycle_event(event)
+    }
+
     fn convert_event(&self, event: &WindowEvent) -> Option<Event> {
         match event {
-            WindowEvent::CursorMoved { position, .. } => Some(Event::MouseMove {
-                position: Point::new(
-                    position.x / self.scale_factor,
-                    position.y / self.scale_factor,
+            WindowEvent::CursorMoved { .. } => Some(Event::MouseMove {
+                coords: self.current_mouse_event_coords(
+                    self.hit_test_result_at_point(self.mouse_window_position)
+                        .as_ref(),
                 ),
-                delta: Point::new(0.0, 0.0),
+                delta_window_logical: Point::new(0.0, 0.0),
                 modifiers: Modifiers::new(),
             }),
             WindowEvent::MouseInput { state, button, .. } => {
@@ -1399,14 +2024,16 @@ impl AppHandler {
                     WinitMouseButton::Forward => MouseButton::Forward,
                     WinitMouseButton::Other(n) => MouseButton::Other((*n) as u8),
                 };
+                let current_target = self.hit_test_result_at_point(self.mouse_window_position);
+                let coords = self.current_mouse_event_coords(current_target.as_ref());
                 Some(match state {
                     ElementState::Pressed => Event::MouseDown {
-                        position: self.mouse_pos,
+                        coords,
                         button: btn,
                         modifiers: Modifiers::new(),
                     },
                     ElementState::Released => Event::MouseUp {
-                        position: self.mouse_pos,
+                        coords,
                         button: btn,
                         modifiers: Modifiers::new(),
                     },
@@ -1434,10 +2061,17 @@ impl AppHandler {
                 })
             },
             WindowEvent::CloseRequested => Some(Event::CloseRequested),
-            WindowEvent::Resized(size) => Some(Event::WindowResized {
-                width: size.width as f64,
-                height: size.height as f64,
-            }),
+            WindowEvent::Resized(size) => {
+                let logical_size = logical_window_size_from_physical_size(
+                    size.width,
+                    size.height,
+                    self.app.scale_factor,
+                );
+                Some(Event::WindowResized {
+                    width: logical_size.width,
+                    height: logical_size.height,
+                })
+            },
             WindowEvent::Focused(f) => {
                 if *f {
                     Some(Event::WindowFocused)
@@ -1550,30 +2184,17 @@ impl ApplicationHandler for AppHandler {
             let size = window.inner_size();
             let w = size.width;
             let h = size.height;
-            self.scale_factor = window.scale_factor();
-            self.app.scale_factor = self.scale_factor;
+            self.sync_scale_factor(window.scale_factor());
             self.window = Some(Arc::clone(&window));
 
             match VelloBackend::new(Arc::clone(&window), w, h) {
                 Ok(ctx) => {
-                    println!("GPU: Vello (GPU) {w}x{h} (scale: {:.2})", self.scale_factor);
                     self.render_ctx = Some(Box::new(ctx));
                     self.width = w;
                     self.height = h;
                 },
                 Err(e) => eprintln!("渲染初始化失败: {e}"),
             }
-
-            println!("rgui 窗口已创建: {}", self.app.config.title);
-            println!(
-                "scale_factor = {:.2}，物理 {}×{} → 逻辑 {:.0}×{:.0}",
-                self.scale_factor,
-                self.width,
-                self.height,
-                self.width as f64 / self.scale_factor,
-                self.height as f64 / self.scale_factor
-            );
-            println!("点击窗口中的按钮区域触发交互...");
         }
     }
 
@@ -1587,12 +2208,12 @@ impl ApplicationHandler for AppHandler {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::CursorMoved { position, .. } => {
-                self.mouse_pos = Point::new(
-                    position.x / self.scale_factor,
-                    position.y / self.scale_factor,
-                );
+                self.sync_pointer_from_platform_window_event(Point::new(position.x, position.y));
                 // P04e: 悬停事件路由——每帧比较鼠标位置，计算 enter/leave 关系
                 self.update_hover();
+                if let Some(rgui_event) = self.convert_event(&event) {
+                    self.app.events.push(rgui_event);
+                }
             },
 
             WindowEvent::MouseInput {
@@ -1600,12 +2221,15 @@ impl ApplicationHandler for AppHandler {
                 button: WinitMouseButton::Left,
                 ..
             } => {
-                self.handle_click(self.mouse_pos);
+                self.handle_click(self.mouse_window_position);
             },
 
             WindowEvent::Resized(size) => {
                 self.width = size.width;
                 self.height = size.height;
+                if let Some(rgui_event) = self.convert_event(&event) {
+                    self.app.events.push(rgui_event);
+                }
             },
 
             WindowEvent::RedrawRequested => {
@@ -1629,8 +2253,8 @@ impl ApplicationHandler for AppHandler {
                 if let Some(ref mut ctx) = self.render_ctx {
                     let frame = self.frame_count;
                     // 使用逻辑像素尺寸供组件 paint/measure，物理像素供 RenderBackend。
-                    let logical_w = (self.width as f64 / self.scale_factor).max(1.0);
-                    let logical_h = (self.height as f64 / self.scale_factor).max(1.0);
+                    let logical_w = (self.width as f64 / self.app.scale_factor).max(1.0);
+                    let logical_h = (self.height as f64 / self.app.scale_factor).max(1.0);
 
                     // RS06: 检查脏集合——无脏 widget 且已有上一帧场景时跳过重建
                     // RS06 回归修复：needs_redraw 为非 StateStore 交互（AtomicBool 等）强制重建
@@ -1684,7 +2308,7 @@ impl ApplicationHandler for AppHandler {
                     let params = RenderParams {
                         width: self.width,
                         height: self.height,
-                        scale_factor: self.scale_factor,
+                        scale_factor: self.app.scale_factor,
                         clear_color: Some(rgui_core::Color::new(
                             14.0 / 255.0,
                             18.0 / 255.0,
@@ -1726,22 +2350,14 @@ impl ApplicationHandler for AppHandler {
                 scale_factor,
                 ref mut inner_size_writer,
             } => {
-                self.scale_factor = scale_factor;
-                self.app.scale_factor = scale_factor;
-                println!(
-                    "[rgui] DPI 变化: scale_factor = {:.2}，物理 {}×{} → 逻辑 {:.0}×{:.0}",
-                    scale_factor,
-                    self.width,
-                    self.height,
-                    self.width as f64 / scale_factor,
-                    self.height as f64 / scale_factor
-                );
+                self.sync_scale_factor(scale_factor);
                 // 更新物理尺寸，winit 在 DPI 变化后返回新的物理尺寸
                 if let Some(window) = &self.window {
                     let new_size = window.inner_size();
                     self.width = new_size.width;
                     self.height = new_size.height;
                 }
+                self.update_hover();
                 // 通知后端 resize（Vello 特定路径）
                 if let Some(ref mut ctx) = self.render_ctx {
                     if let Some(vello) = ctx
@@ -1758,9 +2374,18 @@ impl ApplicationHandler for AppHandler {
                     eprintln!("[rgui] request_inner_size 失败: {e:?}");
                 }
                 // 转发事件给组件层
-                self.app
-                    .events
-                    .push(Event::ScaleFactorChanged { scale_factor });
+                self.app.events.push(Event::ScaleFactorChanged {
+                    scale_factor: self.app.scale_factor,
+                });
+                let logical_size = logical_window_size_from_physical_size(
+                    self.width,
+                    self.height,
+                    self.app.scale_factor,
+                );
+                self.app.events.push(Event::WindowResized {
+                    width: logical_size.width,
+                    height: logical_size.height,
+                });
             },
             _ => {
                 if let Some(rgui_event) = self.convert_event(&event) {
@@ -1774,9 +2399,7 @@ impl ApplicationHandler for AppHandler {
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {}
-    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        println!("rgui 已退出（{} 帧）", self.frame_count);
-    }
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {}
 }
 
 #[cfg(test)]
@@ -1910,6 +2533,39 @@ mod tests {
         handler.height = 600;
         // render_ctx 为 None
         assert!(handler.should_skip_render());
+    }
+
+    #[test]
+    fn resized_event_uses_logical_pixels() {
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let mut handler = AppHandler::new(App::new(config));
+        handler.sync_scale_factor(2.0);
+
+        let event = WindowEvent::Resized(winit::dpi::PhysicalSize::new(800, 600));
+        let converted = handler.convert_event(&event);
+
+        assert_eq!(
+            converted,
+            Some(Event::WindowResized {
+                width: 400.0,
+                height: 300.0
+            })
+        );
+    }
+
+    #[test]
+    fn scale_factor_sync_recomputes_cached_mouse_position() {
+        let config = AppConfig::new().title("Test").window_size(1024.0, 768.0);
+        let mut handler = AppHandler::new(App::new(config));
+        handler.sync_pointer_from_platform_window_event(Point::new(400.0, 200.0));
+
+        handler.sync_scale_factor(2.0);
+
+        assert_eq!(handler.app.scale_factor(), 2.0);
+        #[cfg(target_os = "macos")]
+        assert_eq!(handler.mouse_window_position, Point::new(400.0, 200.0));
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(handler.mouse_window_position, Point::new(200.0, 100.0));
     }
 
     // ========================================================================
@@ -2720,7 +3376,7 @@ mod tests {
 
         let mut handler = AppHandler::new(app);
         // 将鼠标移到 widget 区域内
-        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.mouse_window_position = Point::new(50.0, 30.0);
         handler.update_hover();
 
         // 应产生一个 MouseEnter 事件
@@ -2746,12 +3402,12 @@ mod tests {
 
         let mut handler = AppHandler::new(app);
         // 先移入
-        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.mouse_window_position = Point::new(50.0, 30.0);
         handler.update_hover();
         assert_eq!(handler.app.events.len(), 1);
 
         // 再移出
-        handler.mouse_pos = Point::new(200.0, 200.0);
+        handler.mouse_window_position = Point::new(200.0, 200.0);
         handler.update_hover();
 
         // 应再产生一个 MouseLeave 事件
@@ -2789,13 +3445,13 @@ mod tests {
         let mut handler = AppHandler::new(app);
 
         // 移入 A
-        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.mouse_window_position = Point::new(50.0, 30.0);
         handler.update_hover();
         assert_eq!(handler.app.events.len(), 1);
         assert!(matches!(&handler.app.events[0], Event::MouseEnter { .. }));
 
         // 移入 B
-        handler.mouse_pos = Point::new(200.0, 30.0);
+        handler.mouse_window_position = Point::new(200.0, 30.0);
         handler.update_hover();
 
         // 应产生 MouseLeave(A) + MouseEnter(B)
@@ -2830,12 +3486,12 @@ mod tests {
         let mut handler = AppHandler::new(app);
 
         // 首次移入
-        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.mouse_window_position = Point::new(50.0, 30.0);
         handler.update_hover();
         assert_eq!(handler.app.events.len(), 1);
 
         // 同一区域内移动
-        handler.mouse_pos = Point::new(60.0, 35.0);
+        handler.mouse_window_position = Point::new(60.0, 35.0);
         handler.update_hover();
         assert_eq!(
             handler.app.events.len(),
@@ -2861,18 +3517,25 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         let hover_received = Arc::new(AtomicBool::new(false));
         let hover_received_clone = Arc::clone(&hover_received);
+        let local_received = Arc::new(AtomicBool::new(false));
+        let local_received_clone = Arc::clone(&local_received);
 
         // 注册 widget instance handler，验证收到 hover
         app.register_widget_instance(widget_id, move |_action, ctx| {
             if ctx.hover == Some(widget_id) {
                 hover_received_clone.store(true, Ordering::SeqCst);
             }
+            if ctx.cursor_window_position == Some(Point::new(50.0, 30.0))
+                && ctx.cursor_local_position == Some(Point::new(40.0, 20.0))
+            {
+                local_received_clone.store(true, Ordering::SeqCst);
+            }
             EventResult::Handled
         });
 
         let mut handler = AppHandler::new(app);
         // 先设置悬停
-        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.sync_pointer_from_logical_injection(Point::new(50.0, 30.0));
         handler.update_hover();
 
         // 点击
@@ -2881,6 +3544,229 @@ mod tests {
         assert!(
             hover_received.load(Ordering::SeqCst),
             "handle_click 应将 hover 同步到 UpdateContext"
+        );
+        assert!(
+            local_received.load(Ordering::SeqCst),
+            "handle_click 应将窗口/局部坐标同步到 UpdateContext"
+        );
+    }
+
+    #[test]
+    fn hit_test_tree_restores_nested_local_coordinates() {
+        use rgui_core::view::{PropValue, WidgetView};
+
+        let root_id = WidgetId::from_u64(100);
+        let child_id = WidgetId::from_u64(101);
+        let leaf_id = WidgetId::from_u64(102);
+
+        let mut view = WidgetView::<rgui_core::message::NoopMsg>::new("Root")
+            .id(root_id)
+            .prop("width", PropValue::Int(200))
+            .prop("height", PropValue::Int(200))
+            .child(
+                WidgetView::new("Child")
+                    .id(child_id)
+                    .prop("width", PropValue::Int(120))
+                    .prop("height", PropValue::Int(90))
+                    .prop("margin", PropValue::Int(20))
+                    .child(
+                        WidgetView::new("Leaf")
+                            .id(leaf_id)
+                            .prop("width", PropValue::Int(20))
+                            .prop("height", PropValue::Int(20))
+                            .prop("margin", PropValue::Int(5)),
+                    ),
+            );
+        let layout = compute_view_layout(&mut view, Size::new(200.0, 200.0), None);
+
+        let app = App::new(AppConfig::default());
+        *app.current_view.lock().unwrap() = Some(view.to_noop_view());
+        *app.current_layout.lock().unwrap() = Some(layout);
+
+        let handler = AppHandler::new(app);
+        let hit = handler
+            .hit_test_result_at_point(Point::new(26.0, 26.0))
+            .expect("嵌套布局中的点应命中叶子节点");
+
+        assert_eq!(hit.widget_id, leaf_id);
+        assert_eq!(hit.local_logical, Point::new(1.0, 1.0));
+        assert_eq!(
+            hit.window_to_local.window_to_local(Point::new(26.0, 26.0)),
+            Point::new(1.0, 1.0),
+            "命中结果应保留窗口坐标到叶子局部坐标的可逆链路"
+        );
+    }
+
+    #[test]
+    fn register_interaction_chain_restores_local_coordinates() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(7);
+        let window_point = Point::new(45.0, 43.0);
+        let chain = CoordinateTransformChain::default()
+            .translated(Point::new(10.0, 20.0))
+            .translated(Point::new(30.0, 15.0))
+            .translated(Point::new(4.0, 6.0));
+
+        app.register_interaction_with_chain(
+            widget_id,
+            Rect::new(44.0, 41.0, 40.0, 30.0),
+            chain,
+            "click",
+            |_| {},
+        );
+
+        let local_received = Arc::new(AtomicBool::new(false));
+        let local_received_clone = Arc::clone(&local_received);
+        app.register_widget_instance(widget_id, move |_action, ctx| {
+            if ctx.cursor_local_position == Some(Point::new(1.0, 2.0)) {
+                local_received_clone.store(true, Ordering::SeqCst);
+            }
+            EventResult::Handled
+        });
+
+        let mut handler = AppHandler::new(app);
+        let hit = handler
+            .hit_test_result_at_point(window_point)
+            .expect("注册链路应命中交互区域");
+        assert_eq!(hit.widget_id, widget_id);
+        assert_eq!(hit.local_logical, Point::new(1.0, 2.0));
+
+        handler.handle_click(window_point);
+        assert!(
+            local_received.load(Ordering::SeqCst),
+            "旧交互注册路径也应把恢复后的局部坐标同步给组件"
+        );
+    }
+
+    #[test]
+    fn register_interaction_chain_restores_local_coordinates_through_scroll_offset() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(8);
+        let window_point = Point::new(26.0, 82.0);
+
+        let viewport_origin = Point::new(20.0, 10.0);
+        let scroll_offset = Point::new(0.0, -30.0);
+        let item_origin_in_content = Point::new(5.0, 100.0);
+        let visual_origin = Point::new(
+            viewport_origin.x + scroll_offset.x + item_origin_in_content.x,
+            viewport_origin.y + scroll_offset.y + item_origin_in_content.y,
+        );
+        let chain = CoordinateTransformChain::default()
+            .translated(viewport_origin)
+            .translated(scroll_offset)
+            .translated(item_origin_in_content);
+
+        app.register_interaction_with_chain(
+            widget_id,
+            Rect::new(visual_origin.x, visual_origin.y, 40.0, 20.0),
+            chain,
+            "click",
+            |_| {},
+        );
+
+        let local_received = Arc::new(AtomicBool::new(false));
+        let local_received_clone = Arc::clone(&local_received);
+        app.register_widget_instance(widget_id, move |_action, ctx| {
+            if ctx.cursor_window_position == Some(window_point)
+                && ctx.cursor_local_position == Some(Point::new(1.0, 2.0))
+            {
+                local_received_clone.store(true, Ordering::SeqCst);
+            }
+            EventResult::Handled
+        });
+
+        let mut handler = AppHandler::new(app);
+        let hit = handler
+            .hit_test_result_at_point(window_point)
+            .expect("滚动容器中的视觉命中点应命中内容项");
+        assert_eq!(hit.widget_id, widget_id);
+        assert_eq!(hit.local_logical, Point::new(1.0, 2.0));
+        assert_eq!(
+            hit.window_to_local.window_to_local(window_point),
+            Point::new(1.0, 2.0),
+            "滚动偏移应通过逆变换链恢复为局部坐标"
+        );
+
+        handler.handle_click(window_point);
+        assert!(
+            local_received.load(Ordering::SeqCst),
+            "滚动容器命中后，组件仍应收到窗口/局部坐标一致的 UpdateContext"
+        );
+    }
+
+    #[test]
+    fn drag_over_restores_local_coordinates_for_registered_interaction_chain() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(9);
+        let window_point = Point::new(45.0, 43.0);
+        let chain = CoordinateTransformChain::default()
+            .translated(Point::new(10.0, 20.0))
+            .translated(Point::new(30.0, 15.0))
+            .translated(Point::new(4.0, 6.0));
+
+        app.register_interaction_with_chain(
+            widget_id,
+            Rect::new(44.0, 41.0, 40.0, 30.0),
+            chain,
+            "click",
+            |_| {},
+        );
+
+        let mut handler = AppHandler::new(app);
+        let hit = handler.inject_drag_lifecycle_logical(window_point, DragLifecycleEvent::Over);
+        assert_eq!(hit, Some(widget_id));
+
+        let coords = handler
+            .app
+            .events
+            .iter()
+            .rev()
+            .find_map(|event| match event {
+                Event::DragOver { coords } => Some(*coords),
+                _ => None,
+            })
+            .expect("应记录 DragOver 事件");
+
+        assert_eq!(coords.window_logical, window_point);
+        assert_eq!(coords.local_logical, Some(Point::new(1.0, 2.0)));
+        assert!(matches!(coords.origin, MouseInputOrigin::LogicalInjection));
+    }
+
+    #[test]
+    fn cached_physical_mouse_position_keeps_click_hit_testing_correct_after_dpi_change() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let clicked = Arc::new(AtomicBool::new(false));
+        let clicked_clone = Arc::clone(&clicked);
+
+        app.register_interaction(
+            widget_id,
+            Rect::new(10.0, 10.0, 100.0, 50.0),
+            "click",
+            move |_| {
+                clicked_clone.store(true, Ordering::SeqCst);
+            },
+        );
+
+        let mut handler = AppHandler::new(app);
+        handler.sync_pointer_from_platform_window_event(Point::new(100.0, 60.0));
+
+        // 同一物理位置在 2x 缩放下应映射到逻辑坐标 (50, 30)。
+        handler.sync_scale_factor(2.0);
+        handler.handle_click(handler.mouse_window_position);
+
+        assert!(
+            clicked.load(Ordering::SeqCst),
+            "DPI 变化后第一次点击应使用重新计算后的逻辑坐标命中组件"
         );
     }
 }

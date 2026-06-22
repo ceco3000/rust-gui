@@ -322,16 +322,18 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
         WidgetId::default()
     });
 
-    // 从布局引擎查询该 widget 的计算后 bounds
+    // 从布局引擎查询该 widget 的计算后 bounds（绝对坐标，累加祖先偏移）
     let bounds = layout_engine
         .get_layout(widget_id)
-        .map(|cached| {
-            Rect::new(
-                cached.result.position.x,
-                cached.result.position.y,
-                cached.result.size.width,
-                cached.result.size.height,
-            )
+        .and_then(|cached| {
+            layout_engine.absolute_position(widget_id).map(|abs_pos| {
+                Rect::new(
+                    abs_pos.x,
+                    abs_pos.y,
+                    cached.result.size.width,
+                    cached.result.size.height,
+                )
+            })
         })
         .unwrap_or_else(|| {
             eprintln!(
@@ -472,16 +474,18 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
         WidgetId::default()
     });
 
-    // 从布局引擎查询该 widget 的计算后 bounds
+    // 从布局引擎查询该 widget 的计算后 bounds（绝对坐标，累加祖先偏移）
     let bounds = layout_engine
         .get_layout(widget_id)
-        .map(|cached| {
-            Rect::new(
-                cached.result.position.x,
-                cached.result.position.y,
-                cached.result.size.width,
-                cached.result.size.height,
-            )
+        .and_then(|cached| {
+            layout_engine.absolute_position(widget_id).map(|abs_pos| {
+                Rect::new(
+                    abs_pos.x,
+                    abs_pos.y,
+                    cached.result.size.width,
+                    cached.result.size.height,
+                )
+            })
         })
         .unwrap_or_else(|| {
             eprintln!(

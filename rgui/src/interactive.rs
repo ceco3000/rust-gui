@@ -20,7 +20,7 @@ use rgui_core::traits::{AppMessage, EventResult, WidgetSpec};
 use rgui_core::view::WidgetView;
 use rgui_layout::LayoutEngine;
 
-use crate::app::App;
+use crate::app::{App, CoordinateTransformChain};
 use crate::widget_state::WidgetStateStore;
 
 struct AccordionCtx {
@@ -34,7 +34,14 @@ pub fn init_widget_instances<M: AppMessage>(
     layout: &LayoutEngine,
 ) {
     let store = app.widget_state_store().clone();
-    init_recursive(app, view, layout, &store, None);
+    init_recursive(
+        app,
+        view,
+        layout,
+        &store,
+        None,
+        &CoordinateTransformChain::default(),
+    );
 }
 
 fn init_recursive<M: AppMessage>(
@@ -43,16 +50,21 @@ fn init_recursive<M: AppMessage>(
     layout: &LayoutEngine,
     store: &WidgetStateStore,
     accordion_ctx: Option<&AccordionCtx>,
+    parent_chain: &CoordinateTransformChain,
 ) {
     let widget_id = match view.id {
         Some(id) => id,
         None => {
             for child in &view.children {
-                init_recursive(app, child, layout, store, accordion_ctx);
+                init_recursive(app, child, layout, store, accordion_ctx, parent_chain);
             }
             return;
         },
     };
+    let widget_chain = layout
+        .get_layout(widget_id)
+        .map(|cached| parent_chain.translated(cached.result.position))
+        .unwrap_or_else(|| parent_chain.clone());
 
     match view.widget_type {
         "WaAccordion" => {
@@ -62,20 +74,28 @@ fn init_recursive<M: AppMessage>(
             let sibling_ids = collect_accordion_item_ids(&view.children);
             let ctx = AccordionCtx { mode, sibling_ids };
             for child in &view.children {
-                init_recursive(app, child, layout, store, Some(&ctx));
+                init_recursive(app, child, layout, store, Some(&ctx), &widget_chain);
             }
             return;
         },
         "WaAccordionItem" => {
-            init_accordion_item(app, view, widget_id, layout, store, accordion_ctx);
+            init_accordion_item(
+                app,
+                view,
+                widget_id,
+                layout,
+                store,
+                accordion_ctx,
+                &widget_chain,
+            );
         },
         _ => {},
     }
 
-    register_onclick_if_present(app, view, widget_id, layout);
+    register_onclick_if_present(app, view, widget_id, layout, &widget_chain);
 
     for child in &view.children {
-        init_recursive(app, child, layout, store, accordion_ctx);
+        init_recursive(app, child, layout, store, accordion_ctx, &widget_chain);
     }
 }
 
@@ -98,6 +118,7 @@ fn init_accordion_item<M: AppMessage>(
     layout: &LayoutEngine,
     store: &WidgetStateStore,
     accordion_ctx: Option<&AccordionCtx>,
+    widget_chain: &CoordinateTransformChain,
 ) {
     use rgui_components::wa_accordion_item::{
         WaAccordionItem, WaAccordionItemMessage, WaAccordionItemState,
@@ -142,7 +163,7 @@ fn init_accordion_item<M: AppMessage>(
     let abs_pos = layout.absolute_position(widget_id).unwrap_or(Point::ZERO);
     let rect = Rect::new(abs_pos.x, abs_pos.y, size.width, size.height);
 
-    app.register_interaction(widget_id, rect, "toggle", |_| {});
+    app.register_interaction_with_chain(widget_id, rect, widget_chain.clone(), "toggle", |_| {});
 
     let store_clone = store.clone();
     let sibling_ids: Vec<WidgetId> = accordion_ctx
@@ -186,6 +207,7 @@ fn register_onclick_if_present<M: AppMessage>(
     view: &WidgetView<M>,
     widget_id: WidgetId,
     layout: &LayoutEngine,
+    widget_chain: &CoordinateTransformChain,
 ) {
     if let Some(rgui_core::view::PropValue::Str(action)) = view.props.get("onclick") {
         let size = layout
@@ -195,7 +217,13 @@ fn register_onclick_if_present<M: AppMessage>(
         let abs_pos = layout.absolute_position(widget_id).unwrap_or(Point::ZERO);
         let rect = Rect::new(abs_pos.x, abs_pos.y, size.width, size.height);
         let action_owned = action.to_string();
-        app.register_interaction(widget_id, rect, &action_owned, |_| {});
+        app.register_interaction_with_chain(
+            widget_id,
+            rect,
+            widget_chain.clone(),
+            &action_owned,
+            |_| {},
+        );
     }
 }
 

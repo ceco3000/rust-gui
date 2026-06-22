@@ -19,3 +19,5 @@ tools/
 
 # Hermes Agent 运行时目录
 .hermes/
+
+.trae/

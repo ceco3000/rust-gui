@@ -2,9 +2,120 @@
 //!
 //! 定义源自 D5 §2。
 
-use rgui_core::geometry::Point;
+use rgui_core::geometry::{Point, Size};
 use rgui_core::id::WidgetId;
 use rgui_style::theme::ColorScheme;
+
+// ============================================================================
+// Coordinate Semantics
+// ============================================================================
+
+/// 平台原始窗口坐标归一化策略。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CoordinateNormalization {
+    /// 平台已经以窗口逻辑坐标报告输入，无需再次除以 `scale_factor`。
+    PlatformNativeLogical,
+    /// 原始平台坐标需要在平台边界除以 `scale_factor` 才能进入高层逻辑坐标。
+    DivideByScaleFactor { scale_factor: f64 },
+}
+
+/// 鼠标输入来源。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum MouseInputOrigin {
+    /// 真实平台窗口事件。
+    PlatformWindowEvent {
+        raw_window_position: Point,
+        normalization: CoordinateNormalization,
+    },
+    /// 自动化物理注入。
+    PhysicalInjection {
+        raw_window_position: Point,
+        normalization: CoordinateNormalization,
+    },
+    /// 自动化逻辑注入。
+    LogicalInjection,
+}
+
+/// 鼠标事件坐标集合。
+///
+/// - `window_logical`：窗口逻辑坐标，是高层事件、命中测试和日志的统一坐标
+/// - `local_logical`：接收者局部坐标；未命中具体接收者时为 `None`
+/// - `origin`：保留平台原始输入或自动化注入来源，便于调试和回归验证
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MouseEventCoords {
+    pub window_logical: Point,
+    pub local_logical: Option<Point>,
+    pub origin: MouseInputOrigin,
+}
+
+impl MouseEventCoords {
+    #[must_use]
+    pub fn new(window_logical: Point, origin: MouseInputOrigin) -> Self {
+        Self {
+            window_logical,
+            local_logical: None,
+            origin,
+        }
+    }
+
+    #[must_use]
+    pub fn with_local(mut self, local_logical: Point) -> Self {
+        self.local_logical = Some(local_logical);
+        self
+    }
+}
+
+/// 平台窗口坐标归一化结果。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NormalizedWindowPoint {
+    pub window_logical: Point,
+    pub normalization: CoordinateNormalization,
+}
+
+/// 平台边界唯一允许的“原始窗口坐标 -> 窗口逻辑坐标”转换入口。
+#[must_use]
+pub fn normalize_platform_window_point(
+    raw_window_position: Point,
+    scale_factor: f64,
+) -> NormalizedWindowPoint {
+    #[cfg(target_os = "macos")]
+    let normalization = {
+        let _ = scale_factor;
+        CoordinateNormalization::PlatformNativeLogical
+    };
+    #[cfg(not(target_os = "macos"))]
+    let normalization = CoordinateNormalization::DivideByScaleFactor { scale_factor };
+
+    let window_logical = match normalization {
+        CoordinateNormalization::PlatformNativeLogical => raw_window_position,
+        CoordinateNormalization::DivideByScaleFactor { scale_factor } => {
+            let scale_factor = scale_factor.max(f64::EPSILON);
+            Point::new(
+                raw_window_position.x / scale_factor,
+                raw_window_position.y / scale_factor,
+            )
+        },
+    };
+
+    NormalizedWindowPoint {
+        window_logical,
+        normalization,
+    }
+}
+
+/// 物理窗口尺寸转换为高层逻辑窗口尺寸。
+#[must_use]
+pub fn logical_window_size_from_physical_size(
+    physical_width: u32,
+    physical_height: u32,
+    scale_factor: f64,
+) -> Size {
+    let scale_factor = scale_factor.max(f64::EPSILON);
+    Size::new(
+        physical_width as f64 / scale_factor,
+        physical_height as f64 / scale_factor,
+    )
+}
 
 // ============================================================================
 // Event
@@ -13,23 +124,26 @@ use rgui_style::theme::ColorScheme;
 /// 框架统一事件类型（D5 §2.1）。
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    /// 鼠标按下。
     MouseDown {
-        position: Point,
+        coords: MouseEventCoords,
         button: MouseButton,
         modifiers: Modifiers,
     },
+    /// 鼠标抬起。
     MouseUp {
-        position: Point,
+        coords: MouseEventCoords,
         button: MouseButton,
         modifiers: Modifiers,
     },
+    /// 鼠标移动。
     MouseMove {
-        position: Point,
-        delta: Point,
+        coords: MouseEventCoords,
+        delta_window_logical: Point,
         modifiers: Modifiers,
     },
     MouseWheel {
-        position: Point,
+        coords: MouseEventCoords,
         delta_x: f64,
         delta_y: f64,
         modifiers: Modifiers,
@@ -70,22 +184,27 @@ pub enum Event {
     },
 
     DragEnter {
-        position: Point,
+        coords: MouseEventCoords,
     },
     DragOver {
-        position: Point,
+        coords: MouseEventCoords,
     },
     DragLeave,
     Drop {
-        position: Point,
+        coords: MouseEventCoords,
     },
-
+    /// 窗口逻辑尺寸变更。
+    ///
+    /// `width`/`height` 面向组件层消费，单位统一为逻辑像素。
     WindowResized {
         width: f64,
         height: f64,
     },
     WindowFocused,
     WindowUnfocused,
+    /// 窗口 DPI 缩放因子变更。
+    ///
+    /// 事件仅暴露新的缩放比例；相关逻辑尺寸应通过 `WindowResized` 的逻辑像素值读取。
     ScaleFactorChanged {
         scale_factor: f64,
     },
@@ -350,5 +469,43 @@ mod tests {
         original.consume();
         let cloned = original.clone();
         assert!(cloned.consumed);
+    }
+
+    #[test]
+    fn normalize_platform_window_point_returns_native_logical_on_macos() {
+        let normalized = normalize_platform_window_point(Point::new(120.0, 80.0), 2.0);
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(
+                normalized.normalization,
+                CoordinateNormalization::PlatformNativeLogical
+            );
+            assert_eq!(normalized.window_logical, Point::new(120.0, 80.0));
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(
+                normalized.normalization,
+                CoordinateNormalization::DivideByScaleFactor { scale_factor: 2.0 }
+            );
+            assert_eq!(normalized.window_logical, Point::new(60.0, 40.0));
+        }
+    }
+
+    #[test]
+    fn logical_window_size_from_physical_size_divides_by_scale_factor() {
+        let logical = logical_window_size_from_physical_size(800, 600, 2.0);
+        assert_eq!(logical, Size::new(400.0, 300.0));
+    }
+
+    #[test]
+    fn mouse_event_coords_can_attach_local_position() {
+        let coords = MouseEventCoords::new(
+            Point::new(20.0, 30.0),
+            MouseInputOrigin::LogicalInjection,
+        )
+        .with_local(Point::new(5.0, 6.0));
+        assert_eq!(coords.window_logical, Point::new(20.0, 30.0));
+        assert_eq!(coords.local_logical, Some(Point::new(5.0, 6.0)));
     }
 }
