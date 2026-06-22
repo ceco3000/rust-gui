@@ -960,6 +960,8 @@ struct AppHandler {
     text_renderer: TextRenderer,
     frame_count: u64,
     mouse_pos: Point,
+    /// 上一帧的悬停 widget ID（P04e：用于计算 MouseEnter/MouseLeave 变迁）。
+    last_hover: Option<WidgetId>,
     /// DPI 缩放因子（逻辑像素 → 物理像素比例）。
     /// 从 winit `window.scale_factor()` 读取，默认 1.0。
     scale_factor: f64,
@@ -1004,6 +1006,7 @@ impl AppHandler {
             text_renderer: TextRenderer::new(rgui_render::TextureId(0)),
             frame_count: 0,
             mouse_pos: Point::ZERO,
+            last_hover: None,
             scale_factor: 1.0,
             width: 0,
             height: 0,
@@ -1189,6 +1192,8 @@ impl AppHandler {
 
         if let Some(hit_id) = hit_id {
             let mut update_ctx = UpdateContext::new();
+            // P04e: 同步当前悬停状态到 UpdateContext
+            update_ctx.hover = self.last_hover;
             let mut skip_default = false;
 
             // ─── 目标阶段：WidgetSpec 实例处理器 ───
@@ -1310,6 +1315,27 @@ impl AppHandler {
                     modifiers: Modifiers::new(),
                 });
             }
+        }
+    }
+
+    /// P04e: 更新悬停状态——比较当前鼠标位置下的 widget 与上一帧的悬停目标。
+    ///
+    /// D5 §3.1 悬停事件算法：每帧比较鼠标位置，自动计算 enter/leave 关系，
+    /// 直接发送到目标 widget（不传播）。如有变更，向事件队列 push MouseEnter/MouseLeave。
+    fn update_hover(&mut self) {
+        let current_hover = self.find_widget_at_point(self.mouse_pos);
+        if current_hover != self.last_hover {
+            if let Some(old_id) = self.last_hover {
+                self.app
+                    .events
+                    .push(Event::MouseLeave { widget_id: old_id });
+            }
+            if let Some(new_id) = current_hover {
+                self.app
+                    .events
+                    .push(Event::MouseEnter { widget_id: new_id });
+            }
+            self.last_hover = current_hover;
         }
     }
 
@@ -1565,6 +1591,8 @@ impl ApplicationHandler for AppHandler {
                     position.x / self.scale_factor,
                     position.y / self.scale_factor,
                 );
+                // P04e: 悬停事件路由——每帧比较鼠标位置，计算 enter/leave 关系
+                self.update_hover();
             },
 
             WindowEvent::MouseInput {
@@ -2664,6 +2692,195 @@ mod tests {
         assert!(
             !app.needs_redraw,
             "needs_redraw should be false on fresh App"
+        );
+    }
+
+    // ========================================================================
+    // P04e: 悬停事件路由测试（MouseEnter/MouseLeave）
+    // ========================================================================
+
+    /// 初始状态：last_hover 为 None，没有悬停事件。
+    #[test]
+    fn hover_initial_state_is_none() {
+        let app = App::new(AppConfig::default());
+        let handler = AppHandler::new(app);
+        assert!(
+            handler.last_hover.is_none(),
+            "last_hover should start as None"
+        );
+    }
+
+    /// 鼠标移入 widget → push MouseEnter，last_hover 更新。
+    #[test]
+    fn hover_enter_widget_pushes_mouse_enter() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 50.0);
+        app.register_interaction(widget_id, bounds, "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        // 将鼠标移到 widget 区域内
+        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.update_hover();
+
+        // 应产生一个 MouseEnter 事件
+        assert_eq!(handler.app.events.len(), 1, "应该产生 1 个事件");
+        assert!(
+            matches!(&handler.app.events[0], Event::MouseEnter { widget_id: id } if *id == widget_id),
+            "应该是 MouseEnter 事件"
+        );
+        assert_eq!(
+            handler.last_hover,
+            Some(widget_id),
+            "last_hover 应更新为目标 widget"
+        );
+    }
+
+    /// 鼠标从 widget 移出到空白区域 → push MouseLeave，last_hover 置 None。
+    #[test]
+    fn hover_leave_widget_pushes_mouse_leave() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        let bounds = Rect::new(10.0, 10.0, 100.0, 50.0);
+        app.register_interaction(widget_id, bounds, "click", |_| {});
+
+        let mut handler = AppHandler::new(app);
+        // 先移入
+        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.update_hover();
+        assert_eq!(handler.app.events.len(), 1);
+
+        // 再移出
+        handler.mouse_pos = Point::new(200.0, 200.0);
+        handler.update_hover();
+
+        // 应再产生一个 MouseLeave 事件
+        assert_eq!(
+            handler.app.events.len(),
+            2,
+            "应该产生 2 个事件（Enter + Leave）"
+        );
+        assert!(
+            matches!(&handler.app.events[1], Event::MouseLeave { widget_id: id } if *id == widget_id),
+            "第二个应该是 MouseLeave 事件"
+        );
+        assert!(handler.last_hover.is_none(), "last_hover 应回到 None");
+    }
+
+    /// 鼠标从 widget A 移入 widget B → A 收 MouseLeave，B 收 MouseEnter。
+    #[test]
+    fn hover_transition_between_widgets() {
+        let mut app = App::new(AppConfig::default());
+        let widget_a = WidgetId::from_u64(1);
+        let widget_b = WidgetId::from_u64(2);
+        app.register_interaction(
+            widget_a,
+            Rect::new(10.0, 10.0, 100.0, 50.0),
+            "click",
+            |_| {},
+        );
+        app.register_interaction(
+            widget_b,
+            Rect::new(150.0, 10.0, 100.0, 50.0),
+            "click",
+            |_| {},
+        );
+
+        let mut handler = AppHandler::new(app);
+
+        // 移入 A
+        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.update_hover();
+        assert_eq!(handler.app.events.len(), 1);
+        assert!(matches!(&handler.app.events[0], Event::MouseEnter { .. }));
+
+        // 移入 B
+        handler.mouse_pos = Point::new(200.0, 30.0);
+        handler.update_hover();
+
+        // 应产生 MouseLeave(A) + MouseEnter(B)
+        assert_eq!(
+            handler.app.events.len(),
+            3,
+            "应该产生 3 个事件（EnterA + LeaveA + EnterB）"
+        );
+        assert!(
+            matches!(&handler.app.events[1], Event::MouseLeave { widget_id: id } if *id == widget_a),
+            "第二个应该是 MouseLeave(A)"
+        );
+        assert!(
+            matches!(&handler.app.events[2], Event::MouseEnter { widget_id: id } if *id == widget_b),
+            "第三个应该是 MouseEnter(B)"
+        );
+        assert_eq!(handler.last_hover, Some(widget_b), "last_hover 应更新为 B");
+    }
+
+    /// 鼠标在同一 widget 内移动 → 不产生新事件。
+    #[test]
+    fn hover_unchanged_no_new_events() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        app.register_interaction(
+            widget_id,
+            Rect::new(10.0, 10.0, 100.0, 50.0),
+            "click",
+            |_| {},
+        );
+
+        let mut handler = AppHandler::new(app);
+
+        // 首次移入
+        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.update_hover();
+        assert_eq!(handler.app.events.len(), 1);
+
+        // 同一区域内移动
+        handler.mouse_pos = Point::new(60.0, 35.0);
+        handler.update_hover();
+        assert_eq!(
+            handler.app.events.len(),
+            1,
+            "同一 widget 内移动不应产生新事件"
+        );
+        assert_eq!(handler.last_hover, Some(widget_id));
+    }
+
+    /// handle_click 将 hover 状态同步到 UpdateContext。
+    #[test]
+    fn handle_click_syncs_hover_to_update_context() {
+        let mut app = App::new(AppConfig::default());
+        let widget_id = WidgetId::from_u64(1);
+        app.register_interaction(
+            widget_id,
+            Rect::new(10.0, 10.0, 100.0, 50.0),
+            "test",
+            |_| {},
+        );
+
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let hover_received = Arc::new(AtomicBool::new(false));
+        let hover_received_clone = Arc::clone(&hover_received);
+
+        // 注册 widget instance handler，验证收到 hover
+        app.register_widget_instance(widget_id, move |_action, ctx| {
+            if ctx.hover == Some(widget_id) {
+                hover_received_clone.store(true, Ordering::SeqCst);
+            }
+            EventResult::Handled
+        });
+
+        let mut handler = AppHandler::new(app);
+        // 先设置悬停
+        handler.mouse_pos = Point::new(50.0, 30.0);
+        handler.update_hover();
+
+        // 点击
+        handler.handle_click(Point::new(50.0, 30.0));
+
+        assert!(
+            hover_received.load(Ordering::SeqCst),
+            "handle_click 应将 hover 同步到 UpdateContext"
         );
     }
 }
