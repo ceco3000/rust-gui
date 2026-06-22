@@ -1,7 +1,7 @@
 //! `html!` 宏集成测试。
 //!
 //! 验证 HTML 语法 → WidgetView 展开的正确性。
-//! H01 验收标准：`html! { <Button label="Hi" /> }` 编译通过，展开为正确的 WidgetView。
+//! H01 验收标准：`html! { <WaButton label="Hi" /> }` 编译通过，展开为正确的 WidgetView。
 
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_macros::{AppMessage, html};
@@ -15,12 +15,12 @@ enum TestMessage {
     ValueChanged(i32),
 }
 
-/// H01 验收标准：`<Button label="Hi" />` → WidgetView
+/// H01 验收标准：`<WaButton label="Hi" />` → WidgetView
 #[test]
 fn h01_basic_self_closing() {
-    let view: WidgetView<TestMessage> = html! { <Button label="Hi" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton label="Hi" /> };
 
-    assert_eq!(view.widget_type, "Button");
+    assert_eq!(view.widget_type, "WaButton");
     assert!(view.id.is_none());
     assert_eq!(view.props.len(), 1);
     match view.props.get("label") {
@@ -35,14 +35,14 @@ fn h01_basic_self_closing() {
 fn h01_nested_children() {
     let view: WidgetView<TestMessage> = html! {
         <Column gap="8.0">
-            <Label text="Hello" />
+            <Text text="Hello" />
         </Column>
     };
 
     assert_eq!(view.widget_type, "Column");
     assert_eq!(view.props.len(), 1);
     assert_eq!(view.children.len(), 1);
-    assert_eq!(view.children[0].widget_type, "Label");
+    assert_eq!(view.children[0].widget_type, "Text");
     assert_eq!(view.children[0].props.len(), 1);
 }
 
@@ -52,8 +52,8 @@ fn h01_deeply_nested() {
     let view: WidgetView<TestMessage> = html! {
         <Column>
             <Row gap="4">
-                <Label text="A" />
-                <Label text="B" />
+                <Text text="A" />
+                <Text text="B" />
             </Row>
         </Column>
     };
@@ -63,19 +63,19 @@ fn h01_deeply_nested() {
     let row = &view.children[0];
     assert_eq!(row.widget_type, "Row");
     assert_eq!(row.children.len(), 2);
-    assert_eq!(row.children[0].widget_type, "Label");
-    assert_eq!(row.children[1].widget_type, "Label");
+    assert_eq!(row.children[0].widget_type, "Text");
+    assert_eq!(row.children[1].widget_type, "Text");
 }
 
-/// H08: 文本内容语法糖——`<Label>Hello</Label>` 等效 `<Label text="Hello" />`
+/// H08: 文本内容语法糖——`<Text>Hello</Text>` 等效 `<Text text="Hello" />`
 /// 两种写法生成的 WidgetView 完全相同。
 #[test]
 fn h08_text_content() {
     let view: WidgetView<TestMessage> = html! {
-        <Label>Hello World</Label>
+        <Text>Hello World</Text>
     };
 
-    assert_eq!(view.widget_type, "Label");
+    assert_eq!(view.widget_type, "Text");
     // 文本内容应成为 text prop，而非子组件
     assert_eq!(
         view.children.len(),
@@ -88,20 +88,20 @@ fn h08_text_content() {
     }
 }
 
-/// H08: 验证 `<Label>Hello</Label>` 和 `<Label text="Hello" />` 等价
+/// H08: 验证 `<Text>Hello</Text>` 和 `<Text text="Hello" />` 等价
 #[test]
 fn h08_equivalence() {
     let view1: WidgetView<TestMessage> = html! {
-        <Label>Hello</Label>
+        <Text>Hello</Text>
     };
     let view2: WidgetView<TestMessage> = html! {
-        <Label text="Hello" />
+        <Text text="Hello" />
     };
 
     assert_eq!(view1, view2, "两种写法应该生成完全相同的 WidgetView");
 
     // 验证具体结构
-    assert_eq!(view1.widget_type, "Label");
+    assert_eq!(view1.widget_type, "Text");
     assert_eq!(view1.children.len(), 0);
     match view1.props.get("text") {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "Hello"),
@@ -113,10 +113,10 @@ fn h08_equivalence() {
 #[test]
 fn h08_explicit_text_wins() {
     let view: WidgetView<TestMessage> = html! {
-        <Label text="explicit">content</Label>
+        <Text text="explicit">content</Text>
     };
 
-    assert_eq!(view.widget_type, "Label");
+    assert_eq!(view.widget_type, "Text");
     assert_eq!(view.children.len(), 0);
     match view.props.get("text") {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "explicit"),
@@ -127,9 +127,9 @@ fn h08_explicit_text_wins() {
 /// 布尔属性（无值属性）。
 #[test]
 fn h01_boolean_attribute() {
-    let view: WidgetView<TestMessage> = html! { <Button disabled /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton disabled /> };
 
-    assert_eq!(view.widget_type, "Button");
+    assert_eq!(view.widget_type, "WaButton");
     match view.props.get("disabled") {
         Some(PropValue::Bool(true)) => {},
         other => panic!("期望 PropValue::Bool(true)，实际: {other:?}"),
@@ -140,10 +140,10 @@ fn h01_boolean_attribute() {
 #[test]
 fn h01_multiple_attributes() {
     let view: WidgetView<TestMessage> = html! {
-        <Button label="确认" class="primary" disabled />
+        <WaButton label="确认" class="primary" disabled />
     };
 
-    assert_eq!(view.widget_type, "Button");
+    assert_eq!(view.widget_type, "WaButton");
     assert_eq!(view.props.len(), 3);
     assert!(view.props.contains_key("label"));
     assert!(view.props.contains_key("class"));
@@ -155,10 +155,10 @@ fn h01_multiple_attributes() {
 fn h01_expression_attribute() {
     let disabled = true;
     let view: WidgetView<TestMessage> = html! {
-        <Button disabled={disabled} />
+        <WaButton disabled={disabled} />
     };
 
-    assert_eq!(view.widget_type, "Button");
+    assert_eq!(view.widget_type, "WaButton");
     match view.props.get("disabled") {
         Some(PropValue::Bool(true)) => {},
         other => panic!("期望 PropValue::Bool(true)，实际: {other:?}"),
@@ -171,7 +171,7 @@ fn h01_mixed_text_and_elements() {
     let view: WidgetView<TestMessage> = html! {
         <Card>
             Header Text
-            <Label text="Body" />
+            <Text text="Body" />
             Footer Text
         </Card>
     };
@@ -180,8 +180,8 @@ fn h01_mixed_text_and_elements() {
     assert_eq!(view.children.len(), 3);
     // 第一个子节点: Text("Header Text")
     assert_eq!(view.children[0].widget_type, "Text");
-    // 第二个子节点: Label
-    assert_eq!(view.children[1].widget_type, "Label");
+    // 第二个子节点: Text
+    assert_eq!(view.children[1].widget_type, "Text");
     // 第三个子节点: Text("Footer Text")
     assert_eq!(view.children[2].widget_type, "Text");
 }
@@ -209,7 +209,7 @@ fn h02_float_type_inference() {
 /// 验收标准：`disabled="true"` → Bool(true)
 #[test]
 fn h02_bool_type_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button disabled="true" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton disabled="true" /> };
 
     match view.props.get("disabled") {
         Some(PropValue::Bool(true)) => {},
@@ -220,7 +220,7 @@ fn h02_bool_type_inference() {
 /// `disabled="false"` → Bool(false)
 #[test]
 fn h02_bool_false_type_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button disabled="false" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton disabled="false" /> };
 
     match view.props.get("disabled") {
         Some(PropValue::Bool(false)) => {},
@@ -231,7 +231,7 @@ fn h02_bool_false_type_inference() {
 /// 验收标准：`color="#FF0000"` → Color(1.0, 0.0, 0.0, 1.0)
 #[test]
 fn h02_color_hex6_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button color="#FF0000" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton color="#FF0000" /> };
 
     match view.props.get("color") {
         Some(PropValue::Color(c)) => {
@@ -255,7 +255,7 @@ fn h02_color_hex6_inference() {
 /// `color="#3B82F6"` → Color（蓝色）
 #[test]
 fn h02_color_hex6_blue_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button color="#3B82F6" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton color="#3B82F6" /> };
 
     match view.props.get("color") {
         Some(PropValue::Color(c)) => {
@@ -271,7 +271,7 @@ fn h02_color_hex6_blue_inference() {
 /// `color="#FF000080"` → Color(1.0, 0.0, 0.0, ~0.5)
 #[test]
 fn h02_color_hex8_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button color="#FF000080" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton color="#FF000080" /> };
 
     match view.props.get("color") {
         Some(PropValue::Color(c)) => {
@@ -288,7 +288,7 @@ fn h02_color_hex8_inference() {
 /// 验收标准：`label="Hi"` → Str("Hi")
 #[test]
 fn h02_str_type_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button label="Hi" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton label="Hi" /> };
 
     match view.props.get("label") {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "Hi"),
@@ -299,7 +299,7 @@ fn h02_str_type_inference() {
 /// 整数属性 → Int
 #[test]
 fn h02_int_type_inference() {
-    let view: WidgetView<TestMessage> = html! { <Button count="42" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton count="42" /> };
 
     match view.props.get("count") {
         Some(PropValue::Int(42)) => {},
@@ -310,7 +310,7 @@ fn h02_int_type_inference() {
 /// class 属性值应为 Str（不推断为 Int/Float）
 #[test]
 fn h02_class_attribute_stays_str() {
-    let view: WidgetView<TestMessage> = html! { <Button class="primary large" /> };
+    let view: WidgetView<TestMessage> = html! { <WaButton class="primary large" /> };
 
     match view.props.get("class") {
         Some(PropValue::Str(s)) => assert_eq!(s.as_ref(), "primary large"),
@@ -326,10 +326,10 @@ fn h02_class_attribute_stays_str() {
 #[test]
 fn h04_on_click_event_binding() {
     let view: WidgetView<TestMessage> = html! {
-        <Button label="确认" on:click={TestMessage::Confirm} />
+        <WaButton label="确认" on:click={TestMessage::Confirm} />
     };
 
-    assert_eq!(view.widget_type, "Button");
+    assert_eq!(view.widget_type, "WaButton");
     // 普通属性不受影响
     assert!(view.props.contains_key("label"));
     // on:click 不进入 props
@@ -344,7 +344,7 @@ fn h04_on_click_event_binding() {
 #[test]
 fn h04_on_click_message_name_is_click() {
     let view: WidgetView<TestMessage> = html! {
-        <Button on:click={TestMessage::Click} />
+        <WaButton on:click={TestMessage::Click} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -355,7 +355,7 @@ fn h04_on_click_message_name_is_click() {
 #[test]
 fn h04_on_input_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <TextField on:input={TestMessage::TextChanged(String::new())} />
+        <WaInput on:input={TestMessage::TextChanged(String::new())} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -366,7 +366,7 @@ fn h04_on_input_message_name() {
 #[test]
 fn h04_on_change_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <Slider on:change={TestMessage::ValueChanged(0)} />
+        <WaSlider on:change={TestMessage::ValueChanged(0)} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -377,7 +377,7 @@ fn h04_on_change_message_name() {
 #[test]
 fn h04_on_focus_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <Button on:focus={TestMessage::Confirm} />
+        <WaButton on:focus={TestMessage::Confirm} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -388,7 +388,7 @@ fn h04_on_focus_message_name() {
 #[test]
 fn h04_on_blur_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <Button on:blur={TestMessage::Confirm} />
+        <WaButton on:blur={TestMessage::Confirm} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -399,7 +399,7 @@ fn h04_on_blur_message_name() {
 #[test]
 fn h04_on_keydown_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <TextField on:keydown={TestMessage::TextChanged(String::new())} />
+        <WaInput on:keydown={TestMessage::TextChanged(String::new())} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -424,7 +424,7 @@ fn h04_on_scroll_message_name() {
 #[test]
 fn h04_on_submit_message_name() {
     let view: WidgetView<TestMessage> = html! {
-        <TextField on:submit={TestMessage::Confirm} />
+        <WaInput on:submit={TestMessage::Confirm} />
     };
 
     assert_eq!(view.message_bindings.len(), 1);
@@ -435,7 +435,7 @@ fn h04_on_submit_message_name() {
 #[test]
 fn h04_multiple_event_bindings() {
     let view: WidgetView<TestMessage> = html! {
-        <Button
+        <WaButton
             label="Multi"
             on:click={TestMessage::Click}
             on:focus={TestMessage::Confirm}
@@ -452,7 +452,7 @@ fn h04_multiple_event_bindings() {
 #[test]
 fn h04_event_binding_with_props() {
     let view: WidgetView<TestMessage> = html! {
-        <Button label="Hi" class="primary" on:click={TestMessage::Click} />
+        <WaButton label="Hi" class="primary" on:click={TestMessage::Click} />
     };
 
     assert_eq!(view.props.len(), 2);
@@ -468,12 +468,12 @@ fn h04_event_binding_with_props() {
 fn h04_event_binding_with_children() {
     let view: WidgetView<TestMessage> = html! {
         <Column on:click={TestMessage::Click}>
-            <Label text="Child" />
+            <Text text="Child" />
         </Column>
     };
 
     assert_eq!(view.children.len(), 1);
-    assert_eq!(view.children[0].widget_type, "Label");
+    assert_eq!(view.children[0].widget_type, "Text");
     assert_eq!(view.message_bindings.len(), 1);
     assert_eq!(view.message_bindings[0].message_name, Some("click"));
 }

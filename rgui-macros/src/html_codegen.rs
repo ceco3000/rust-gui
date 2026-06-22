@@ -591,45 +591,45 @@ mod tests {
 
     #[test]
     fn h07_edit_distance_identical() {
-        assert_eq!(edit_distance("Button", "Button"), 0);
+        assert_eq!(edit_distance("WaButton", "WaButton"), 0);
     }
 
     #[test]
     fn h07_edit_distance_one_char() {
-        assert_eq!(edit_distance("Buton", "Button"), 1); // 缺少一个 t
+        assert_eq!(edit_distance("WaButon", "WaButton"), 1); // 缺少一个 t
     }
 
     #[test]
     fn h07_edit_distance_two_char() {
-        assert_eq!(edit_distance("Buttn", "Button"), 1); // 缺少 'o'
+        assert_eq!(edit_distance("WaButtn", "WaButton"), 1); // 缺少 'o'
     }
 
     #[test]
     fn h07_edit_distance_case_insensitive_usage() {
         // find_best_match 内部用 lowercase 比较，但 edit_distance 本身区分大小写
-        assert!(edit_distance("button", "Button") > 0);
+        assert!(edit_distance("wabutton", "WaButton") > 0);
     }
 
     #[test]
     fn h07_edit_distance_empty() {
-        assert_eq!(edit_distance("", "Button"), 6);
-        assert_eq!(edit_distance("Button", ""), 6);
+        assert_eq!(edit_distance("", "WaButton"), 8);
+        assert_eq!(edit_distance("WaButton", ""), 8);
     }
 
     #[test]
     fn h07_find_best_match_misspelled() {
-        assert_eq!(find_best_match("Buton"), Some("Button"));
+        assert_eq!(find_best_match("WaButon"), Some("WaButton"));
     }
 
     #[test]
     fn h07_find_best_match_case_insensitive() {
-        assert_eq!(find_best_match("buton"), Some("Button"));
+        assert_eq!(find_best_match("wabuton"), Some("WaButton"));
     }
 
     #[test]
     fn h07_find_best_match_exact() {
-        // 精确匹配应返回 None（不相同）
-        assert_eq!(find_best_match("Button"), None);
+        // 精确匹配应返回 None（完全相同，无需建议）
+        assert_eq!(find_best_match("WaButton"), None);
     }
 
     #[test]
@@ -640,8 +640,9 @@ mod tests {
 
     #[test]
     fn h07_find_best_match_close_match() {
-        assert_eq!(find_best_match("Lable"), Some("Label"));
+        // Lable → Label 不再存在（Label 已改名 Text，编辑距离太大）
+        assert_eq!(find_best_match("Lable"), None);
         assert_eq!(find_best_match("Colum"), Some("Column"));
-        assert_eq!(find_best_match("ChecBox"), Some("CheckBox"));
+        assert_eq!(find_best_match("WInput"), Some("WaInput"));
     }
 }

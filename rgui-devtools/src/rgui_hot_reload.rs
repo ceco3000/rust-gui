@@ -270,7 +270,7 @@ mod tests {
         let reloader =
             RguiHotReload::<TestMsg>::new(&config, &rgui_path).expect("创建 RguiHotReload 失败");
         let view = reloader.current_view();
-        assert_eq!(view.widget_type, "label");
+        assert_eq!(view.widget_type, "Label");
         assert_eq!(view.props.len(), 1);
     }
 
@@ -325,7 +325,7 @@ mod tests {
         let maybe_view = result.unwrap();
         assert!(maybe_view.is_some(), "文件变更应返回新 WidgetView");
         let new_view = maybe_view.unwrap();
-        assert_eq!(new_view.widget_type, "button");
+        assert_eq!(new_view.widget_type, "Button");
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
 
         // 缓存应已更新
         let cached = reloader.current_view();
-        assert_eq!(cached.widget_type, "column");
+        assert_eq!(cached.widget_type, "Column");
         assert!(!cached.children.is_empty());
     }
 
@@ -377,7 +377,7 @@ mod tests {
         let maybe_view = result.unwrap();
         assert!(maybe_view.is_some(), "flush 应忽略 debounce 立即返回");
         let new_view = maybe_view.unwrap();
-        assert_eq!(new_view.widget_type, "label");
+        assert_eq!(new_view.widget_type, "Label");
 
         // 验证缓存更新
         let cached = reloader.current_view();
