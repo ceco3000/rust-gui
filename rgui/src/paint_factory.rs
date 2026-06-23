@@ -51,12 +51,7 @@ fn paint_fn_impl<M: AppMessage>(store: Option<WidgetStateStore>) -> PaintFn<M> {
                         state.appearance = a.to_string();
                     }
                     let mut ctx = rgui_core::context::PaintContext::new(bounds);
-                    rgui_core::traits::WidgetSpec::paint(
-                        &WaAccordion,
-                        &state,
-                        bounds,
-                        &mut ctx,
-                    );
+                    rgui_core::traits::WidgetSpec::paint(&WaAccordion, &state, bounds, &mut ctx);
                     ctx.into_operations()
                 },
                 "WaAccordionItem" => {
@@ -168,6 +163,94 @@ pub fn default_paint_fn<M: AppMessage>() -> PaintFn<M> {
 #[must_use]
 pub fn default_paint_fn_with_state<M: AppMessage>(store: WidgetStateStore) -> PaintFn<M> {
     paint_fn_impl(Some(store))
+}
+
+// ============================================================================
+// Tier 2 Rhai 脚本执行（T204：加载时一次性执行 paint 脚本，产出 PaintOp 缓存到 props）
+// ============================================================================
+
+/// 执行 WidgetView 树中所有 Tier 2 节点的 Rhai paint 脚本。
+///
+/// 遍历树，对每个 `_tier = "2"` 的节点：
+/// 1. 从 `_rhai_path` prop 读取 Rhai 脚本路径
+/// 2. 执行脚本——调用 `fill_rect`/`draw_text` 等绘制原语生成 `PaintOp`
+/// 3. 将 `PropValue::PaintOps(ops)` 存入 `view.props["paint_ops"]`
+///
+/// 后续每帧渲染时，`walk_view_tree` 直接从 props 读取预计算的 PaintOp，
+/// 无需重新执行脚本（纯 Rust 热路径）。
+///
+/// # 错误处理
+///
+/// 脚本执行失败时通过 stderr 报告错误，该节点回退到 `paint_fn`（Tier 1 路径）。
+#[cfg(feature = "devtools")]
+pub fn execute_tier2_paint_scripts<M: AppMessage>(view: &mut rgui_core::view::WidgetView<M>) {
+    execute_tier2_paint_scripts_recursive(view);
+}
+
+/// 递归辅助函数。
+#[cfg(feature = "devtools")]
+fn execute_tier2_paint_scripts_recursive<M: AppMessage>(view: &mut rgui_core::view::WidgetView<M>) {
+    // 检查是否为 Tier 2 节点（通过 _tier prop 标识）
+    let is_tier2 = view.props.get("_tier").map_or(
+        false,
+        |v| matches!(v, PropValue::Str(s) if s.as_ref() == "2"),
+    );
+
+    if is_tier2 {
+        // 读取 Rhai 脚本路径
+        let rhai_path = view.props.get("_rhai_path").and_then(|v| match v {
+            PropValue::Str(s) => Some(std::path::PathBuf::from(s.as_ref())),
+            _ => None,
+        });
+
+        if let Some(rhai_path) = rhai_path {
+            match execute_rhai_paint_script(&rhai_path) {
+                Ok(ops) => {
+                    view.props.insert("paint_ops", PropValue::PaintOps(ops));
+                },
+                Err(e) => {
+                    eprintln!(
+                        "[rgui] execute_tier2_paint_scripts: Rhai 脚本执行失败 ({}): {e}",
+                        rhai_path.display()
+                    );
+                },
+            }
+        }
+    }
+
+    // 递归处理子节点
+    for child in &mut view.children {
+        execute_tier2_paint_scripts_recursive(child);
+    }
+}
+
+/// 执行单个 Rhai paint 脚本并返回生成的 PaintOps。
+///
+/// 创建独立的 Rhai 引擎，注册绘制原语（`fill_rect`/`draw_text`/`rgb`/`rgba`/`paint_children`），
+/// 执行脚本，通过 `PaintOpsAccumulator` 收集结果。
+///
+/// # 参数
+///
+/// - `path`: `.rhai` 脚本文件路径
+///
+/// # 返回
+///
+/// 脚本执行成功后返回生成的 `Vec<PaintOp>`。失败时返回错误。
+#[cfg(feature = "devtools")]
+fn execute_rhai_paint_script(
+    path: &std::path::Path,
+) -> Result<Vec<PaintOp>, Box<dyn std::error::Error>> {
+    use rgui_script::ScriptEngine;
+    use rgui_script::paint_primitives::{PaintOpsAccumulator, register_paint_primitives};
+
+    let script = std::fs::read_to_string(path)?;
+    let mut engine = ScriptEngine::new();
+    let accumulator = PaintOpsAccumulator::new();
+    register_paint_primitives(engine.engine_mut(), &accumulator);
+
+    engine.run(&script)?;
+
+    Ok(accumulator.take())
 }
 
 // ============================================================================

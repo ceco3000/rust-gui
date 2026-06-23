@@ -437,6 +437,9 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     // 1. 解析 .rgui
     let mut view: rgui_core::view::WidgetView<M> = parse_rgui_file(&rgui_path)?;
 
+    // 1b. 执行 Tier 2 Rhai paint 脚本（加载时一次性，产出 PaintOp 缓存到 props）
+    crate::paint_factory::execute_tier2_paint_scripts(&mut view);
+
     // 2. 初始布局
     let initial_layout = compute_view_layout(
         &mut view,
@@ -717,8 +720,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         &mut self,
         raw_window_position: Point,
     ) -> Option<WidgetId> {
-        self.handler
-            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Enter)
+        self.handler.inject_drag_lifecycle_platform_window_raw(
+            raw_window_position,
+            DragLifecycleEvent::Enter,
+        )
     }
 
     /// 注入平台原始窗口坐标 DragOver。
@@ -726,8 +731,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         &mut self,
         raw_window_position: Point,
     ) -> Option<WidgetId> {
-        self.handler
-            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Over)
+        self.handler.inject_drag_lifecycle_platform_window_raw(
+            raw_window_position,
+            DragLifecycleEvent::Over,
+        )
     }
 
     /// 注入平台原始窗口坐标 Drop。
@@ -735,8 +742,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         &mut self,
         raw_window_position: Point,
     ) -> Option<WidgetId> {
-        self.handler
-            .inject_drag_lifecycle_platform_window_raw(raw_window_position, DragLifecycleEvent::Drop)
+        self.handler.inject_drag_lifecycle_platform_window_raw(
+            raw_window_position,
+            DragLifecycleEvent::Drop,
+        )
     }
 
     /// 回放真实窗口 DragEnter。
@@ -745,7 +754,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         raw_window_position: Point,
     ) -> Option<WidgetId> {
         self.handler
-            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Enter)
+            .replay_drag_lifecycle_from_platform_window_event(
+                raw_window_position,
+                DragLifecycleEvent::Enter,
+            )
     }
 
     /// 回放真实窗口 DragOver。
@@ -754,7 +766,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         raw_window_position: Point,
     ) -> Option<WidgetId> {
         self.handler
-            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Over)
+            .replay_drag_lifecycle_from_platform_window_event(
+                raw_window_position,
+                DragLifecycleEvent::Over,
+            )
     }
 
     /// 回放真实窗口 Drop。
@@ -763,7 +778,10 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         raw_window_position: Point,
     ) -> Option<WidgetId> {
         self.handler
-            .replay_drag_lifecycle_from_platform_window_event(raw_window_position, DragLifecycleEvent::Drop)
+            .replay_drag_lifecycle_from_platform_window_event(
+                raw_window_position,
+                DragLifecycleEvent::Drop,
+            )
     }
 
     /// 读取组件持久状态。
@@ -1043,6 +1061,9 @@ impl App {
         let mut hot_reload = RguiHotReload::<M>::new(&config, rgui_path)?;
         let mut current_view = hot_reload.current_view().clone();
 
+        // T204: 执行初始视图的 Tier 2 Rhai paint 脚本
+        crate::paint_factory::execute_tier2_paint_scripts(&mut current_view);
+
         // RS04: 共享的 PropRegistry 和 WidgetIdBimap
         let prop_registry = self.prop_registry.clone();
         let id_map = Arc::clone(&self.id_map);
@@ -1141,6 +1162,8 @@ impl App {
 
                     let available = Size::new(f64::from(width), f64::from(height));
                     let mut view = new_view.clone();
+                    // T204: 热重载后重新执行 Tier 2 Rhai paint 脚本
+                    crate::paint_factory::execute_tier2_paint_scripts(&mut view);
                     // RS04: 注入 Rhai 写入的待更新 prop
                     inject_props_from_registry(&mut view, &prop_registry.drain());
                     // RS07: 从 StateStore 注入 state 绑定 prop

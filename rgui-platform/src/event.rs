@@ -500,11 +500,9 @@ mod tests {
 
     #[test]
     fn mouse_event_coords_can_attach_local_position() {
-        let coords = MouseEventCoords::new(
-            Point::new(20.0, 30.0),
-            MouseInputOrigin::LogicalInjection,
-        )
-        .with_local(Point::new(5.0, 6.0));
+        let coords =
+            MouseEventCoords::new(Point::new(20.0, 30.0), MouseInputOrigin::LogicalInjection)
+                .with_local(Point::new(5.0, 6.0));
         assert_eq!(coords.window_logical, Point::new(20.0, 30.0));
         assert_eq!(coords.local_logical, Some(Point::new(5.0, 6.0)));
     }

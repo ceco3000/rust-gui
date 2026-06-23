@@ -343,7 +343,13 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
             Rect::ZERO
         });
 
-    let ops = paint_fn(view, bounds);
+    let ops: Vec<PaintOp> = if let Some(rgui_core::view::PropValue::PaintOps(cached_ops)) =
+        view.props.get("paint_ops")
+    {
+        cached_ops.clone()
+    } else {
+        paint_fn(view, bounds)
+    };
 
     let mut commands = Vec::with_capacity(ops.len());
     for op in &ops {
@@ -441,7 +447,13 @@ fn compute_widget_commands<M: rgui_core::traits::AppMessage>(
     paint_fn: &PaintFn<M>,
     text_renderer: Option<&TextRenderer>,
 ) -> Vec<DrawCommand> {
-    let ops = paint_fn(view, bounds);
+    let ops: Vec<PaintOp> = if let Some(rgui_core::view::PropValue::PaintOps(cached_ops)) =
+        view.props.get("paint_ops")
+    {
+        cached_ops.clone()
+    } else {
+        paint_fn(view, bounds)
+    };
     let mut commands = Vec::with_capacity(ops.len());
     for op in &ops {
         commands.push(paint_op_to_draw_command_inner(op, text_renderer));
@@ -791,10 +803,7 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(
-        widget_type,
-        "__none__"
-    ) {
+    if matches!(widget_type, "__none__") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
@@ -1910,5 +1919,101 @@ mod tests {
         for (i, layer) in scene2.layers.iter().enumerate() {
             assert_eq!(layer.commands.len(), scene1.layers[i].commands.len());
         }
+    }
+
+    // --- T204: walk_view_tree Tier 2 branching ---
+
+    /// 辅助函数：创建带 paint_ops 属性的 WidgetView（模拟 Tier 2 预计算 PaintOp）。
+    fn make_tier2_view(
+        widget_type: &'static str,
+        ops: Vec<PaintOp>,
+    ) -> rgui_core::view::WidgetView<TestMsg> {
+        rgui_core::view::WidgetView::new(widget_type)
+            .prop("_tier", rgui_core::view::PropValue::str("2"))
+            .prop("paint_ops", rgui_core::view::PropValue::PaintOps(ops))
+    }
+
+    #[test]
+    fn walk_view_tree_uses_paint_ops_from_props_for_tier2() {
+        // RED→GREEN: Tier 2 节点从 props["paint_ops"] 读取 PaintOp，不调用 paint_fn
+        let ops = vec![PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+            color: Color::RED,
+            radius: 4.0,
+        }];
+        let mut view = make_tier2_view("Card", ops.clone());
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        // paint_fn 始终返回空——如果 Tier 2 分支不工作，场景将无内容
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+
+        assert_eq!(scene.layer_count(), 1, "Tier 2 节点应产生 1 个图层");
+        let layer = &scene.layers[0];
+        assert_eq!(layer.commands.len(), 1, "图层应包含 1 个 DrawCommand");
+        assert!(
+            matches!(&layer.commands[0], DrawCommand::FillRect { .. }),
+            "应包含 FillRect DrawCommand"
+        );
+    }
+
+    #[test]
+    fn walk_view_tree_falls_through_to_paint_fn_when_no_paint_ops() {
+        // Tier 2 标记存在但无 paint_ops → 回退到 paint_fn
+        let mut view = rgui_core::view::WidgetView::<TestMsg>::new("Card")
+            .prop("_tier", rgui_core::view::PropValue::str("2"));
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+
+        // 记录 paint_fn 被调用
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let called2 = std::sync::Arc::clone(&called);
+        let paint_fn: PaintFn<TestMsg> = Box::new(move |_view, _bounds| {
+            called2.store(true, std::sync::atomic::Ordering::SeqCst);
+            Vec::new()
+        });
+
+        let _scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+
+        assert!(
+            called.load(std::sync::atomic::Ordering::SeqCst),
+            "无 paint_ops 时应回退到 paint_fn"
+        );
+    }
+
+    #[test]
+    fn walk_view_tree_tier2_with_children_falls_back_to_paint_fn_for_children() {
+        // Tier 2 父节点使用 paint_ops，子节点（非 Tier 2）使用 paint_fn
+        let ops = vec![PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+            color: Color::BLUE,
+            radius: 0.0,
+        }];
+        let child = make_label("Child");
+        let mut view = make_tier2_view("Card", ops.clone()).children(vec![child]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+
+        // 父节点（Tier 2）+ 子节点（Label）= 2 个图层
+        assert_eq!(scene.layer_count(), 2);
+    }
+
+    #[test]
+    fn walk_view_tree_tier1_node_uses_paint_fn_normally() {
+        // 非 Tier 2 节点使用 paint_fn 正常工作
+        let mut view = make_view("Column", vec![make_label("Hello")]);
+
+        let engine = compute_view_layout(&mut view, Size::new(400.0, 300.0), None);
+        let paint_fn = make_empty_paint_fn();
+
+        let scene = build_scene_from_view(&view, &engine, &paint_fn, 0, None);
+
+        // Column + Label = 2 个图层
+        assert_eq!(scene.layer_count(), 2);
     }
 }
