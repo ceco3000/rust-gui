@@ -166,6 +166,7 @@ pub fn parse_rgui_file<M: AppMessage>(path: &Path) -> Result<WidgetView<M>, Rgui
     let mut view = parse_rgui_file_without_tier2(path)?;
     if let Some(parent_dir) = path.parent() {
         mark_tier2_nodes(&mut view, parent_dir);
+        expand_component_files(&mut view, parent_dir);
     }
     Ok(view)
 }
@@ -233,6 +234,109 @@ fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Pat
     for child in &mut view.children {
         mark_tier2_nodes_recursive(child, dir);
     }
+}
+
+/// 递归展开组件节点——将标记为 Tier 2 的节点替换为其子 `.rgui` 文件的内容。
+///
+/// T207：遍历 WidgetView 树，对每个标记了 `_rgui_path` 的节点：
+/// 1. 加载并解析子 `.rgui` 文件为 WidgetView 子树
+/// 2. 递归展开子树（处理嵌套组件）
+/// 3. 将当前节点替换为展开后的子树
+///
+/// 展开后保留 `_rhai_path` 供后续 Tier 2 paint 执行，清理 `_tier` 和 `_rgui_path`。
+fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
+    // 1. 检查根节点本身是否为组件，如果是则用展开结果替换整个 view
+    if let Some(expanded) = try_expand_node(view, dir) {
+        *view = expanded;
+    }
+
+    // 2. 递归处理子节点
+    let mut new_children = Vec::with_capacity(view.children.len());
+    for mut child in view.children.drain(..) {
+        // 先递归展开子节点的子树
+        expand_component_files(&mut child, dir);
+
+        // 检查当前子节点是否为组件节点
+        if let Some(expanded) = try_expand_node(&mut child, dir) {
+            new_children.push(expanded);
+        } else {
+            new_children.push(child);
+        }
+    }
+    view.children = new_children;
+}
+
+/// 尝试展开单个节点。如果节点有 `_rgui_path` 标记，加载子 .rgui 文件并返回展开后的 WidgetView。
+/// 展开成功时清理 `_tier`/`_rgui_path` 标记，保留 `_rhai_path`。
+/// 展开失败时返回红底占位符。非组件节点返回 `None`。
+fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Option<WidgetView<M>> {
+    let rgui_path_str = match node.props.get("_rgui_path") {
+        Some(PropValue::Str(s)) => s.clone(),
+        _ => return None,
+    };
+
+    let rgui_path = std::path::Path::new(rgui_path_str.as_ref());
+    match expand_single_component::<M>(rgui_path, dir) {
+        Ok(mut expanded) => {
+            // 保留 _rhai_path 供后续 paint 执行
+            if let Some(rhai_path) = node.props.remove("_rhai_path") {
+                expanded.props.insert("_rhai_path", rhai_path);
+            }
+            // 清理内部标记
+            expanded.props.remove("_tier");
+            expanded.props.remove("_rgui_path");
+            Some(expanded)
+        },
+        Err(e) => {
+            log::warn!(
+                "[rgui] expand_component_files: 无法展开组件 '{}' ({}): {e}",
+                node.widget_type,
+                rgui_path_str.as_ref(),
+            );
+            // 降级为红底占位符
+            let placeholder = make_component_placeholder::<M>(node.widget_type);
+            Some(placeholder)
+        },
+    }
+}
+
+/// 加载并展开单个组件——读取子 `.rgui` 文件，解析为 WidgetView，递归展开。
+///
+/// 如果文件不存在或解析失败，返回错误。
+fn expand_single_component<M: AppMessage>(
+    rgui_path: &Path,
+    _dir: &Path,
+) -> Result<WidgetView<M>, RguiParseError> {
+    // 递归解析子 .rgui（包含 mark_tier2_nodes + expand_component_files）
+    let content = std::fs::read_to_string(rgui_path).map_err(|e| {
+        RguiParseError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("无法读取组件文件 '{}': {e}", rgui_path.display()),
+        ))
+    })?;
+    let mut child_view = parse_rgui_str(&content)?;
+    if let Some(child_dir) = rgui_path.parent() {
+        mark_tier2_nodes(&mut child_view, child_dir);
+        expand_component_files(&mut child_view, child_dir);
+    }
+    Ok(child_view)
+}
+
+/// 为无法展开的组件创建红底占位符 WidgetView。
+fn make_component_placeholder<M: AppMessage>(widget_type: &str) -> WidgetView<M> {
+    let mut view = WidgetView::new("Container");
+    view.props.insert(
+        "background",
+        PropValue::Str(std::sync::Arc::from("#FF0000")),
+    );
+    // 用 Label 显示组件名
+    let mut label = WidgetView::new("Label");
+    label.props.insert(
+        "text",
+        PropValue::Str(std::sync::Arc::from(format!("<{widget_type}>"))),
+    );
+    view.children.push(label);
+    view
 }
 
 /// 从 WidgetView 树中收集 `id` 属性，建立字符串→WidgetId 双向映射。
@@ -1328,7 +1432,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_rgui_file_scans_tier2() {
+    fn parse_rgui_file_expands_tier2_component() {
+        // T207: 当文件对存在时，Tier 2 组件应自动展开
         let dir = tempfile::tempdir().unwrap();
         let rgui_path = dir.path().join("main.rgui");
         std::fs::write(&rgui_path, r#"<Column><MyCard title="Hello"/></Column>"#).unwrap();
@@ -1339,12 +1444,13 @@ mod tests {
 
         assert_eq!(view.widget_type, "Column");
         assert_eq!(view.children.len(), 1);
-        let mycard = &view.children[0];
-        assert_eq!(mycard.widget_type, "MyCard");
-        assert_eq!(
-            mycard.props.get("_tier"),
-            Some(&PropValue::Str(Arc::from("2")))
-        );
+        // <MyCard> 展开为 mycard.rgui 的根 <Container>
+        let expanded = &view.children[0];
+        assert_eq!(expanded.widget_type, "Container");
+        // _tier 标记应在展开后被清理
+        assert!(!expanded.props.contains_key("_tier"));
+        // _rhai_path 保留供后续 paint
+        assert!(expanded.props.contains_key("_rhai_path"));
     }
 
     #[test]
@@ -1374,5 +1480,108 @@ mod tests {
 
         // 只有 .rgui 无 .rhai → 应回退到 Tier 1
         assert!(!view.props.contains_key("_tier"));
+    }
+
+    // --- T207 组件展开测试 ---
+
+    #[test]
+    fn parse_rgui_file_expands_component() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<Column><MyCard title="Hello"/></Column>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="Card content"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // <Column> 仍然是根节点
+        assert_eq!(view.widget_type, "Column");
+        // <MyCard> 已被展开为子 .rgui 的内容
+        assert_eq!(view.children.len(), 1);
+        let expanded = &view.children[0];
+        // 展开后根节点应为子 .rgui 的根节点 (Container)
+        assert_eq!(expanded.widget_type, "Container");
+        // 子 .rgui 的内容应在其中
+        assert_eq!(expanded.children.len(), 1);
+        assert_eq!(expanded.children[0].widget_type, "Label");
+        // 展开后不应保留 Tier 2 标记 props
+        assert!(!expanded.props.contains_key("_tier"));
+        assert!(!expanded.props.contains_key("_rgui_path"));
+        // 但应保留内部标记（用于后续 Tier 2 渲染步骤）
+        assert!(expanded.props.contains_key("_rhai_path"));
+    }
+
+    #[test]
+    fn parse_rgui_file_expands_nested_components() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<Outer title="Hello"/>"#).unwrap();
+        // outer.rgui 引用 inner
+        std::fs::write(
+            dir.path().join("outer.rgui"),
+            r#"<Column><Inner content="nested"/></Column>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("outer.rhai"), "fn paint() {}").unwrap();
+        // inner.rgui 是叶子
+        std::fs::write(
+            dir.path().join("inner.rgui"),
+            r#"<Label text="inner content"/>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("inner.rhai"), "fn inner_paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 根节点 <Outer> 被展开为 outer.rgui 的内容
+        // outer.rgui 的根是 <Column>
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 1);
+        // <Column> 的子节点 <Inner> 也应被展开为 inner.rgui 的内容
+        let inner_expanded = &view.children[0];
+        assert_eq!(inner_expanded.widget_type, "Label");
+        assert_eq!(inner_expanded.children.len(), 0);
+    }
+
+    #[test]
+    fn parse_rgui_file_expands_root_component() {
+        // T207: 根节点本身是组件时也应展开
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        // 创建 .rgui 和 .rhai 以标记为 Tier 2
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // .rgui 文件存在，应正常展开
+        assert_eq!(view.widget_type, "Container");
+        assert!(!view.props.contains_key("_tier"));
+    }
+
+    #[test]
+    fn parse_rgui_file_expansion_cleans_internal_markers() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="hello"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 展开后 _tier 和 _rgui_path 应被清理
+        assert!(!view.props.contains_key("_tier"));
+        assert!(!view.props.contains_key("_rgui_path"));
+        // _rhai_path 保留给 Tier 2 paint 执行
+        assert!(view.props.contains_key("_rhai_path"));
     }
 }
