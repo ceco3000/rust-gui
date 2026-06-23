@@ -35,6 +35,7 @@ use ordered_float::OrderedFloat;
 use rgui_core::AppMessage;
 use rgui_core::id::WidgetId;
 use rgui_core::view::{Color, PropValue, WidgetView};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
@@ -268,12 +269,22 @@ fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
 
 /// 尝试展开单个节点。如果节点有 `_rgui_path` 标记，加载子 .rgui 文件并返回展开后的 WidgetView。
 /// 展开成功时清理 `_tier`/`_rgui_path` 标记，保留 `_rhai_path`。
+///
+/// T208：展开后将父节点 props 传入子组件作用域，解析 `{prop_name}` 绑定。
 /// 展开失败时返回红底占位符。非组件节点返回 `None`。
 fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Option<WidgetView<M>> {
     let rgui_path_str = match node.props.get("_rgui_path") {
         Some(PropValue::Str(s)) => s.clone(),
         _ => return None,
     };
+
+    // T208: 收集父节点 props（排除内部标记），用于子组件 {prop_name} 绑定解析
+    let parent_props: BTreeMap<&'static str, PropValue> = node
+        .props
+        .iter()
+        .filter(|(k, _)| !k.starts_with('_'))
+        .map(|(k, v)| (*k, v.clone()))
+        .collect();
 
     let rgui_path = std::path::Path::new(rgui_path_str.as_ref());
     match expand_single_component::<M>(rgui_path, dir) {
@@ -285,6 +296,10 @@ fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Optio
             // 清理内部标记
             expanded.props.remove("_tier");
             expanded.props.remove("_rgui_path");
+
+            // T208: 解析子组件中的 {prop_name} 绑定
+            resolve_prop_bindings(&mut expanded, &parent_props);
+
             Some(expanded)
         },
         Err(e) => {
@@ -297,6 +312,92 @@ fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Optio
             let placeholder = make_component_placeholder::<M>(node.widget_type);
             Some(placeholder)
         },
+    }
+}
+
+/// T208: 递归解析 WidgetView 树中的 `{prop_name}` 绑定。
+///
+/// 对每个节点，遍历其所有 prop 值，如果 PropValue::Str 中包含 `{xxx}` 模式：
+/// - 在 `parent_props` 中找到对应 key → 替换为 prop 的 Display 值
+/// - 找不到 → 替换为空字符串（以满足验收标准：未绑定的 `{xxx}` 渲染为空字符串）
+///
+/// 递归处理所有子节点以支持嵌套组件。
+fn resolve_prop_bindings<M: AppMessage>(
+    view: &mut WidgetView<M>,
+    parent_props: &BTreeMap<&'static str, PropValue>,
+) {
+    // 解析当前节点的所有 prop 值
+    let mut resolved_props: BTreeMap<&'static str, PropValue> = BTreeMap::new();
+    for (name, value) in &view.props {
+        match value {
+            PropValue::Str(s) => {
+                let resolved = resolve_string_bindings(s, parent_props);
+                if &resolved != s.as_ref() {
+                    resolved_props.insert(*name, PropValue::Str(std::sync::Arc::from(resolved)));
+                }
+            },
+            _ => {},
+        }
+    }
+    for (name, value) in resolved_props {
+        view.props.insert(name, value);
+    }
+
+    // 递归处理子节点
+    for child in &mut view.children {
+        resolve_prop_bindings(child, parent_props);
+    }
+}
+
+/// 解析单个字符串中的 `{prop_name}` 绑定。
+///
+/// - `"{title}"` → 替换为 parent_props["title"] 的 Display 值
+/// - `"Prefix {title} suffix"` → 混合文本和绑定
+/// - 未找到的绑定 → 替换为空字符串
+fn resolve_string_bindings(
+    input: &str,
+    parent_props: &BTreeMap<&'static str, PropValue>,
+) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut i = 0;
+    let bytes = input.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let mut j = i + 1;
+            while j < bytes.len() && bytes[j] != b'}' {
+                j += 1;
+            }
+            if j < bytes.len() {
+                let binding = &input[i + 1..j];
+                if let Some(prop_value) = parent_props.get(binding) {
+                    result.push_str(&prop_value_to_string(prop_value));
+                }
+                // 未找到绑定 → 替换为空字符串（满足验收标准）
+                i = j + 1;
+                continue;
+            }
+        }
+        result.push(input[i..].chars().next().unwrap_or('?'));
+        i += 1;
+    }
+    result
+}
+
+/// 将 PropValue 转换为字符串表示（用于绑定替换）。
+fn prop_value_to_string(value: &PropValue) -> String {
+    match value {
+        PropValue::Str(s) => s.to_string(),
+        PropValue::Bool(b) => b.to_string(),
+        PropValue::Int(i) => i.to_string(),
+        PropValue::Float(f) => f.to_string(),
+        PropValue::Color(c) => c.to_string(),
+        PropValue::Size(s) => s.to_string(),
+        PropValue::Rect(r) => r.to_string(),
+        PropValue::Enum(e) => e.to_string(),
+        PropValue::List(_)
+        | PropValue::Map(_)
+        | PropValue::Callback(_)
+        | PropValue::PaintOps(_) => String::new(),
     }
 }
 
@@ -1583,5 +1684,86 @@ mod tests {
         assert!(!view.props.contains_key("_rgui_path"));
         // _rhai_path 保留给 Tier 2 paint 执行
         assert!(view.props.contains_key("_rhai_path"));
+    }
+
+    // --- T208 Props 传递测试 ---
+
+    #[test]
+    fn parse_rgui_file_resolves_simple_prop_binding() {
+        // T208: <MyCard title="Hello"> → 子组件内 {title} 解析为 "Hello"
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="{title}"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 展开后根节点为 Container
+        assert_eq!(view.widget_type, "Container");
+        assert_eq!(view.children.len(), 1);
+        let label = &view.children[0];
+        assert_eq!(label.widget_type, "Label");
+        // {title} 应解析为 "Hello"
+        assert_eq!(
+            label.props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Hello")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_resolves_nested_prop_binding_3_levels() {
+        // T208: props 在嵌套 3 层以上保持传递
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<Outer title="Hello"/>"#).unwrap();
+        // outer.rgui 引用 middle
+        std::fs::write(
+            dir.path().join("outer.rgui"),
+            r#"<Middle label="{title}"/>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("outer.rhai"), "fn paint() {}").unwrap();
+        // middle.rgui 显示 label
+        std::fs::write(dir.path().join("middle.rgui"), r#"<Label text="{label}"/>"#).unwrap();
+        std::fs::write(dir.path().join("middle.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 展开后根节点为 Label (middle.rgui 的根)
+        assert_eq!(view.widget_type, "Label");
+        // {label} → "Hello" (通过 outer → middle 传递)
+        assert_eq!(
+            view.props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Hello")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_unresolved_binding_renders_empty() {
+        // T208: 未绑定的 {xxx} 渲染为空字符串
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="{unknown}"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        let label = &view.children[0];
+        // {unknown} → ""
+        assert_eq!(
+            label.props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("")))
+        );
     }
 }
