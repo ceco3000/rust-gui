@@ -21,6 +21,7 @@
 
 mod command;
 mod engine;
+pub mod paint_primitives;
 mod prop_registry;
 
 pub use command::CommandRegistry;
