@@ -97,6 +97,9 @@ pub struct RguiHotReload<M: AppMessage> {
     rgui_path: PathBuf,
     /// 规范化的 .rgui 文件路径（用于与 notify 事件路径比较）。
     canonical_rgui_path: PathBuf,
+    /// 监控目录的规范化路径（.rgui 文件所在目录）。
+    /// 用于检测目录内任意 .rgui/.rhai 文件的创建/修改事件。
+    watch_dir: PathBuf,
     /// 当前 WidgetView 缓存——用于快速返回最新解析结果。
     current_view: WidgetView<M>,
 }
@@ -127,10 +130,16 @@ impl<M: AppMessage> RguiHotReload<M> {
         });
         let watcher = FileWatcher::new(config)?;
         let current_view = parse_rgui_file_from_path(&rgui_path)?;
+        // 规范化监控目录路径（.rgui 父目录）
+        let watch_dir = canonical_rgui_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
         Ok(Self {
             watcher,
             rgui_path,
             canonical_rgui_path,
+            watch_dir,
             current_view,
         })
     }
@@ -147,11 +156,12 @@ impl<M: AppMessage> RguiHotReload<M> {
     /// * `Err(_)` - 解析或监控错误
     pub fn check_and_reload(&mut self) -> Result<Option<WidgetView<M>>, RguiHotReloadError> {
         let changes = self.watcher.check_changes();
-        let rgui_changed = changes
-            .iter()
-            .any(|c| path_matches(&c.path, &self.canonical_rgui_path));
+        let needs_reload = changes.iter().any(|c| {
+            path_matches(&c.path, &self.canonical_rgui_path)
+                || is_sibling_rgui_or_rhai(&c.path, &self.watch_dir, &self.canonical_rgui_path)
+        });
 
-        if rgui_changed {
+        if needs_reload {
             let new_view = parse_rgui_file_from_path(&self.rgui_path)?;
             self.current_view = new_view.clone();
             Ok(Some(new_view))
@@ -172,11 +182,12 @@ impl<M: AppMessage> RguiHotReload<M> {
     /// 若 .rgui 文件有变更则立即重新解析。
     pub fn flush_and_reload(&mut self) -> Result<Option<WidgetView<M>>, RguiHotReloadError> {
         let changes = self.watcher.flush();
-        let rgui_changed = changes
-            .iter()
-            .any(|c| path_matches(&c.path, &self.canonical_rgui_path));
+        let needs_reload = changes.iter().any(|c| {
+            path_matches(&c.path, &self.canonical_rgui_path)
+                || is_sibling_rgui_or_rhai(&c.path, &self.watch_dir, &self.canonical_rgui_path)
+        });
 
-        if rgui_changed {
+        if needs_reload {
             let new_view = parse_rgui_file_from_path(&self.rgui_path)?;
             self.current_view = new_view.clone();
             Ok(Some(new_view))
@@ -222,6 +233,36 @@ fn path_matches(event_path: &Path, canonical_target: &Path) -> bool {
         return canonical_event == canonical_target;
     }
     false
+}
+
+/// 检测事件路径是否为监控目录内的 .rgui/.rhai 文件（排除主 .rgui 文件自身）。
+///
+/// 用于 T205：当目录内新增 `.rgui`/`.rhai` 文件时，触发重新解析主 `.rgui`，
+/// 以执行 Tier 2 组件扫描（`mark_tier2_nodes`）。
+fn is_sibling_rgui_or_rhai(event_path: &Path, watch_dir: &Path, main_rgui: &Path) -> bool {
+    // 排除主 .rgui 文件自身（由 path_matches 单独处理）
+    if path_matches(event_path, main_rgui) {
+        return false;
+    }
+
+    // 检查扩展名
+    let is_rgui_or_rhai = event_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "rgui" | "rhai"))
+        .unwrap_or(false);
+
+    if !is_rgui_or_rhai {
+        return false;
+    }
+
+    // 规范化事件路径后检查是否在监控目录内
+    if let Ok(canonical_event) = std::fs::canonicalize(event_path) {
+        canonical_event.parent().map_or(false, |p| p == watch_dir)
+    } else {
+        // 无法规范化时，直接比较父目录
+        event_path.parent().map_or(false, |p| p == watch_dir)
+    }
 }
 
 #[cfg(test)]
@@ -449,5 +490,81 @@ mod tests {
         let debug_str = format!("{reloader:?}");
         assert!(debug_str.contains("RguiHotReload"));
         assert!(debug_str.contains("widget_type"));
+    }
+
+    // === T205: 目录级创建事件检测 ===
+
+    #[test]
+    fn test_detect_new_rgui_rhai_file_pair_in_directory() {
+        let (_dir, rgui_path, config) = setup_test_env(r#"<Column><Card title="Test"/></Column>"#);
+        let mut reloader =
+            RguiHotReload::<TestMsg>::new(&config, &rgui_path).expect("创建 RguiHotReload 失败");
+
+        // 等待 watcher 稳定后消耗初始事件
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = reloader.flush_and_reload();
+
+        // 确认初始无变更
+        let result = reloader.check_and_reload().unwrap();
+        assert!(result.is_none(), "初始应无变更");
+
+        // 创建 card.rgui + card.rhai 文件对
+        let card_rgui = _dir.path().join("card.rgui");
+        let card_rhai = _dir.path().join("card.rhai");
+        std::fs::write(&card_rgui, r#"<Label text="Card"/>"#).expect("写入 card.rgui 失败");
+        std::fs::write(&card_rhai, "// Card paint script").expect("写入 card.rhai 失败");
+
+        // 等待文件系统事件传播 + debounce 窗口
+        std::thread::sleep(Duration::from_millis(200));
+
+        // T205: 新增 .rgui+.rhai 文件 → notify 检测 → 自动注册 → 父组件刷新
+        let result = reloader.check_and_reload().unwrap();
+        assert!(result.is_some(), "新增 .rgui+.rhai 文件对应触发重新解析");
+    }
+
+    #[test]
+    fn test_detect_new_rgui_only_no_trigger() {
+        let (_dir, rgui_path, config) = setup_test_env(r#"<Column><Label text="Only"/></Column>"#);
+        let mut reloader =
+            RguiHotReload::<TestMsg>::new(&config, &rgui_path).expect("创建 RguiHotReload 失败");
+
+        // 等待 watcher 稳定后消耗初始事件
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = reloader.flush_and_reload();
+
+        // 仅创建 .rgui 文件（无 .rhai 配对），仍应触发检测
+        let new_rgui = _dir.path().join("other.rgui");
+        std::fs::write(&new_rgui, r#"<Label text="Other"/>"#).expect("写入 other.rgui 失败");
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        let result = reloader.check_and_reload().unwrap();
+        assert!(
+            result.is_some(),
+            "新增 .rgui 文件（即使无配对 .rhai）应触发重新解析以扫描 Tier 2"
+        );
+    }
+
+    #[test]
+    fn test_detect_new_rhai_only_triggers_reparse() {
+        let (_dir, rgui_path, config) = setup_test_env(r#"<Column><Card title="Test"/></Column>"#);
+        let mut reloader =
+            RguiHotReload::<TestMsg>::new(&config, &rgui_path).expect("创建 RguiHotReload 失败");
+
+        // 等待 watcher 稳定后消耗初始事件
+        std::thread::sleep(Duration::from_millis(200));
+        let _ = reloader.flush_and_reload();
+
+        // 仅创建 .rhai 文件（配对已有的 card.rgui 不存在），仍应触发
+        let new_rhai = _dir.path().join("widget.rhai");
+        std::fs::write(&new_rhai, "// Widget paint").expect("写入 widget.rhai 失败");
+
+        std::thread::sleep(Duration::from_millis(200));
+
+        let result = reloader.check_and_reload().unwrap();
+        assert!(
+            result.is_some(),
+            "新增 .rhai 文件应触发重新解析以扫描 Tier 2 配对"
+        );
     }
 }

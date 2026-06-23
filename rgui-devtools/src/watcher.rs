@@ -59,7 +59,7 @@ impl FileChangeKind {
             .and_then(|ext| ext.to_str())
             .map(|ext| match ext.to_ascii_lowercase().as_str() {
                 "rgss" => Self::Style,
-                "rgui" => Self::Structure,
+                "rgui" | "rhai" => Self::Structure,
                 "html" => Self::Html,
                 "rs" => Self::Rust,
                 _ => Self::Other,
