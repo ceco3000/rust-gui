@@ -245,9 +245,14 @@ fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Pat
 /// 3. 将当前节点替换为展开后的子树
 ///
 /// 展开后保留 `_rhai_path` 供后续 Tier 2 paint 执行，清理 `_tier` 和 `_rgui_path`。
+///
+/// T209：展开后调用 [`replace_slots`] 将父组件传入的子节点注入到子组件模板的 `<slot />` 占位符中。
 fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
     // 1. 检查根节点本身是否为组件，如果是则用展开结果替换整个 view
-    if let Some(expanded) = try_expand_node(view, dir) {
+    if let Some(mut expanded) = try_expand_node(view, dir) {
+        // T209: 替换 <slot /> 占位符——将父组件传入的子节点注入子组件模板
+        let slot_children = std::mem::take(&mut view.children);
+        replace_slots(&mut expanded, slot_children);
         *view = expanded;
     }
 
@@ -258,7 +263,10 @@ fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
         expand_component_files(&mut child, dir);
 
         // 检查当前子节点是否为组件节点
-        if let Some(expanded) = try_expand_node(&mut child, dir) {
+        if let Some(mut expanded) = try_expand_node(&mut child, dir) {
+            // T209: 替换 <slot /> 占位符
+            let slot_children = std::mem::take(&mut child.children);
+            replace_slots(&mut expanded, slot_children);
             new_children.push(expanded);
         } else {
             new_children.push(child);
@@ -313,6 +321,119 @@ fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Optio
             Some(placeholder)
         },
     }
+}
+
+// ============================================================================
+// T209：<slot /> 内容替换
+// ============================================================================
+
+/// 命名 slot 子节点映射：slot 名称 → 子节点列表。
+type NamedSlots<M> = BTreeMap<String, Vec<WidgetView<M>>>;
+
+/// T209: 将父组件传入的子节点注入到子组件模板的 `<slot />` 占位符中。
+///
+/// ## 匹配规则
+///
+/// - **默认 slot**：`<slot />`（无 `name` 属性）→ 接收父组件中未标记 `slot="name"` 的子节点
+/// - **命名 slot**：`<slot name="x" />` → 接收父组件中标记 `slot="x"` 的子节点
+/// - **多默认 slot**：仅第一个默认 slot 接收子节点，其余为空
+/// - **无 slot**：模板中无 `<slot />` 时，所有子节点被丢弃并记录 warn 日志
+///
+/// ## 验收标准（D8 §9.17 T209）
+///
+/// - 子组件含 `<slot />` → 父组件传入子节点正确内联到 slot 位置
+/// - 多 `<slot name="x">` 按名称匹配
+/// - 无 slot 时子节点丢弃 + 日志
+fn replace_slots<M: AppMessage>(view: &mut WidgetView<M>, slot_children: Vec<WidgetView<M>>) {
+    // 检查模板中是否有 slot 节点
+    if !has_slot_nodes(view) {
+        if !slot_children.is_empty() {
+            log::warn!(
+                "[rgui] replace_slots: 子组件模板无 <slot />，丢弃 {} 个传入子节点",
+                slot_children.len()
+            );
+        }
+        return;
+    }
+
+    // 分离命名 slot 和默认 slot 子节点
+    let (default_children, named_children) = partition_slot_children(slot_children);
+
+    // 递归替换 slot 节点（空列表时 slot 节点也被移除）
+    let mut default_used = false;
+    replace_slots_recursive(view, &default_children, &named_children, &mut default_used);
+}
+
+/// 检查 WidgetView 树中是否包含 `<slot />` 节点。
+fn has_slot_nodes<M: AppMessage>(view: &WidgetView<M>) -> bool {
+    if view.widget_type == "slot" {
+        return true;
+    }
+    view.children.iter().any(|c| has_slot_nodes(c))
+}
+
+/// 将 slot 子节点分为默认组和命名组。
+fn partition_slot_children<M: AppMessage>(
+    slot_children: Vec<WidgetView<M>>,
+) -> (Vec<WidgetView<M>>, NamedSlots<M>) {
+    let mut default_children = Vec::new();
+    let mut named_children: NamedSlots<M> = BTreeMap::new();
+
+    for mut child in slot_children {
+        if let Some(PropValue::Str(s)) = child.props.remove("slot") {
+            let name = s.as_ref().to_string();
+            if !name.is_empty() {
+                named_children.entry(name).or_default().push(child);
+                continue;
+            }
+        }
+        default_children.push(child);
+    }
+
+    (default_children, named_children)
+}
+
+/// 递归替换 WidgetView 树中的 `<slot />` 节点。
+///
+/// - `default_used` 跟踪第一个默认 slot 是否已消耗（仅第一个默认 slot 接收子节点）
+fn replace_slots_recursive<M: AppMessage>(
+    view: &mut WidgetView<M>,
+    default_children: &[WidgetView<M>],
+    named_children: &NamedSlots<M>,
+    default_used: &mut bool,
+) {
+    let mut new_children = Vec::with_capacity(view.children.len() + default_children.len());
+
+    for mut child in view.children.drain(..) {
+        if child.widget_type == "slot" {
+            // 提取 slot name
+            let slot_name = child.props.get("name").and_then(|v| {
+                if let PropValue::Str(s) = v {
+                    Some(s.as_ref().to_string())
+                } else {
+                    None
+                }
+            });
+
+            if let Some(name) = slot_name {
+                // 命名 slot：查找匹配的子节点
+                if let Some(matched) = named_children.get(&name) {
+                    new_children.extend(matched.iter().cloned());
+                }
+            } else if !*default_used {
+                // 默认 slot：仅第一个接收子节点
+                new_children.extend(default_children.iter().cloned());
+                *default_used = true;
+            }
+            // 否则该 slot 为空（已消耗或无匹配）
+        } else {
+            // 非 slot 节点：递归处理
+            replace_slots_recursive(&mut child, default_children, named_children, default_used);
+            new_children.push(child);
+        }
+    }
+
+    view.children = new_children;
 }
 
 /// T208: 递归解析 WidgetView 树中的 `{prop_name}` 绑定。
@@ -1765,5 +1886,210 @@ mod tests {
             label.props.get("text"),
             Some(&PropValue::Str(std::sync::Arc::from("")))
         );
+    }
+    // --- T209 <slot /> 内容替换测试 ---
+
+    #[test]
+    fn parse_rgui_file_default_slot_replaces_children() {
+        // T209: 子组件含 <slot /> → 父组件传入子节点正确内联到 slot 位置
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<MyCard title="Hello"><Label text="Child content"/></MyCard>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><slot /></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        assert_eq!(view.children.len(), 1);
+        let slotted = &view.children[0];
+        assert_eq!(slotted.widget_type, "Label");
+        assert_eq!(
+            slotted.props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Child content")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_named_slot_by_name() {
+        // T209: 多 <slot name="x"> 按名称匹配
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<MyCard>
+                <Label slot="header" text="Header content"/>
+                <Label slot="footer" text="Footer content"/>
+            </MyCard>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Column>
+                <slot name="header" />
+                <Container><Label text="Body"/></Container>
+                <slot name="footer" />
+            </Column>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 3);
+        assert_eq!(view.children[0].widget_type, "Label");
+        assert_eq!(
+            view.children[0].props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Header content")))
+        );
+        assert_eq!(view.children[1].widget_type, "Container");
+        assert_eq!(view.children[2].widget_type, "Label");
+        assert_eq!(
+            view.children[2].props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Footer content")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_mixed_default_and_named_slots() {
+        // T209: 默认 slot + 命名 slot 混合
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<MyCard>
+                <Label text="Default child"/>
+                <Button slot="actions" label="OK"/>
+            </MyCard>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Column><slot /><slot name="actions" /></Column>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 2);
+        assert_eq!(view.children[0].widget_type, "Label");
+        assert_eq!(view.children[1].widget_type, "Button");
+    }
+
+    #[test]
+    fn parse_rgui_file_no_slot_discards_children() {
+        // T209: 无 slot 时子节点丢弃（不 panic）
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<MyCard><Label text="Should be discarded"/></MyCard>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="Static content"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        assert_eq!(view.children.len(), 1);
+        assert_eq!(view.children[0].widget_type, "Label");
+        assert_eq!(
+            view.children[0].props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Static content")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_self_closing_component_no_children() {
+        // T209: 自闭合 <MyCard /> 无子节点 → 展开成功，slot 为空
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><slot /></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        assert_eq!(view.children.len(), 0);
+    }
+
+    #[test]
+    fn parse_rgui_file_nested_component_slots() {
+        // T209: 嵌套组件中的 slot 替换
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<Outer>
+                <Label text="Grandchild"/>
+            </Outer>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("outer.rgui"),
+            r#"<Column><Inner><slot /></Inner></Column>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("outer.rhai"), "fn paint() {}").unwrap();
+        std::fs::write(
+            dir.path().join("inner.rgui"),
+            r#"<Container><slot /></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("inner.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 1);
+        let inner = &view.children[0];
+        assert_eq!(inner.widget_type, "Container");
+        assert_eq!(inner.children.len(), 1);
+        assert_eq!(inner.children[0].widget_type, "Label");
+        assert_eq!(
+            inner.children[0].props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Grandchild")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_multiple_default_slots_only_first_gets_children() {
+        // T209: 多个默认 slot → 仅第一个接收子节点
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard><Label text="Only one"/></MyCard>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Column><slot /><slot /></Column>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 1);
+        assert_eq!(view.children[0].widget_type, "Label");
     }
 }
