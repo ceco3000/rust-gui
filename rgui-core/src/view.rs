@@ -3,6 +3,7 @@
 //! 本模块定义框架声明式 UI 描述语言的核心值类型。
 //! WidgetView 类型见本模块末尾（将在 C05 中完善 builder API）。
 
+use crate::context::PaintOp;
 use crate::geometry::{Rect, Size};
 use crate::id::WidgetId;
 use crate::traits::AppMessage;
@@ -276,6 +277,8 @@ pub enum PropValue {
     Map(BTreeMap<Arc<str>, PropValue>),
     Enum(Arc<str>),
     Callback(Callback),
+    /// 预计算的绘制操作列表（Tier 2 脚本 paint 产出，每帧热路径直接消费）。
+    PaintOps(Vec<PaintOp>),
 }
 
 impl PropValue {
@@ -381,6 +384,7 @@ impl fmt::Display for PropValue {
             },
             Self::Enum(v) => write!(f, ".{v}"),
             Self::Callback(_) => write!(f, "Callback(…)"),
+            Self::PaintOps(ops) => write!(f, "PaintOps({} op(s))", ops.len()),
         }
     }
 }
@@ -1003,6 +1007,79 @@ mod tests {
     fn prop_value_display() {
         let v = PropValue::str("hello");
         assert!(format!("{v}").contains("hello"));
+    }
+
+    // --- PropValue::PaintOps ---
+
+    #[test]
+    fn prop_value_paint_ops_construct() {
+        let ops = vec![PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+            color: Color::RED,
+            radius: 4.0,
+        }];
+        let v = PropValue::PaintOps(ops);
+        assert_eq!(
+            v,
+            PropValue::PaintOps(vec![PaintOp::FillRect {
+                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                color: Color::RED,
+                radius: 4.0,
+            }])
+        );
+    }
+
+    #[test]
+    fn prop_value_paint_ops_empty() {
+        let v = PropValue::PaintOps(vec![]);
+        assert_eq!(v, PropValue::PaintOps(vec![]));
+    }
+
+    #[test]
+    fn prop_value_paint_ops_multiple_ops() {
+        let ops = vec![
+            PaintOp::FillRect {
+                rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+                color: Color::RED,
+                radius: 0.0,
+            },
+            PaintOp::DrawText {
+                text: "Hello".to_string(),
+                bounds: Rect::new(10.0, 10.0, 80.0, 30.0),
+                color: Color::BLACK,
+                font_size: 14.0,
+            },
+        ];
+        let v = PropValue::PaintOps(ops.clone());
+        assert_eq!(v, PropValue::PaintOps(ops));
+    }
+
+    #[test]
+    fn prop_value_paint_ops_display() {
+        let ops = vec![PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 100.0, 50.0),
+            color: Color::RED,
+            radius: 0.0,
+        }];
+        let v = PropValue::PaintOps(ops);
+        let displayed = format!("{v}");
+        assert!(displayed.contains("PaintOps"));
+        assert!(displayed.contains("1 op"));
+    }
+
+    #[test]
+    fn prop_value_paint_ops_equality_different_ops() {
+        let a = PropValue::PaintOps(vec![PaintOp::FillRect {
+            rect: Rect::new(0.0, 0.0, 50.0, 50.0),
+            color: Color::RED,
+            radius: 0.0,
+        }]);
+        let b = PropValue::PaintOps(vec![PaintOp::FillRect {
+            rect: Rect::new(10.0, 10.0, 50.0, 50.0),
+            color: Color::BLUE,
+            radius: 5.0,
+        }]);
+        assert_ne!(a, b);
     }
 
     // --- MessageHandler::dispatch_dynamic ---
