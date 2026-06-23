@@ -242,15 +242,35 @@ fn execute_rhai_paint_script(
 ) -> Result<Vec<PaintOp>, Box<dyn std::error::Error>> {
     use rgui_script::ScriptEngine;
     use rgui_script::paint_primitives::{PaintOpsAccumulator, register_paint_primitives};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let script = std::fs::read_to_string(path)?;
-    let mut engine = ScriptEngine::new();
-    let accumulator = PaintOpsAccumulator::new();
-    register_paint_primitives(engine.engine_mut(), &accumulator);
 
-    engine.run(&script)?;
+    // catch_unwind prevents native function panics from crashing the process
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut engine = ScriptEngine::new();
+        let accumulator = PaintOpsAccumulator::new();
+        register_paint_primitives(engine.engine_mut(), &accumulator);
 
-    Ok(accumulator.take())
+        engine.run(&script)?;
+
+        Ok::<Vec<PaintOp>, Box<dyn std::error::Error>>(accumulator.take())
+    }));
+
+    match result {
+        Ok(Ok(ops)) => Ok(ops),
+        Ok(Err(e)) => Err(e),
+        Err(panic_info) => {
+            let msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "unknown panic".to_string()
+            };
+            Err(format!("Rhai paint script panic ({}): {msg}", path.display()).into())
+        },
+    }
 }
 
 // ============================================================================
@@ -285,5 +305,75 @@ mod tests {
         let view = WidgetView::<TestMsg>::new("Unknown");
         let ops = paint_fn(&view, Rect::new(0.0, 0.0, 100.0, 40.0));
         assert!(ops.is_empty());
+    }
+
+    // ── T206: Tier 2 paint script error handling ──────────────────────
+
+    /// Validates that execute_rhai_paint_script returns PaintOps for a valid script.
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn execute_rhai_paint_script_valid_returns_ops() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("paint.rhai");
+        std::fs::write(
+            &rhai_path,
+            r#"fill_rect(0.0, 0.0, 100.0, 50.0, rgb(0.5, 0.5, 0.5), 4.0);"#,
+        )
+        .expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path);
+        assert!(
+            result.is_ok(),
+            "valid script should succeed: {:?}",
+            result.err()
+        );
+        let ops = result.unwrap();
+        assert_eq!(ops.len(), 1, "should produce 1 PaintOp");
+        assert!(matches!(ops[0], PaintOp::FillRect { .. }));
+    }
+
+    /// Validates that syntax errors in Rhai scripts return error without crashing.
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn execute_rhai_paint_script_syntax_error_does_not_crash() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("broken.rhai");
+        std::fs::write(&rhai_path, "fn broken( {").expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path);
+        assert!(result.is_err(), "syntax error should return Err");
+        let err_msg = result.unwrap_err().to_string();
+        // Rhai compilation errors contain position info
+        assert!(
+            err_msg.contains("error") || err_msg.contains("syntax") || err_msg.contains("parse"),
+            "error should mention syntax issue: {err_msg}"
+        );
+    }
+
+    /// Validates that empty Rhai scripts succeed (return empty PaintOps).
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn execute_rhai_paint_script_empty_script() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("empty.rhai");
+        std::fs::write(&rhai_path, "").expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path);
+        assert!(result.is_ok(), "empty script should succeed");
+        let ops = result.unwrap();
+        assert!(ops.is_empty(), "empty script should produce no ops");
+    }
+
+    /// Validates that runtime errors in Rhai scripts return error without crashing.
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn execute_rhai_paint_script_runtime_error_does_not_crash() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("runtime_err.rhai");
+        // Call a function that doesn't exist (runtime error)
+        std::fs::write(&rhai_path, "nonexistent_fn();").expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path);
+        assert!(result.is_err(), "runtime error should return Err");
     }
 }

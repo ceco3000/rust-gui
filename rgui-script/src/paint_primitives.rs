@@ -135,8 +135,10 @@ pub fn register_paint_primitives(engine: &mut Engine, accumulator: &PaintOpsAccu
         "fill_rect",
         #[allow(clippy::cast_possible_truncation)]
         move |x: f64, y: f64, w: f64, h: f64, color: Color, radius: f64| {
-            let w = w.max(0.0);
-            let h = h.max(0.0);
+            let x = x.clamp(-100_000.0, 100_000.0);
+            let y = y.clamp(-100_000.0, 100_000.0);
+            let w = w.clamp(0.0, 100_000.0);
+            let h = h.clamp(0.0, 100_000.0);
             let radius = radius.max(0.0);
             acc.push(PaintOp::FillRect {
                 rect: rgui_core::geometry::Rect::new(x, y, w, h),
@@ -152,8 +154,10 @@ pub fn register_paint_primitives(engine: &mut Engine, accumulator: &PaintOpsAccu
         "draw_text",
         #[allow(clippy::cast_possible_truncation)]
         move |text: &str, x: f64, y: f64, w: f64, h: f64, color: Color, font_size: f64| {
-            let w = w.max(0.0);
-            let h = h.max(0.0);
+            let x = x.clamp(-100_000.0, 100_000.0);
+            let y = y.clamp(-100_000.0, 100_000.0);
+            let w = w.clamp(0.0, 100_000.0);
+            let h = h.clamp(0.0, 100_000.0);
             let font_size = font_size.clamp(1.0, 512.0);
             acc2.push(PaintOp::DrawText {
                 text: text.to_string(),
@@ -326,6 +330,38 @@ mod tests {
     }
 
     #[test]
+    fn fill_rect_clamps_extreme_coordinates() {
+        let (mut engine, _acc) = setup_engine();
+        let acc = PaintOpsAccumulator::new();
+        register_paint_primitives(&mut engine, &acc);
+
+        // x, y outside [-100k, 100k] range should be clamped; w, h outside [0, 100k] clamped
+        engine
+            .run("fill_rect(-200000.0, 200000.0, 200000.0, -500.0, rgb(0.0, 0.0, 0.0), 0.0);")
+            .unwrap();
+
+        let ops = acc.take();
+        if let PaintOp::FillRect { rect, .. } = &ops[0] {
+            assert!(
+                (rect.origin.x - (-100_000.0_f64)).abs() < 0.1,
+                "x should be clamped to -100000"
+            );
+            assert!(
+                (rect.origin.y - 100_000.0).abs() < 0.1,
+                "y should be clamped to 100000"
+            );
+            assert!(
+                (rect.size.width - 100_000.0).abs() < 0.1,
+                "w should be clamped to 100000"
+            );
+            assert!(
+                (rect.size.height - 0.0).abs() < 0.01,
+                "h should be clamped to 0"
+            );
+        }
+    }
+
+    #[test]
     fn multiple_fill_rects_accumulate_in_order() {
         let (mut engine, _acc) = setup_engine();
         let acc = PaintOpsAccumulator::new();
@@ -422,6 +458,37 @@ mod tests {
             assert!(
                 (font_size - 512.0).abs() < 0.01,
                 "font_size should be clamped to 512"
+            );
+        }
+    }
+
+    #[test]
+    fn draw_text_clamps_extreme_coordinates() {
+        let (mut engine, _acc) = setup_engine();
+        let acc = PaintOpsAccumulator::new();
+        register_paint_primitives(&mut engine, &acc);
+
+        engine
+            .run(r#"draw_text("test", -99999.0, 99999.0, 200000.0, -100.0, rgb(0.0, 0.0, 0.0), 16.0);"#)
+            .unwrap();
+
+        let ops = acc.take();
+        if let PaintOp::DrawText { bounds, .. } = &ops[0] {
+            assert!(
+                (bounds.origin.x - (-99_999.0)).abs() < 0.1,
+                "x should be clamped to -99999"
+            );
+            assert!(
+                (bounds.origin.y - 99_999.0).abs() < 0.1,
+                "y should be clamped to 99999"
+            );
+            assert!(
+                (bounds.size.width - 100_000.0).abs() < 0.1,
+                "w should be clamped to 100000"
+            );
+            assert!(
+                (bounds.size.height - 0.0).abs() < 0.01,
+                "h should be clamped to 0"
             );
         }
     }
