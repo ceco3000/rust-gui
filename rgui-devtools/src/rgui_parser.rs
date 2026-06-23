@@ -158,10 +158,81 @@ pub fn parse_rgui_str<M: AppMessage>(rgui: &str) -> Result<WidgetView<M>, RguiPa
 
 /// 从 `.rgui` 文件解析为 WidgetView 树。
 ///
-/// 读取文件内容后调用 [`parse_rgui_str`]。
+/// 读取文件内容后调用 [`parse_rgui_str`]，然后扫描同目录下的
+/// `<tag_name>.rgui` + `<tag_name>.rhai` 文件对，将匹配的节点标记为 Tier 2。
+///
+/// Tier 2 标记：在节点 props 中注入 `_tier`、`_rhai_path`、`_rgui_path`。
 pub fn parse_rgui_file<M: AppMessage>(path: &Path) -> Result<WidgetView<M>, RguiParseError> {
+    let mut view = parse_rgui_file_without_tier2(path)?;
+    if let Some(parent_dir) = path.parent() {
+        mark_tier2_nodes(&mut view, parent_dir);
+    }
+    Ok(view)
+}
+
+/// 从 `.rgui` 文件解析为 WidgetView 树（不执行 Tier 2 扫描）。
+///
+/// 供内部复用（`parse_rgui_file` 在此基础上追加 Tier 2 扫描）。
+fn parse_rgui_file_without_tier2<M: AppMessage>(
+    path: &Path,
+) -> Result<WidgetView<M>, RguiParseError> {
     let content = std::fs::read_to_string(path)?;
     parse_rgui_str(&content)
+}
+
+/// 在同目录下查找 `<tag_name>.rgui` + `<tag_name>.rhai` 文件对。
+///
+/// 返回 `(rgui_path, rhai_path)`，如果不存在完整文件对则返回 `None`。
+/// 标签名统一转为小写后匹配文件名（`<MyCard>` → `mycard.rgui`）。
+pub fn find_file_pair(
+    dir: &Path,
+    tag_name: &str,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let tag_lower = tag_name.to_lowercase();
+    let rgui_path = dir.join(format!("{tag_lower}.rgui"));
+    let rhai_path = dir.join(format!("{tag_lower}.rhai"));
+    if rgui_path.is_file() && rhai_path.is_file() {
+        Some((rgui_path, rhai_path))
+    } else {
+        None
+    }
+}
+
+/// 递归遍历 WidgetView 树，标记有对应 `.rgui`+`.rhai` 文件对的节点为 Tier 2。
+///
+/// 匹配到文件对时，注入以下 props：
+/// - `_tier` = `"2"` — Tier 2 标识
+/// - `_rhai_path` — Rhai 脚本绝对路径
+/// - `_rgui_path` — 子 .rgui 文件绝对路径
+///
+/// 未匹配的节点保持 Tier 1（走 WidgetRegistry 回退）。
+pub fn mark_tier2_nodes<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
+    mark_tier2_nodes_recursive(view, dir);
+}
+
+/// 递归辅助函数。
+fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
+    // 检查当前节点是否有对应的文件对
+    if let Some((rgui_path, rhai_path)) = find_file_pair(dir, view.widget_type) {
+        view.props
+            .insert("_tier", PropValue::Str(std::sync::Arc::from("2")));
+        view.props.insert(
+            "_rhai_path",
+            PropValue::Str(std::sync::Arc::from(
+                rhai_path.to_string_lossy().to_string(),
+            )),
+        );
+        view.props.insert(
+            "_rgui_path",
+            PropValue::Str(std::sync::Arc::from(
+                rgui_path.to_string_lossy().to_string(),
+            )),
+        );
+    }
+    // 递归处理子节点
+    for child in &mut view.children {
+        mark_tier2_nodes_recursive(child, dir);
+    }
 }
 
 /// 从 WidgetView 树中收集 `id` 属性，建立字符串→WidgetId 双向映射。
@@ -1140,5 +1211,168 @@ mod tests {
         assert!(!is_state_expr("username.value"));
         assert!(!is_state_expr(""));
         assert!(!is_state_expr("state")); // 必须有 . 分隔符
+    }
+
+    // --- Tier 2 文件对扫描测试（T203）---
+
+    #[test]
+    fn find_file_pair_both_exist() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let result = find_file_pair(dir.path(), "mycard");
+        assert!(result.is_some());
+        let (rgui_path, rhai_path) = result.unwrap();
+        assert!(rgui_path.ends_with("mycard.rgui"));
+        assert!(rhai_path.ends_with("mycard.rhai"));
+    }
+
+    #[test]
+    fn find_file_pair_case_insensitive() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        // `<MyCard>` → mycard
+        let result = find_file_pair(dir.path(), "MyCard");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn find_file_pair_only_rgui_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        // 无 .rhai 文件
+
+        let result = find_file_pair(dir.path(), "mycard");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_file_pair_only_rhai_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+        // 无 .rgui 文件
+
+        let result = find_file_pair(dir.path(), "mycard");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_file_pair_neither_exist_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = find_file_pair(dir.path(), "nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn mark_tier2_nodes_basic() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let mut view = WidgetView::<TestMsg>::new("mycard");
+        mark_tier2_nodes(&mut view, dir.path());
+
+        assert_eq!(
+            view.props.get("_tier"),
+            Some(&PropValue::Str(Arc::from("2")))
+        );
+        assert!(view.props.contains_key("_rhai_path"));
+        assert!(view.props.contains_key("_rgui_path"));
+        if let Some(PropValue::Str(rhai_path)) = view.props.get("_rhai_path") {
+            assert!(rhai_path.contains("mycard.rhai"));
+        } else {
+            panic!("_rhai_path should be Str");
+        }
+    }
+
+    #[test]
+    fn mark_tier2_nodes_no_file_pair() {
+        let dir = tempfile::tempdir().unwrap();
+        // 不创建任何文件
+
+        let mut view = WidgetView::<TestMsg>::new("button");
+        mark_tier2_nodes(&mut view, dir.path());
+
+        // 无文件对 → 不应标记
+        assert!(!view.props.contains_key("_tier"));
+        assert!(!view.props.contains_key("_rhai_path"));
+        assert!(!view.props.contains_key("_rgui_path"));
+    }
+
+    #[test]
+    fn mark_tier2_nodes_nested() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+        // 不创建 button 文件对
+
+        let mut column = WidgetView::<TestMsg>::new("column")
+            .child(WidgetView::<TestMsg>::new("mycard"))
+            .child(WidgetView::<TestMsg>::new("button"));
+
+        mark_tier2_nodes(&mut column, dir.path());
+
+        // mycard 应被标记
+        let mycard = &column.children[0];
+        assert_eq!(
+            mycard.props.get("_tier"),
+            Some(&PropValue::Str(Arc::from("2")))
+        );
+
+        // button 不应被标记（无文件对 → Tier 1）
+        let button = &column.children[1];
+        assert!(!button.props.contains_key("_tier"));
+    }
+
+    #[test]
+    fn parse_rgui_file_scans_tier2() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<Column><MyCard title="Hello"/></Column>"#).unwrap();
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Column");
+        assert_eq!(view.children.len(), 1);
+        let mycard = &view.children[0];
+        assert_eq!(mycard.widget_type, "MyCard");
+        assert_eq!(
+            mycard.props.get("_tier"),
+            Some(&PropValue::Str(Arc::from("2")))
+        );
+    }
+
+    #[test]
+    fn parse_rgui_file_no_tier2_when_no_file_pair() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<Column><Button label="OK"/></Column>"#).unwrap();
+        // 不创建 button.rgui/button.rhai
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        let button = &view.children[0];
+        assert_eq!(button.widget_type, "Button");
+        // 无文件对 → Tier 1，不应有 _tier prop
+        assert!(!button.props.contains_key("_tier"));
+    }
+
+    #[test]
+    fn parse_rgui_file_only_rgui_no_rhai_returns_tier1() {
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        // 只创建 .rgui，不创建 .rhai——Tier 2 需要两者都存在
+        std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 只有 .rgui 无 .rhai → 应回退到 Tier 1
+        assert!(!view.props.contains_key("_tier"));
     }
 }
