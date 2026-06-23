@@ -308,6 +308,14 @@ fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Optio
             // T208: 解析子组件中的 {prop_name} 绑定
             resolve_prop_bindings(&mut expanded, &parent_props);
 
+            // T210: 外层 Props 附加——将父组件传入的 props 合并到展开后根节点
+            // 子组件同名 prop 优先（不覆盖）
+            for (key, value) in &parent_props {
+                if !expanded.props.contains_key(key) {
+                    expanded.props.insert(*key, value.clone());
+                }
+            }
+
             Some(expanded)
         },
         Err(e) => {
@@ -2091,5 +2099,120 @@ mod tests {
         assert_eq!(view.widget_type, "Column");
         assert_eq!(view.children.len(), 1);
         assert_eq!(view.children[0].widget_type, "Label");
+    }
+
+    // --- T210 外层 Props 附加测试 ---
+
+    #[test]
+    fn outer_props_attached_to_expanded_root() {
+        // T210: <my_card onclick="fn"> 展开后根节点自动携带 onclick
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard onclick="handleClick()"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="Card content"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        // 展开后根节点为 Container
+        assert_eq!(view.widget_type, "Container");
+        // 外层 onclick 应附加到根节点
+        assert_eq!(
+            view.props.get("onclick"),
+            Some(&PropValue::Str(std::sync::Arc::from("handleClick()")))
+        );
+        // 子节点内容应保留
+        assert_eq!(view.children.len(), 1);
+        assert_eq!(view.children[0].widget_type, "Label");
+    }
+
+    #[test]
+    fn outer_props_child_priority() {
+        // T210: 外层 props 不覆盖子组件同名 prop（子优先）
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Outer"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container title="Child"/>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        // 子组件的 title 应保留（子优先）
+        assert_eq!(
+            view.props.get("title"),
+            Some(&PropValue::Str(std::sync::Arc::from("Child")))
+        );
+    }
+
+    #[test]
+    fn outer_props_added_when_child_lacks_them() {
+        // T210: 子组件没有的 prop，外层 prop 应附加到根节点
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(
+            &rgui_path,
+            r#"<MyCard variant="primary" onclick="handle()"/>"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="Card"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        // variant 应附加到根节点（子组件未定义）
+        assert_eq!(
+            view.props.get("variant"),
+            Some(&PropValue::Str(std::sync::Arc::from("primary")))
+        );
+        // onclick 应附加到根节点（子组件未定义）
+        assert_eq!(
+            view.props.get("onclick"),
+            Some(&PropValue::Str(std::sync::Arc::from("handle()")))
+        );
+        // 子节点内容应保留
+        assert_eq!(view.children.len(), 1);
+    }
+
+    #[test]
+    fn outer_props_no_internal_markers_merged() {
+        // T210: 内部标记（_ 前缀）不应合并到展开后根节点
+        let dir = tempfile::tempdir().unwrap();
+        let rgui_path = dir.path().join("main.rgui");
+        std::fs::write(&rgui_path, r#"<MyCard title="Hello"/>"#).unwrap();
+        std::fs::write(
+            dir.path().join("mycard.rgui"),
+            r#"<Container><Label text="{title}"/></Container>"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
+
+        let view = parse_rgui_file::<TestMsg>(&rgui_path).unwrap();
+
+        assert_eq!(view.widget_type, "Container");
+        // _tier/_rgui_path/_rhai_path 不应出现在展开后的根节点
+        assert!(!view.props.contains_key("_tier"));
+        assert!(!view.props.contains_key("_rgui_path"));
+        // _rhai_path 是 T207 显式保留的，不属于 T210 合并范围
+        // 但应通过 _rhai_path 检查确认内部标记未被合并
+        // title 应来自 T208 绑定解析（而非外层 prop 覆盖）
+        let label = &view.children[0];
+        assert_eq!(
+            label.props.get("text"),
+            Some(&PropValue::Str(std::sync::Arc::from("Hello")))
+        );
     }
 }
