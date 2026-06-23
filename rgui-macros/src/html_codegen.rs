@@ -16,57 +16,6 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
     "WaAccordion",
     "WaAccordionItem",
-    "WaAnimatedImage",
-    "WaAnimation",
-    "WaAvatar",
-    "WaBadge",
-    "WaBreadcrumb",
-    "WaBreadcrumbItem",
-    "WaButton",
-    "WaButtonGroup",
-    "WaCallout",
-    "WaCard",
-    "WaCarousel",
-    "WaCarouselItem",
-    "WaComparison",
-    "WaCheckbox",
-    "WaCheckboxGroup",
-    "WaColorPicker",
-    "WaCopyButton",
-    "WaDialog",
-    "WaDrawer",
-    "WaDropdown",
-    "WaDropdownItem",
-    "WaPopover",
-    "WaPopup",
-    "WaTooltip",
-    "WaFormatBytes",
-    "WaFormatDate",
-    "WaFormatNumber",
-    "WaRelativeTime",
-    "WaQrCode",
-    "WaRadio",
-    "WaRadioGroup",
-    "WaSelect",
-    "WaProgressBar",
-    "WaProgressRing",
-    "WaRating",
-    "WaSkeleton",
-    "WaSlider",
-    "WaSplitPanel",
-    "WaSwitch",
-    "WaTab",
-    "WaTabGroup",
-    "WaTabPanel",
-    "WaTag",
-    "WaTree",
-    "WaTreeItem",
-    "WaTextarea",
-    "WaDetails",
-    "WaDivider",
-    "WaIcon",
-    "WaInput",
-    "WaSpinner",
     // 布局容器（框架内置，非组件 crate）
     "Container",
     "Row",
@@ -612,24 +561,24 @@ mod tests {
 
     #[test]
     fn h07_edit_distance_empty() {
-        assert_eq!(edit_distance("", "WaButton"), 8);
-        assert_eq!(edit_distance("WaButton", ""), 8);
+        assert_eq!(edit_distance("", "WaAccordion"), 11);
+        assert_eq!(edit_distance("WaAccordion", ""), 11);
     }
 
     #[test]
     fn h07_find_best_match_misspelled() {
-        assert_eq!(find_best_match("WaButon"), Some("WaButton"));
+        assert_eq!(find_best_match("WaAccordin"), Some("WaAccordion"));
     }
 
     #[test]
     fn h07_find_best_match_case_insensitive() {
-        assert_eq!(find_best_match("wabuton"), Some("WaButton"));
+        assert_eq!(find_best_match("waaccordin"), Some("WaAccordion"));
     }
 
     #[test]
     fn h07_find_best_match_exact() {
         // 精确匹配应返回 None（完全相同，无需建议）
-        assert_eq!(find_best_match("WaButton"), None);
+        assert_eq!(find_best_match("WaAccordion"), None);
     }
 
     #[test]
@@ -640,9 +589,8 @@ mod tests {
 
     #[test]
     fn h07_find_best_match_close_match() {
-        // Lable → Label 不再存在（Label 已改名 Text，编辑距离太大）
         assert_eq!(find_best_match("Lable"), None);
         assert_eq!(find_best_match("Colum"), Some("Column"));
-        assert_eq!(find_best_match("WInput"), Some("WaInput"));
+        assert_eq!(find_best_match("WAccordionItem"), Some("WaAccordionItem"));
     }
 }

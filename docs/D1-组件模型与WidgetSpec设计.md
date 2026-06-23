@@ -1443,6 +1443,230 @@ pub enum Capability {
 }
 ```
 
+### 9.4 脚本定义组件（Tier 2）
+
+> **设计来源：** Qt/QML——QML 文件可作为独立组件使用，无需 C++ 注册。rgui 同等支持 `.rgui` + `.rhai` paint 脚本定义组件。
+
+#### 9.4.1 架构：加载时生成 PaintOp，每帧纯 Rust 渲染
+
+```
+.rgui 标签 + .rhai paint 脚本
+       │
+       ▼  加载时（一次性）
+  Rhai 引擎执行 paint 脚本
+  → 调用 fill_rect / draw_text 等原生函数
+       │
+       ▼
+  Vec<PaintOp> 存入 WidgetView.props["paint_ops"]
+       │
+       ▼  每帧渲染时（60fps）
+  walk_view_tree → 从 props 取 PaintOp
+       │
+       ▼
+  Vello → GPU  ← 纯 Rust，零脚本开销
+```
+
+> 渲染效率与 Tier 1（Rust `WidgetSpec::paint()`）完全一致——因为每帧热路径消费的都是 `Vec<PaintOp>` 数据结构，不区分来源。（架构原理见 [D0 §9.1.1](./D0-Rust%20GUI%20框架总体设计.md#911-关键机制脚本-paint-只执行一次)）
+
+#### 9.4.1.1 布局交互
+
+Tier 2 组件的 `.rgui` 树与 Tier 1 组件**同等参与 Taffy 布局**，paint 脚本不负责布局计算：
+
+```
+.rgui 标签 + 属性（flex-direction、gap、padding 等）
+       │
+       ▼
+extract_taffy_style → Taffy 布局引擎 → 计算 bounds
+       │
+       ▼
+walk_view_tree：
+  - 对 Tier 1 节点：调用 WidgetSpec::paint()
+  - 对 Tier 2 节点：从 WidgetTree 取 bounds + children
+    → 传递给 Rhai paint 脚本（bounds, props, children）
+    → paint 脚本生成 PaintOp → 存入 WidgetView.props["paint_ops"]
+       │
+       ▼
+Vello → GPU
+```
+
+> Tier 2 组件的 `Container/Row/Column/Text` 等子节点在 `.rgui` 中声明，Taffy 自动计算其布局。paint 脚本中的 `bounds` 参数是 Taffy 计算后的绝对坐标，`children` 是子节点的 WidgetView 列表（递归渲染由 `paint_children` 完成）。
+
+#### 9.4.1.2 节点识别
+
+`walk_view_tree` 通过以下机制区分 Tier 1 和 Tier 2 节点：
+
+```
+.rgui 中遇到标签 <my_card>
+       │
+       ▼  parse_rgui_file 解析时
+  查找同目录下 my_card.rgui + my_card.rhai 文件对
+       │
+       ├── 找到 → 标记为 Tier 2 节点
+       │    → 框架内部将 my_card.rhai 的 paint 函数注册到 paint_fn_registry
+       │    → 节点 props 中自动注入文件路径引用
+       │
+       └── 未找到 → 按 Tier 1 处理
+            → widget_type 匹配 WidgetRegistry 中已注册的 Rust 组件
+            → 未匹配则走"未注册组件降级"（红底占位符）
+```
+
+> **设计理由**：Tier 2 的入口是文件系统的 `.rgui`/`.rhai` 文件对——框架在文件解析阶段自动识别，不需要应用代码显式注册。这与 QML 引擎自动加载 `.qml` 文件的机制一致。
+
+找到文件对后，`parse_rgui_file` 执行子树内联（T207）：
+
+```
+parse_rgui_file("ui.rgui")
+       │
+       ▼
+  遍历 WidgetView 树，遇到 Tier 2 标签 <my_card>
+       │
+       ├── ① 加载 my_card.rgui → 子 WidgetView 树
+       ├── ② 将父传入的子节点替换到子树的 <slot /> 位置（T209）
+       ├── ③ 将父传入的 props 注入子组件作用域（T208）
+       ├── ④ 将外层 props（onclick/variant 等）附加到子树根节点（T210）
+       │
+       ▼
+  子树内联到父树，替换原 <my_card> 节点
+```
+
+> 内联后的 WidgetView 树与直接手写等效——布局引擎看到的是一棵完整的树，不区分 Tier 1/Tier 2 来源。
+
+#### 9.4.2 示例：用脚本定义带圆角的卡片组件
+
+> **⚠️ 示例中 `{props.title}` 属性绑定语法和 `props.get().unwrap_or()` 方法链为设计目标语法，P0 交付时可能以等效的 `get_prop(id, key)` 函数调用语法替代。
+
+`.rgui`（声明结构）：
+
+```xml
+<!-- my_card.rgui —— 可直接被其他 .rgui 引用 -->
+<Container id="root">
+  <Container id="header">
+    <Text id="title" text="{props.title}" />
+  </Container>
+  <Container id="body">
+    <slot />
+  </Container>
+</Container>
+```
+
+`.rhai`（paint 脚本，加载时执行一次生成 PaintOp）：
+
+```rust
+// my_card.rhai —— 描述组件的外观
+fn paint_card(bounds, props, children) {
+    let bg = props.get("background").unwrap_or(rgb(1.0, 1.0, 1.0));
+    let border_color = props.get("border-color").unwrap_or(rgb(0.85, 0.85, 0.85));
+    let radius = props.get("radius").unwrap_or(8.0);
+
+    // 背景填充
+    fill_rect(bounds.x, bounds.y, bounds.w, bounds.h, bg, radius);
+
+    // 1px 边框
+    fill_rect(bounds.x, bounds.y, bounds.w, 1.0, border_color, 0.0);
+    fill_rect(bounds.x, bounds.y + bounds.h - 1.0, bounds.w, 1.0, border_color, 0.0);
+    fill_rect(bounds.x, bounds.y, 1.0, bounds.h, border_color, 0.0);
+    fill_rect(bounds.x + bounds.w - 1.0, bounds.y, 1.0, bounds.h, border_color, 0.0);
+
+    // 递归绘制子节点（header/body 容器内的 Text 等）
+    paint_children(children);
+}
+```
+
+#### 9.4.2.1 Props 作用域注入（T208）
+
+父组件 `<my_card title="Hello">` 中的 `title="Hello"` 经过解析后，注入到子组件的 props 作用域。子 `.rgui` 中的 `{title}` 绑定在展开时解析为对应的值：
+
+```
+父 ui.rgui:
+  <my_card title="Hello">
+
+子 my_card.rgui:
+  <Text text="{title}" />       ← 展开后 text="Hello"
+
+注入规则：
+  - {prop_name} → 直接取父传入的 prop_name 值
+  - {props.xxx} → 取父传入的 props 对象中的 xxx 属性（等价写法）
+  - 父未传入的 prop → 渲染为空字符串，日志 warn
+  - 嵌套 3 层以上时，props 逐层向下传递，子组件可覆盖同名 prop
+```
+
+#### 9.4.2.2 `<slot />` 替换算法（T209）
+
+子 `.rgui` 中的 `<slot />` 声明了子节点插入位置。展开时，父组件传入的子节点列表被内联到 slot 所在位置：
+
+```
+父 ui.rgui:
+  <my_card>
+    <Text text="Child 1" />
+    <Text text="Child 2" />
+  </my_card>
+
+子 my_card.rgui:
+  <Container id="root">
+    <Container id="body">
+      <slot />                   ← 展开后被替换为两个 <Text> 子节点
+    </Container>
+  </Container>
+
+替换规则：
+  - 默认 <slot /> 接收父传入的全部子节点
+  - <slot name="header" /> 仅接收父传入中带 slot="header" 的子节点
+  - 子组件无 <slot /> 时，父传入的子节点被丢弃，日志 warn
+```
+
+#### 9.4.2.3 外层 Props 附加（T210）
+
+父组件标签 `<my_card onclick="fn" variant="primary">` 中的外层 prop（onclick/variant 等）在展开时附加到子组件根节点：
+
+```
+父 ui.rgui:
+  <my_card onclick="handle_click" variant="primary">
+
+子 my_card.rgui:
+  <Container id="root">          ← 展开后自动携带 onclick="handle_click" + variant="primary"
+
+附加规则：
+  - 外层 props 自动附加到子 .rgui 的根元素
+  - 子组件根元素已有同名 prop 时，子组件优先（不覆盖）
+  - onclick 等事件绑定同样遵循此规则——附加到根节点后，根节点可响应交互
+```
+
+#### 9.4.3 Tier 1 vs Tier 2 对比
+
+| | Tier 1：Rust WidgetSpec | Tier 2：.rgui + .rhai paint |
+|------|------|------|
+| **定义者** | 框架开发者 | 应用开发者 |
+| **方式** | `impl WidgetSpec for Xxx { ... }` | `.rgui` XML + `.rhai` paint 函数 |
+| **每帧渲染** | `paint()` → `PaintOp` → Vello | `.rhai` 加载时生成 `PaintOp` → 每帧 Vello 直消费 |
+| **热路径性能** | 编译期优化（内联、死代码消除） | 热路径相同；冷路径（脚本执行一次）略慢 |
+| **热重载** | ❌ `cargo build` + 重启 | ✅ 秒级生效 |
+| **适用场景** | 框架内置组件（WaAccordion 等） | 应用定制 UI、业务组件 |
+
+#### 9.4.4 前置依赖（P0）
+
+Tier 2 需要以下原生函数先注册到 Rhai 引擎（详见 D0 §9.5）：
+
+| 函数 | 说明 |
+|------|------|
+| `fill_rect(x, y, w, h, color, radius)` | 填充矩形 |
+| `draw_text(text, x, y, w, h, color, font_size)` | 绘制文本 |
+| `rgb(r, g, b)` / `rgba(r, g, b, a)` | 构造颜色 |
+| `paint_children(children)` | 递归绘制子节点 |
+
+#### 9.4.5 错误处理
+
+Tier 2 paint 脚本在加载时执行一次（非热路径），仍需处理异常场景：
+
+| 故障 | 处理策略 |
+|------|---------|
+| paint 脚本语法错误 | Rhai 编译失败 → 保留上一版 PaintOp + 日志警告；渲染不中断 |
+| paint 脚本运行时 panic | `catch_unwind` 捕获 → 回退到上一版 PaintOp + 日志错误 |
+| `fill_rect` / `draw_text` 参数越界 | 原生函数内部 clamp 到合法范围，不 panic |
+| `paint_children` 传入无效 child ID | 跳过该子节点 + 日志警告 |
+| 热重载时 paint 脚本与 .rgui 结构不匹配 | dirty 标记后重执行，PaintOp 结果按 bounds 裁剪；多余的子节点绘制操作被截断 |
+
+> **设计原则**：paint 脚本的错误绝不让渲染管线崩溃——最坏情况是组件显示上一帧的缓存内容或空白区域，不影响其他组件。
+
 ---
 
 ## 10. 与其他子系统的交互

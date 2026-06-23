@@ -1,2 +1,0 @@
-<!-- one-rgui-button: 最小 .rgui 声明式 UI 示例 -->
-<WaButton label="Click Me" onclick="handle_click"/>

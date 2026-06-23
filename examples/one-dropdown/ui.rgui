@@ -1,1 +1,0 @@
-<Center><WaDropdown open="true"><WaDropdownItem label="Option A" value="a"/><WaDropdownItem label="Option B" value="b"/><WaDropdownItem label="Option C" value="c" disabled="true"/></WaDropdown></Center>

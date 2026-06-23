@@ -9,7 +9,7 @@ use rgui_core::traits::WidgetSpec;
 // 以下 traits 由派生宏实现，test 中需要 in scope
 #[allow(unused_imports)]
 use rgui_core::traits::{AppMessage, PersistState};
-use rgui_core::view::{PropValue, WidgetView};
+use rgui_core::view::{Color, PropValue, WidgetView};
 use rgui_macros::{AppMessage as AppMsg, PersistState as Persist};
 
 // ============================================================================
@@ -114,11 +114,60 @@ impl WidgetSpec for WaAccordion {
         Size::ZERO
     }
 
-    fn paint(&self, _state: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
-        // Accordion 是纯容器，无自身视觉绘制。
-        // 外观（border/background）由 AccordionItem 子组件各自渲染。
-        // Phase 2 可添加容器级边框/背景。
-        let _ = (bounds, ctx);
+    fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext) {
+        let w: f64 = bounds.size.width;
+        let h: f64 = bounds.size.height;
+        let border_radius: f32 = 8.0;
+
+        if w < 2.0 || h < 2.0 {
+            return;
+        }
+
+        // 根据 appearance 选择背景色和边框色
+        let (bg_color, border_color) = match state.appearance.as_str() {
+            "filled" => (Color::new(0.92, 0.92, 0.92, 1.0), Color::TRANSPARENT),
+            "filled-outlined" => (
+                Color::new(0.95, 0.95, 0.97, 1.0), // WA --wa-color-neutral-fill-quiet
+                Color::new(0.82, 0.82, 0.85, 1.0), // WA --wa-color-neutral-border-quiet
+            ),
+            "plain" => (Color::TRANSPARENT, Color::TRANSPARENT),
+            // outlined (default) and fallback
+            _ => (Color::WHITE, Color::new(0.82, 0.82, 0.85, 1.0)),
+        };
+
+        // 容器背景
+        if bg_color.a > 0.0 {
+            ctx.fill_rect(bounds, bg_color, border_radius);
+        }
+
+        // 容器边框（1px solid）
+        if border_color.a > 0.0 && state.appearance != "plain" {
+            let bw: f64 = 1.0;
+            // 上边框
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x, bounds.origin.y, w, bw),
+                border_color,
+                0.0,
+            );
+            // 下边框
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x, bounds.origin.y + h - bw, w, bw),
+                border_color,
+                0.0,
+            );
+            // 左边框
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x, bounds.origin.y, bw, h),
+                border_color,
+                0.0,
+            );
+            // 右边框
+            ctx.fill_rect(
+                Rect::new(bounds.origin.x + w - bw, bounds.origin.y, bw, h),
+                border_color,
+                0.0,
+            );
+        }
     }
 
     fn accessibility(&self, _state: &Self::State, _: &AccessContext) -> AccessibilityNode {
@@ -218,12 +267,12 @@ mod tests {
     }
 
     #[test]
-    fn paint_produces_no_ops() {
+    fn paint_produces_ops() {
         let s = WaAccordionState::new();
         let bounds = Rect::new(0.0, 0.0, 400.0, 200.0);
         let mut ctx = PaintContext::new(bounds);
         WaAccordion.paint(&s, bounds, &mut ctx);
-        assert_eq!(ctx.op_count(), 0, "Accordion 无自身视觉绘制");
+        assert!(ctx.op_count() > 0, "Accordion 容器应有边框/背景绘制");
     }
 
     #[test]

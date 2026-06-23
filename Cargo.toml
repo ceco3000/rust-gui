@@ -25,7 +25,6 @@ members = [
     "rgui-components",
     "rgui",
     "rgui-script",
-    "examples/*",
 ]
 
 [workspace.package]

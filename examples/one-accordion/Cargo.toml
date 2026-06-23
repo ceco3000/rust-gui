@@ -1,9 +1,7 @@
 [package]
 name = "one-accordion"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
 rgui = { path = "../../rgui", features = ["devtools"] }

@@ -1,1 +1,0 @@
-<Center><Column gap="6"><Row gap="6"><WaTag variant="brand" label="New"/><WaTag variant="success" label="Done"/><WaTag variant="warning" label="Warn"/></Row><Row gap="6"><WaTag variant="danger" label="Error"/><WaTag variant="neutral" label="Info"/><WaTag variant="success" appearance="filled-outlined" label="OK"/></Row></Column></Center>

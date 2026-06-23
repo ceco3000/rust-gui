@@ -20,7 +20,8 @@
 6. [数据流总览](#6-数据流总览)
 7. [跨子系统不变式](#7-跨子系统不变式)
 8. [命名与代码规范](#8-命名与代码规范)
-9. [与子系统设计文档的接口](#9-与子系统设计文档的接口)
+9. [Rust/Rhai 逻辑分层边界](#9-rustrhai-逻辑分层边界)
+10. [与子系统设计文档的接口](#10-与子系统设计文档的接口)
 
 ---
 
@@ -522,6 +523,8 @@ pub enum PropValue {
     Enum(Arc<str>),
     /// 回调值（用于 html! 宏事件绑定，见 D5）
     Callback(Callback),
+    /// 预计算的绘制操作列表（Tier 2 脚本 paint 产出，每帧热路径直接消费）
+    PaintOps(Vec<PaintOp>),
 }
 ```
 
@@ -790,7 +793,7 @@ fn tick(&mut self) {
 
 `view()` 方法不得有副作用（不写文件、不发网络请求、不修改全局状态）。
 
-**验证方式**：`view()` 接收 `&Self::State` 和 `&ViewContext`（不可变引用）。
+**验证方式**：`view()` 接收 `&Self::State` 和 `&ViewContext`（不可变引用）。Tier 2 paint 脚本的 `fill_rect`/`draw_text` 调用仅构建 `Vec<PaintOp>` 数据结构存入 `WidgetView.props`，不写文件、不修改全局状态，同样满足纯值约束。
 
 ### 不变式 4：渲染热点路径避免动态分发
 
@@ -882,9 +885,185 @@ rgui-core/
 
 ---
 
-## 9. 与子系统设计文档的接口
+## 9. Rust/Rhai 逻辑分层边界
 
-### 9.1 各子系统文档对 D0 的引用关系
+> **设计来源：** Qt/QML 社区的成熟分层共识——声明式 UI（QML）负责 UI 交互逻辑和组件外观定义，原生层（C++/Scene Graph）负责渲染引擎。本框架的 Rust ≈ C++、.rgui+.rhai ≈ QML+JavaScript，分层原则对齐 Qt。
+
+### 9.1 分层模型
+
+```
+┌─ .rgui + .rhai 层 ──────────────────────────────┐
+│                                                  │
+│  .rgui：声明式 UI 结构                             │
+│    - 组件树定义（标签、属性、子节点）                  │
+│    - 布局容器（Container/Row/Column/Center 等）     │
+│                                                  │
+│  .rhai：行为和视觉定义                              │
+│    - 事件处理与 prop 读写（onclick → handle_click）  │
+│    - 表单验证、联动逻辑、导航/路由                    │
+│    - paint 脚本（fill_rect / draw_text 描述外观）   │
+│                                                  │
+│  约束：                                           │
+│    - 脚本仅在加载/热重载时执行，生成数据结构            │
+│    - 每帧渲染时不执行脚本（热路径零开销）               │
+│    - 单次执行 < 1ms                                │
+│    - 无 I/O（文件/网络/数据库）                       │
+│    - 修改后热重载，秒级生效，Rust 进程不重启            │
+│                                                  │
+└────────────────────┬─────────────────────────────┘
+                     │ 加载时：
+                     │   .rgui → parse → WidgetView<M>
+                     │   .rhai paint → 执行 → Vec<PaintOp>
+                     │   .rhai event → 注册 → CommandRegistry
+                     │
+                     │ 运行时（每帧）：
+                     │   Rust walk_view_tree → 取 PaintOp → Vello GPU
+                     │   脚本不参与热路径
+┌─ Rust 原生层 ───────────────────────────────────┐
+│                                                  │
+│  职责：                                           │
+│    - 绘制原语实现（fill_rect / draw_text / GPU 提交）│
+│    - 布局引擎（Taffy）                              │
+│    - 渲染管线（Vello/wgpu/GPU）                      │
+│    - 平台窗口（winit）                               │
+│    - 字符排版与文字渲染                               │
+│                                                  │
+│    - 网络请求、文件 I/O                               │
+│    - 数据库操作                                      │
+│    - 加密/安全                                       │
+│    - 重计算                                          │
+│    - 跨页面共享的核心业务规则                           │
+│                                                  │
+│  约束：                                           │
+│    - 编译期类型安全                                   │
+│    - 可编写单元测试                                   │
+│    - 修改需要 cargo build + 重启进程                  │
+│                                                  │
+└──────────────────────────────────────────────────┘
+```
+
+#### 9.1.1 关键机制：脚本 paint 只执行一次
+
+```
+时间线
+──────
+加载/热重载时（冷路径）：
+  .rhai paint 脚本
+       │
+       ▼  Rhai 引擎执行（一次性）
+  调用原生函数 fill_rect / draw_text
+       │
+       ▼
+  Vec<PaintOp> ──→ 存入 WidgetView.props["paint_ops"]
+
+每帧渲染时（热路径，60fps）：
+  walk_view_tree
+       │
+       ▼
+  从 props 取出 PaintOp    ← 纯 Rust 数据结构
+       │
+       ▼
+  Vello 提交 GPU            ← 零脚本参与
+```
+
+> **设计理由：** 完全对齐 Qt Quick Scene Graph 的架构——QML 声明式代码在加载时编译为场景图节点（`QSGNode` 树），渲染线程每帧直交遍历 C++ 节点提交 GPU，不再执行 JavaScript。rgui 同理——Rhai paint 脚本生成 `Vec<PaintOp>`，渲染线帧直接消费 Rust 数据结构。（实现细节见 [D1 §9.4.1](./D1-组件模型与WidgetSpec设计.md#941-架构加载时生成-paintop每帧纯-rust-渲染)）
+
+### 9.2 组件定义双轨模型
+
+框架支持两种组件定义路径，应用开发者选择其一：
+
+| | Tier 1：Rust WidgetSpec | Tier 2：.rgui + .rhai paint 脚本 |
+|------|------|------|
+| **谁定义** | 框架开发者 | 应用开发者 |
+| **方式** | `impl WidgetSpec for WaAccordion { ... }` | `.rgui` 标签 + `.rhai` paint 函数 |
+| **性能** | 编译期优化（内联、死代码消除） | 热路径相同；冷路径（脚本执行一次）略慢 |
+| **热重载** | ❌ 需要 cargo build + 重启 | ✅ 改脚本秒级生效 |
+| **适用场景** | 框架内置组件库 | 应用层定制组件、业务 UI |
+| **典型例子** | WaAccordion、WaButton | 自定义卡片、数据表格行模板 |
+
+> **与 Qt/QML 对照**：Tier 1 对应 C++ 注册的 QQuickItem，Tier 2 对应纯 QML 文件定义的组件。Qt 的实践表明——大量应用层组件走 Tier 2，只有性能关键或需要调用 C++ 底层 API 的才走 Tier 1。
+
+### 9.3 逻辑放置判据
+
+| 判据 | 放 `.rhai` 脚本 | 放 Rust |
+|------|:---:|:---:|
+| 组件树结构声明 | ✅（.rgui） | — |
+| 事件处理 + prop 读写 | ✅ | — |
+| 组件视觉外观（paint） | ✅（加载时生成 PaintOp） | ✅（编译期 WidgetSpec） |
+| 执行时间 < 1ms | ✅ | — |
+| 不需要外部 I/O | ✅ | — |
+| 逻辑随 UI 频繁变化 | ✅ | — |
+| 需要网络 / 文件 / 数据库 | — | ✅ |
+| 大量计算 / 循环（hot path） | — | ✅ |
+| 跨页面共享的核心规则 | — | ✅ |
+| 新的渲染原语（非已有 fill_rect） | — | ✅ |
+
+### 9.4 与 Qt/QML 的对照
+
+| | Qt/QML | rgui |
+|------|------|------|
+| **原生语言** | C++ | Rust |
+| **渲染引擎** | Qt Quick Scene Graph (C++) | Vello / wgpu (Rust) |
+| **脚本语言** | JavaScript (QML 内嵌) | Rhai (.rhai) |
+| **声明式 UI** | QML 标记 | .rgui (XML) |
+| **组件定义方式** | QML 文件或 C++ 注册 | .rgui + .rhai paint 脚本，或 Rust WidgetSpec |
+| **脚本 paint 机制** | 加载时生成 QSGNode → 每帧 GPU 直接渲染 | 加载时生成 PaintOp → 每帧 Vello 直接渲染 |
+| **脚本在热路径** | 不参与 | 不参与 |
+
+> Qt/QML 社区经验：**80% 的 UI 交互逻辑可放在脚本层，20% 的核心业务规则留在原生层。** 不把整个业务层放脚本里。
+
+### 9.5 Rhai 侧需要的原生函数绑定
+
+| 类别 | 函数 | 优先级 |
+|------|------|:---:|
+| **绘制原语** 🔑 | `fill_rect` / `draw_text` | 🔴 P0 |
+| Prop 读写 | `get_prop` / `set_prop` | ✅ 已实现 |
+| 类型转换 | `to_int` / `to_float` / `to_string` | 🔴 P1 |
+| 数组操作 | `push` / `pop` / `len` / `contains` | 🔴 P1 |
+| 字符串 | `to_upper` / `to_lower` / `contains` / `starts_with` | 🔴 P1 |
+| 颜色 | `rgb(r, g, b)` / `rgba(r, g, b, a)` | 🔴 P1 |
+| 几何 | `rect(x, y, w, h)` | 🔴 P1 |
+| 子组件递归 | `paint_children(children)` | 🔴 P1 |
+| 时间 | `now_timestamp` / `format_date` | 🟡 P2 |
+| 日志 | `log_info` / `log_warn` | 🟡 P2 |
+
+> **P0 绘制原语是 Tier 2 组件定义的先决条件**——没有它们，.rhai 无法描述组件外观，只能实例化已有 Rust 组件。
+
+### 9.6 热重载路径
+
+```
+修改 .rgui / .rhai
+       │
+       ▼
+notify 检测文件变更（rgui-devtools 已有）
+       │
+       ├── 新增 .rgui/+.rhai 文件：
+       │     → notify 检测文件创建（需要 watcher 监听目录，非仅文件）
+       │     → 扫描同目录 .rgui/.rhai 文件对，自动注册为 Tier 2 组件
+       │     → 已渲染的父组件若引用新标签名，下一帧走 Tier 2 渲染路径
+       │
+       ├── .rgui 变更：
+       │     → parse_rgui_file() → WidgetView<M> 新树
+       │     → 遍历新树，执行关联的 .rhai paint 脚本
+       │     → PaintOp 写入新树 props["paint_ops"]
+       │
+       ├── .rhai 变更：
+       │     → Rhai 引擎重新编译 AST
+       │     → CommandRegistry 替换事件处理器
+       │     → 标记受影响的 WidgetView 节点为 dirty
+       │     → 下一帧 walk_view_tree 重执行 paint 脚本 → PaintOp 更新
+       │
+       ▼
+渲染管线取新 WidgetView + 新 PaintOp + 新事件路由        ← Rust 进程不重启
+```
+
+> **dirty 标记机制**：当 `.rhai` paint 脚本被热重载时，框架遍历 WidgetView 树，将 `widget_type` 匹配该组件的所有节点标记为 dirty。下一帧 `walk_view_tree` 对 dirty 节点重新调用 Rhai paint 脚本生成新 `PaintOp`，非 dirty 节点继续使用缓存的 `PaintOp`。这与 D2 的增量 diff 机制一致——只重建受影响节点的绘制数据。
+
+---
+
+## 10. 与子系统设计文档的接口
+
+### 10.1 各子系统文档对 D0 的引用关系
 
 | 子系统文档 | 依赖 D0 中的 | 可修改 D0 中的 |
 |-----------|------------|--------------|
@@ -897,7 +1076,7 @@ rgui-core/
 | D7 开发反馈 | rgui-devtools 的公共 API、StateStore 快照协议 | — |
 | rgui-script（✅ 已实现） | AppMessage trait、事件分发链（§6.2 步骤 3a） | — |
 
-### 9.2 修改 D0 的流程
+### 10.2 修改 D0 的流程
 
 1. 子系统设计发现冲突 → 在子系统设计文档中记录
 2. 评估影响范围（是否影响其他子系统）

@@ -758,51 +758,6 @@ fn extract_taffy_style(
     if let Some(fd) = get_str("flex-direction") {
         style.flex_direction = rgui_layout::mapping::to_taffy_flex_direction(fd);
     }
-    // WaCheckboxGroup 使用 orientation 而非 flex-direction
-    if widget_type == "WaCheckboxGroup" {
-        if let Some(orientation) = get_str("orientation") {
-            style.flex_direction = match orientation {
-                "horizontal" => taffy::FlexDirection::Row,
-                _ => taffy::FlexDirection::Column,
-            };
-        }
-    }
-    // WaRadioGroup 同理
-    if widget_type == "WaRadioGroup" {
-        if let Some(orientation) = get_str("orientation") {
-            style.flex_direction = match orientation {
-                "horizontal" => taffy::FlexDirection::Row,
-                _ => taffy::FlexDirection::Column,
-            };
-        }
-    }
-    // WaSplitPanel 使用 orientation 控制面板排列方向
-    if widget_type == "WaSplitPanel" {
-        if let Some(orientation) = get_str("orientation") {
-            style.flex_direction = match orientation {
-                "vertical" => taffy::FlexDirection::Column,
-                _ => taffy::FlexDirection::Row,
-            };
-        }
-    }
-    // WaButtonGroup 使用 orientation 控制按钮排列方向
-    if widget_type == "WaButtonGroup" {
-        if let Some(orientation) = get_str("orientation") {
-            style.flex_direction = match orientation {
-                "horizontal" => taffy::FlexDirection::Row,
-                _ => taffy::FlexDirection::Column,
-            };
-        }
-    }
-    // WaCarousel 使用 orientation 控制幻灯片排列方向
-    if widget_type == "WaCarousel" {
-        if let Some(orientation) = get_str("orientation") {
-            style.flex_direction = match orientation {
-                "vertical" => taffy::FlexDirection::Column,
-                _ => taffy::FlexDirection::Row,
-            };
-        }
-    }
     if let Some(jc) = get_str("justify-content") {
         style.justify_content = Some(rgui_layout::mapping::to_taffy_justify_content(jc));
     }
@@ -838,7 +793,7 @@ fn extract_taffy_style(
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
     if matches!(
         widget_type,
-        "WaButton" | "WaTab" | "WaBreadcrumbItem" | "Label"
+        "__none__"
     ) {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
@@ -989,24 +944,8 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             size: full_width_auto_height,
             ..Style::default()
         },
-        "Container" | "Card" | "WaCard" | "WaDetails" | "WaCheckboxGroup" | "WaRadioGroup"
-        | "WaTabGroup" | "WaAnimation" | "WaButtonGroup" | "WaSplitPanel" | "WaComparison"
-        | "WaCarousel" | "WaDialog" | "WaDrawer" | "WaDropdown" | "WaPopup" | "WaPopover"
-        | "WaTooltip" | "Stack" => Style {
+        "Container" | "Card" | "Stack" | "WaAccordion" => Style {
             display: Display::Flex,
-            size: full_width_auto_height,
-            ..Style::default()
-        },
-        "WaAccordion" => Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
-            size: full_width_auto_height,
-            ..Style::default()
-        },
-        // WaTree：flex column 容器，容纳多个 WaTreeItem 子节点
-        "WaTree" => Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Column,
             size: full_width_auto_height,
             ..Style::default()
         },
@@ -1030,37 +969,6 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             size: full_size,
             ..Style::default()
         },
-        // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
-        "WaAvatar" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(48.0),
-                height: Dimension::Length(48.0),
-            },
-            ..Style::default()
-        },
-        "WaBadge" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(20.0),
-                height: Dimension::Length(16.0),
-            },
-            ..Style::default()
-        },
-        // WaBreadcrumb：flex 行容器，允许换行，宽度 100% 高度自适应
-        "WaBreadcrumb" => Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Row,
-            flex_wrap: FlexWrap::Wrap,
-            size: full_width_auto_height,
-            ..Style::default()
-        },
-        // WaBreadcrumbItem：最小尺寸确保在 flex 容器中可见
-        "WaBreadcrumbItem" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(44.0),
-                height: Dimension::Length(24.0),
-            },
-            ..Style::default()
-        },
         // WaAccordionItem：标题栏 44px 最小高度，宽度由父容器 Accordion（flex column）驱动。
         // 展开时内容面板额外高度在 extract_taffy_style 中根据 props 动态调整。
         "WaAccordionItem" => Style {
@@ -1073,220 +981,15 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             },
             ..Style::default()
         },
-        // WaTreeItem：树节点行，最小高度 36px，宽度由父容器驱动
-        "WaTreeItem" => Style {
-            display: Display::Flex,
-            flex_direction: FlexDirection::Row,
-            size: full_width_auto_height,
+        // 隐式组件
+        "Text" => Style {
             min_size: taffy::geometry::Size {
-                width: Dimension::Length(100.0),
-                height: Dimension::Length(36.0),
-            },
-            ..Style::default()
-        },
-        "WaIcon" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(16.0),
-                height: Dimension::Length(16.0),
-            },
-            ..Style::default()
-        },
-        "WaSpinner" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(24.0),
-                height: Dimension::Length(24.0),
-            },
-            ..Style::default()
-        },
-        "WaCheckbox" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(24.0),
-                height: Dimension::Length(24.0),
-            },
-            ..Style::default()
-        },
-        "WaRadio" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(24.0),
-                height: Dimension::Length(24.0),
-            },
-            ..Style::default()
-        },
-        "WaSwitch" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(48.0),
-                height: Dimension::Length(24.0),
-            },
-            ..Style::default()
-        },
-        "WaCopyButton" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(32.0),
-                height: Dimension::Length(32.0),
-            },
-            ..Style::default()
-        },
-        "WaTextarea" => Style {
-            size: taffy::geometry::Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Auto,
-            },
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(200.0),
-                height: Dimension::Length(100.0),
-            },
-            ..Style::default()
-        },
-        "WaSlider" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(200.0),
-                height: Dimension::Length(52.0),
-            },
-            ..Style::default()
-        },
-        "WaInput" => Style {
-            size: taffy::geometry::Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Auto,
-            },
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(120.0),
-                height: Dimension::Length(36.0),
-            },
-            ..Style::default()
-        },
-        "WaSelect" => Style {
-            size: taffy::geometry::Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Auto,
-            },
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(160.0),
-                height: Dimension::Length(36.0),
-            },
-            ..Style::default()
-        },
-        "WaSkeleton" => Style {
-            display: Display::Flex,
-            size: full_width_auto_height,
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(0.0),
-                height: Dimension::Length(16.0),
-            },
-            ..Style::default()
-        },
-        "WaProgressBar" => Style {
-            display: Display::Flex,
-            size: full_width_auto_height,
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(0.0),
-                height: Dimension::Length(16.0),
-            },
-            ..Style::default()
-        },
-        "WaProgressRing" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(48.0),
-                height: Dimension::Length(48.0),
-            },
-            ..Style::default()
-        },
-        "WaRating" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(120.0),
-                height: Dimension::Length(32.0),
-            },
-            ..Style::default()
-        },
-        "WaTab" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(64.0),
-                height: Dimension::Length(36.0),
-            },
-            ..Style::default()
-        },
-        "WaTabPanel" => Style {
-            display: Display::Flex,
-            size: full_size,
-            ..Style::default()
-        },
-        "WaCarouselItem" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(200.0),
-                height: Dimension::Length(100.0),
-            },
-            ..Style::default()
-        },
-        "WaCallout" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(200.0),
-                height: Dimension::Length(44.0),
-            },
-            ..Style::default()
-        },
-        "WaTag" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(20.0),
+                width: Dimension::Length(40.0),
                 height: Dimension::Length(20.0),
             },
             ..Style::default()
         },
-        "WaColorPicker" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(36.0),
-                height: Dimension::Length(36.0),
-            },
-            ..Style::default()
-        },
-        "WaButton" => Style {
-            min_size: wa_button_min_size,
-            ..Style::default()
-        },
-        // WaDivider：水平分隔线（宽度 100%，高度 2px 最小）
-        "WaDivider" => Style {
-            size: taffy::geometry::Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Auto,
-            },
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(0.0),
-                height: Dimension::Length(2.0),
-            },
-            ..Style::default()
-        },
-        // WaFormatBytes：内联文本组件，由 measure() 返回内容驱动尺寸
-        "WaFormatBytes" | "WaFormatDate" | "WaFormatNumber" | "WaRelativeTime" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(0.0),
-                height: Dimension::Length(20.0),
-            },
-            ..Style::default()
-        },
-        // WaAnimatedImage：占位图片区域，默认 320×240
-        "WaAnimatedImage" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(320.0),
-                height: Dimension::Length(240.0),
-            },
-            ..Style::default()
-        },
-        // WaQrCode：方形二维码，尺寸由 size prop 决定，默认 128×128
-        "WaQrCode" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(128.0),
-                height: Dimension::Length(128.0),
-            },
-            ..Style::default()
-        },
-        "TextField" | "CheckBox" | "Switch" | "Slider" | "ProgressBar" | "RadioButton"
-        | "Image" => Style {
-            min_size: taffy::geometry::Size {
-                width: Dimension::Length(80.0),
-                height: Dimension::Length(40.0),
-            },
-            ..Style::default()
-        },
-        // ── 数据密集型/可滚动组件——默认填充可用空间 ──
+        // 通用回退
         "DataGrid" | "ListView" => Style {
             size: full_size,
             ..Style::default()

@@ -46,7 +46,7 @@
 ```
 docs/Rust GUI 框架技术路线书.md                 ← 技术方向与决策依据
   │
-  └─ D0-Rust GUI 框架总体设计.md                 ← ★★★ 总约束边界（入口文档）
+  └─ D0-Rust GUI 框架总体设计.md                 ← 总约束边界（入口文档）
        │
        ├─ D1-组件模型与WidgetSpec设计.md          ← 子系统详细设计（可并行阅读）
        ├─ D2-状态管理与差分更新设计.md
@@ -115,7 +115,7 @@ rgui (facade) ─ 重新导出全部公共 API
   ├─ rgui-devtools ← 热重载、双进程通信
   ├─ rgui-macros   ← 过程宏（html!、derive）
   ├─ rgui-components ← 内置组件库
-  └─ rgui-script   ← Rhai 脚本绑定（✅ 已实现）
+  └─ rgui-script   ← Rhai 脚本绑定（已实现）
 ```
 
 依赖方向：所有 crate 依赖 `rgui-core`，严禁循环依赖。
@@ -164,9 +164,15 @@ rgui (facade) ─ 重新导出全部公共 API
 - **先「有没有」再「好不好」**：最简单的实现优先，拒绝优化建议。能跑 > 优雅。
 - **禁止凭空发明设计哲学**：源码溯源，声明≠实现，字段存在≠被使用。
 
+### 框架设计
+
+- **QT 对齐**：本框架仿照 QT 设计。全部框架逻辑（事件模型、信号/槽、布局系统、渲染管线）必须与 QT 一致。当设计决策存在歧义时，以 QT 的实现为准。
+- **组件来源**：所有内置组件（Button、TextField、DataGrid、Slider 等）从项目同级的 `webawesome` 仓库翻译而来。`webawesome` 是 Web Components 的参考实现，本项目的 Rust 组件是其语义等价的翻译。
+- **组件定义唯一入口**：用户编写页面**必须**使用 `.rgui` 文件定义布局 + `.rhai` 文件定义业务逻辑。**不支持**其他方式定义组件树（例如 Rust 代码直接构造 WidgetView）。框架层面仅支持此一种声明式路径。
+
 ### 文字渲染
 
-- 当前仅支持拉丁文字（Inter 嵌入字体）。CJK 为 ⏭️ P2（D12 M15，Vello 0.9 `draw_glyphs()` 单字体限制）。
+- 当前仅支持拉丁文字（Inter 嵌入字体）。CJK 为 P2（D12 M15，Vello 0.9 `draw_glyphs()` 单字体限制）。
 - 垂直居中：`baseline_y = bounds.y + (bounds.h + ascent) / 2`。Vello 坐标系 Y 轴向上。
 
 ### Git 工作流
