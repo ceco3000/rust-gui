@@ -1,4 +1,6 @@
-<!-- AccordionItem —— 标题栏 + 内容面板。视觉由 accordionitem.rhai 渲染 -->
-<Column class="accordion-item">
+<!-- AccordionItem — 可展开面板项，含标题栏+内容区域。
+     翻译自 WA <wa-accordion-item>。视觉由 accordionitem.rhai 渲染。
+     Props: label, expanded, disabled, heading_level, icon_placement, appearance, content -->
+<Column class="accordion-item" flex-direction="column">
   <slot />
 </Column>
