@@ -1,2 +1,2 @@
-// handlers.rhai — Accordion 事件处理器占位
-// AccordionItem 的 expand/collapse 交互由 main.rs 中的 Arc<AtomicBool> 桥接处理。
+// handlers.rhai — Accordion 事件处理器
+// 交互行为 (expand/collapse toggle + mode 协调) 由框架内部 init_widget_instances 自动处理。
