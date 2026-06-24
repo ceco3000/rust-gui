@@ -927,7 +927,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         width: Dimension::Percent(1.0),
         height: Dimension::Auto,
     };
-    let wa_button_min_size = taffy::geometry::Size {
+    let _wa_button_min_size = taffy::geometry::Size {
         width: Dimension::Length(80.0),
         height: Dimension::Length(36.0),
     };
