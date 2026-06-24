@@ -6,15 +6,17 @@
 //!
 //! Qt 等价物：`QObject::connect()`。
 
+use crate::context::UpdateContext;
 use crate::coord_chain::CoordinateTransformChain;
 use crate::geometry::Rect;
 use crate::id::WidgetId;
+use crate::traits::EventResult;
 use crate::widget_state::WidgetStateStore;
 
 /// 交互注册宿主。
 ///
-/// 组件通过此 trait 注册 hit test 回调，不依赖 `rgui::App`。
-/// `Box<dyn FnMut>` 而非泛型参数，确保 object-safe。
+/// 组件通过此 trait 注册 hit test 回调和 widget 实例 handler，
+/// 不依赖 `rgui::App`。所有回调使用 `Box<dyn>` 确保 object-safe。
 pub trait InteractionHost {
     /// 注册一个交互回调。当命中测试命中指定 widget 且 action 匹配时触发。
     fn register_interaction(
@@ -33,6 +35,14 @@ pub trait InteractionHost {
         window_to_local: CoordinateTransformChain,
         action: &str,
         cb: Box<dyn FnMut(&str) + Send>,
+    );
+
+    /// 注册 widget 实例 handler——优先于普通交互回调。
+    /// 当交互命中此 widget 时，返回的 EventResult 控制事件传播。
+    fn register_widget_instance(
+        &mut self,
+        id: WidgetId,
+        handler: Box<dyn FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send>,
     );
 
     /// 返回 widget 状态存储的引用。

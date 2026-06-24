@@ -12,6 +12,7 @@ categories = ["gui"]
 
 [dependencies]
 rgui-core = { workspace = true, features = ["serde"] }
+rgui-layout.workspace = true
 rgui-macros.workspace = true
 ordered-float.workspace = true
 serde.workspace = true

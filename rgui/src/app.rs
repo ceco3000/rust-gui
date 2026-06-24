@@ -424,8 +424,11 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     // 3. 创建 App
     let mut app = App::new(config);
 
-    // 4. 初始化交互组件
+    // 4. 初始化交互组件（通用 onclick/on:toggle）
     init_widget_instances(&mut app, &view, &initial_layout);
+
+    // 组件层交互初始化（Accordion mode 协调等）
+    rgui_components::accordion_interactive::init(&mut app, &view, &initial_layout);
 
     // 5. 加载 Rhai 脚本
     if !rhai_paths.is_empty() {
@@ -885,6 +888,14 @@ impl InteractionHost for App {
 
     fn widget_state_store(&self) -> &rgui_core::widget_state::WidgetStateStore {
         &self.widget_state_store
+    }
+
+    fn register_widget_instance(
+        &mut self,
+        id: WidgetId,
+        handler: Box<dyn FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send>,
+    ) {
+        self.register_widget_instance(id, handler);
     }
 }
 

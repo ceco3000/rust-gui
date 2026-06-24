@@ -3008,6 +3008,7 @@ version = "0.1.0"
 dependencies = [
  "ordered-float 4.6.0",
  "rgui-core",
+ "rgui-layout",
  "rgui-macros",
  "serde",
 ]
