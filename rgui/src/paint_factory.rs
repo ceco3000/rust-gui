@@ -51,14 +51,23 @@ pub fn default_paint_fn_with_state<M: AppMessage>(store: WidgetStateStore) -> Pa
 // ============================================================================
 
 /// 执行 WidgetView 树中所有 Tier 2 节点的 Rhai paint 脚本。
+///
+/// `layout_engine` 提供每个 widget 的布局 bounds，
+/// 注入为 Rhai 作用域的 `width`/`height` 变量（AC02）。
 #[cfg(feature = "devtools")]
-pub fn execute_tier2_paint_scripts<M: AppMessage>(view: &mut rgui_core::view::WidgetView<M>) {
-    execute_tier2_paint_scripts_recursive(view);
+pub fn execute_tier2_paint_scripts<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    layout_engine: &rgui_layout::LayoutEngine,
+) {
+    execute_tier2_paint_scripts_recursive(view, layout_engine);
 }
 
 /// 递归辅助函数。
 #[cfg(feature = "devtools")]
-fn execute_tier2_paint_scripts_recursive<M: AppMessage>(view: &mut rgui_core::view::WidgetView<M>) {
+fn execute_tier2_paint_scripts_recursive<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    layout_engine: &rgui_layout::LayoutEngine,
+) {
     use rgui_core::view::PropValue;
 
     let is_tier2 = view.props.get("_tier").map_or(
@@ -73,7 +82,17 @@ fn execute_tier2_paint_scripts_recursive<M: AppMessage>(view: &mut rgui_core::vi
         });
 
         if let Some(rhai_path) = rhai_path {
-            match execute_rhai_paint_script(&rhai_path) {
+            // AC02: 从布局引擎获取 bounds，注入为 width/height
+            let (width, height) = view.id.and_then(|id| {
+                layout_engine.get_layout(id).map(|cached| {
+                    (
+                        cached.result.size.width,
+                        cached.result.size.height,
+                    )
+                })
+            }).unwrap_or((400.0, 300.0));
+
+            match execute_rhai_paint_script(&rhai_path, width, height) {
                 Ok(ops) => {
                     view.props.insert("paint_ops", PropValue::PaintOps(ops));
                 },
@@ -88,14 +107,20 @@ fn execute_tier2_paint_scripts_recursive<M: AppMessage>(view: &mut rgui_core::vi
     }
 
     for child in &mut view.children {
-        execute_tier2_paint_scripts_recursive(child);
+        execute_tier2_paint_scripts_recursive(child, layout_engine);
     }
 }
 
 /// 执行单个 Rhai paint 脚本并返回生成的 PaintOps。
+///
+/// `width` 和 `height` 被注入为 Rhai 作用域变量，
+/// 脚本可通过 `fill_rect(0.0, 0.0, width, height, ...)` 使用。
+/// 这使 paint 脚本能自适应组件的布局 bounds（AC02）。
 #[cfg(feature = "devtools")]
 fn execute_rhai_paint_script(
     path: &std::path::Path,
+    width: f64,
+    height: f64,
 ) -> Result<Vec<PaintOp>, Box<dyn std::error::Error>> {
     use rgui_script::ScriptEngine;
     use rgui_script::paint_primitives::{PaintOpsAccumulator, register_paint_primitives};
@@ -108,7 +133,14 @@ fn execute_rhai_paint_script(
         let accumulator = PaintOpsAccumulator::new();
         register_paint_primitives(engine.engine_mut(), &accumulator);
 
-        engine.run(&script)?;
+        // AC02: 注入 width/height 变量到 Rhai 作用域
+        // 使用 new_static_scope()（'static 生命周期）避免与
+        // engine.engine_mut()（register_paint_primitives 内部调用）的借用冲突。
+        let mut scope = ScriptEngine::new_static_scope();
+        scope.push("width", width);
+        scope.push("height", height);
+
+        engine.run_with_scope(&mut scope, &script)?;
 
         Ok::<Vec<PaintOp>, Box<dyn std::error::Error>>(accumulator.take())
     }));
@@ -176,7 +208,7 @@ mod tests {
         )
         .expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path);
+        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
         assert!(
             result.is_ok(),
             "valid script should succeed: {:?}",
@@ -194,7 +226,7 @@ mod tests {
         let rhai_path = dir.path().join("broken.rhai");
         std::fs::write(&rhai_path, "fn broken( {").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path);
+        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
         assert!(result.is_err(), "syntax error should return Err");
     }
 
@@ -205,7 +237,7 @@ mod tests {
         let rhai_path = dir.path().join("empty.rhai");
         std::fs::write(&rhai_path, "").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path);
+        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
         assert!(result.is_ok(), "empty script should succeed");
         let ops = result.unwrap();
         assert!(ops.is_empty(), "empty script should produce no ops");
@@ -218,7 +250,76 @@ mod tests {
         let rhai_path = dir.path().join("runtime_err.rhai");
         std::fs::write(&rhai_path, "nonexistent_fn();").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path);
+        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
         assert!(result.is_err(), "runtime error should return Err");
+    }
+
+    // ── AC02: Tier 2 paint script bounds injection ──────────────────
+
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn ac02_bounds_injected_as_width_height() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("bounds_test.rhai");
+        std::fs::write(
+            &rhai_path,
+            r#"fill_rect(0.0, 0.0, width, height, rgb(0.5, 0.5, 0.5), 4.0);"#,
+        )
+        .expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
+        assert!(
+            result.is_ok(),
+            "script using width/height should succeed: {:?}",
+            result.err()
+        );
+        let ops = result.unwrap();
+        assert_eq!(ops.len(), 1, "should produce 1 PaintOp");
+        assert!(matches!(ops[0], PaintOp::FillRect { .. }));
+        // Verify the rect uses the injected bounds
+        if let PaintOp::FillRect { rect, .. } = &ops[0] {
+            assert!(
+                (rect.size.width - 400.0).abs() < 0.01,
+                "width should be 400.0, got {}",
+                rect.size.width
+            );
+            assert!(
+                (rect.size.height - 300.0).abs() < 0.01,
+                "height should be 300.0, got {}",
+                rect.size.height
+            );
+        }
+    }
+
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn ac02_bounds_script_without_width_height_still_works() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("no_bounds.rhai");
+        std::fs::write(
+            &rhai_path,
+            r#"fill_rect(10.0, 20.0, 100.0, 50.0, rgb(0.1, 0.2, 0.3), 0.0);"#,
+        )
+        .expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
+        assert!(result.is_ok(), "script without width/height refs should still work");
+    }
+
+    #[cfg(feature = "devtools")]
+    #[test]
+    fn ac02_injected_variables_are_accessible_in_expressions() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let rhai_path = dir.path().join("expr_test.rhai");
+        std::fs::write(
+            &rhai_path,
+            r#"let half_w = width / 2.0; fill_rect(half_w - 10.0, 0.0, 20.0, height, rgb(0.0, 0.0, 1.0), 0.0);"#,
+        )
+        .expect("write rhai file");
+
+        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
+        assert!(result.is_ok(), "script using width/height in expressions should succeed");
+        let ops = result.unwrap();
+        assert_eq!(ops.len(), 1, "should produce 1 PaintOp");
     }
 }

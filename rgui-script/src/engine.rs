@@ -107,7 +107,20 @@ impl ScriptEngine {
         self.engine.eval_with_scope::<Dynamic>(scope, expr)
     }
 
+    /// 创建新的静态作用域（'static 生命周期，不借用引擎）。
+    ///
+    /// 与 [`new_scope`](Self::new_scope) 不同，此方法不借用引擎，
+    /// 返回 `Scope<'static>`，可在引擎的可变借用之前创建。
+    /// 适用于需要在可变借用期间保持作用域的场景（如注册类型后再执行脚本）。
+    #[must_use]
+    pub fn new_static_scope() -> rhai::Scope<'static> {
+        rhai::Scope::new()
+    }
+
     /// 创建新的作用域。
+    ///
+    /// 作用域的 lifetime 与引擎绑定。如需 `'static` 作用域，
+    /// 请使用 [`new_static_scope`](Self::new_static_scope)。
     #[must_use]
     pub fn new_scope(&self) -> Scope<'_> {
         Scope::new()
@@ -245,6 +258,19 @@ mod tests {
         let mut engine = ScriptEngine::default();
         let result: i64 = engine.eval_as("1 + 1").unwrap();
         assert_eq!(result, 2);
+    }
+
+    #[test]
+    fn new_static_scope_is_usable_with_mutable_borrow() {
+        let mut engine = ScriptEngine::new();
+        // Create 'static scope BEFORE mutable borrow
+        let mut scope = ScriptEngine::new_static_scope();
+        scope.push("x", 42_i64);
+        // Now mutable borrow is fine
+        engine.engine_mut().register_fn("double", |x: i64| x * 2);
+        engine.run_with_scope(&mut scope, "let y = x + double(1);").unwrap();
+        let y: i64 = scope.get_value::<i64>("y").unwrap();
+        assert_eq!(y, 44);
     }
 
     #[test]

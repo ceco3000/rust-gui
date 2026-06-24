@@ -21,18 +21,20 @@ impl AppMessage for AccordionMsg {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. 解析 .rgui + 执行 Tier 2 paint 脚本
+    // 1. 解析 .rgui
     let rgui_path = std::path::PathBuf::from("ui.rgui");
     let mut view: WidgetView<AccordionMsg> =
         rgui_devtools::rgui_parser::parse_rgui_file(&rgui_path)?;
-    rgui::paint_factory::execute_tier2_paint_scripts(&mut view);
 
-    // 2. 初始布局
-    let _initial_layout = compute_view_layout(
+    // 2. 初始布局（Tier 2 脚本需要 bounds，AC02）
+    let initial_layout = compute_view_layout(
         &mut view,
         rgui_core::geometry::Size::new(500.0, 400.0),
         None,
     );
+
+    // 3. 执行 Tier 2 Rhai paint 脚本（使用布局 bounds 注入 width/height）
+    rgui::paint_factory::execute_tier2_paint_scripts(&mut view, &initial_layout);
 
     // 3. 创建 App — 使用自定义渲染管线
     //    每帧：克隆模板 → 计算布局 → 构建场景

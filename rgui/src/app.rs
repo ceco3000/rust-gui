@@ -437,15 +437,15 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     // 1. 解析 .rgui
     let mut view: rgui_core::view::WidgetView<M> = parse_rgui_file(&rgui_path)?;
 
-    // 1b. 执行 Tier 2 Rhai paint 脚本（加载时一次性，产出 PaintOp 缓存到 props）
-    crate::paint_factory::execute_tier2_paint_scripts(&mut view);
-
-    // 2. 初始布局
+    // 2. 初始布局（Tier 2 脚本需要 bounds，AC02）
     let initial_layout = compute_view_layout(
         &mut view,
         Size::new(config.window_size.width, config.window_size.height),
         None,
     );
+
+    // 3. 执行 Tier 2 Rhai paint 脚本（使用布局 bounds 注入 width/height）
+    crate::paint_factory::execute_tier2_paint_scripts(&mut view, &initial_layout);
 
     // 3. 创建 App
     let mut app = App::new(config);
@@ -1048,8 +1048,15 @@ impl App {
         let mut hot_reload = RguiHotReload::<M>::new(&config, rgui_path)?;
         let mut current_view = hot_reload.current_view().clone();
 
-        // T204: 执行初始视图的 Tier 2 Rhai paint 脚本
-        crate::paint_factory::execute_tier2_paint_scripts(&mut current_view);
+        // 计算初始布局（Tier 2 脚本需要 bounds，AC02）
+        let available = Size::new(
+            self.config.window_size.width,
+            self.config.window_size.height,
+        );
+        let initial_engine = compute_view_layout(&mut current_view, available, None);
+
+        // T204: 执行初始视图的 Tier 2 Rhai paint 脚本（使用布局 bounds 注入 width/height）
+        crate::paint_factory::execute_tier2_paint_scripts(&mut current_view, &initial_engine);
 
         // RS04: 共享的 PropRegistry 和 WidgetIdBimap
         let prop_registry = self.prop_registry.clone();
@@ -1067,15 +1074,8 @@ impl App {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = bimap;
         }
 
-        // 计算初始布局
-        let available = Size::new(
-            self.config.window_size.width,
-            self.config.window_size.height,
-        );
-        let mut layout_engine = {
-            let mut view = current_view.clone();
-            compute_view_layout(&mut view, available, None)
-        };
+        // 复用上面计算好的初始布局引擎
+        let mut layout_engine = initial_engine;
 
         // RS07: 收集声明式 state 绑定
         // state_key → Vec<(bound_widget_id, prop_name)>
@@ -1149,13 +1149,14 @@ impl App {
 
                     let available = Size::new(f64::from(width), f64::from(height));
                     let mut view = new_view.clone();
-                    // T204: 热重载后重新执行 Tier 2 Rhai paint 脚本
-                    crate::paint_factory::execute_tier2_paint_scripts(&mut view);
+                    // AC02: 先计算布局（Tier 2 脚本需要 bounds）
+                    let engine = compute_view_layout(&mut view, available, Some(text_renderer));
+                    // T204: 热重载后重新执行 Tier 2 Rhai paint 脚本（使用布局 bounds 注入 width/height）
+                    crate::paint_factory::execute_tier2_paint_scripts(&mut view, &engine);
                     // RS04: 注入 Rhai 写入的待更新 prop
                     inject_props_from_registry(&mut view, &prop_registry.drain());
                     // RS07: 从 StateStore 注入 state 绑定 prop
                     inject_state_bindings(&mut view, &id_map, &state_store);
-                    let engine = compute_view_layout(&mut view, available, Some(text_renderer));
                     layout_engine = engine;
                     current_view = view;
                 },
