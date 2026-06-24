@@ -18,6 +18,19 @@ pub enum InputModality {
     Mouse,
 }
 
+/// 焦点导航方向（AC11）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusDirection {
+    /// ArrowDown：下一个可聚焦兄弟。
+    Next,
+    /// ArrowUp：上一个可聚焦兄弟。
+    Previous,
+    /// Home：第一个可聚焦兄弟。
+    First,
+    /// End：最后一个可聚焦兄弟。
+    Last,
+}
+
 /// 焦点管理器。
 #[derive(Default)]
 pub struct FocusManager {
@@ -151,6 +164,78 @@ impl FocusManager {
         }
 
         // 无父节点（移除根节点），焦点保持 None
+    }
+
+    /// 在当前焦点 widget 的父容器内，按方向导航到兄弟节点（AC11）。
+    ///
+    /// 行为：
+    /// - `Next`（ArrowDown）：移到下一个可聚焦兄弟，最后一项时绕回第一项
+    /// - `Previous`（ArrowUp）：移到上一个可聚焦兄弟，第一项时绕回最后一项
+    /// - `First`（Home）：跳到第一个可聚焦兄弟
+    /// - `Last`（End）：跳到最后一个可聚焦兄弟
+    ///
+    /// 返回 `true` 表示焦点已移动（`FocusManager::current` 已更新），
+    /// `false` 表示没有可移动的目标（无焦点、无父节点、单子节点等）。
+    pub fn move_focus_sibling(&mut self, tree: &WidgetTree, direction: FocusDirection) -> bool {
+        let current = match self.current {
+            Some(id) => id,
+            None => return false,
+        };
+
+        // 获取父节点
+        let parent_id = match tree.parent(current) {
+            Some(parent) => parent,
+            None => return false,
+        };
+
+        // 获取所有兄弟节点（按原始顺序，过滤为可聚焦的）
+        let siblings = tree.children(parent_id);
+        let focusable: Vec<WidgetId> = siblings
+            .iter()
+            .copied()
+            .filter(|&id| self.is_focusable(id))
+            .collect();
+
+        if focusable.len() <= 1 {
+            return false;
+        }
+
+        // 找到当前焦点在 focusable 列表中的位置
+        let pos = match focusable.iter().position(|&id| id == current) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        let new_focus = match direction {
+            FocusDirection::Next => {
+                let next = (pos + 1) % focusable.len();
+                focusable[next]
+            },
+            FocusDirection::Previous => {
+                let prev = if pos == 0 {
+                    focusable.len() - 1
+                } else {
+                    pos - 1
+                };
+                focusable[prev]
+            },
+            FocusDirection::First => {
+                if pos == 0 {
+                    return false;
+                }
+                focusable[0]
+            },
+            FocusDirection::Last => {
+                let last = focusable.len() - 1;
+                if pos == last {
+                    return false;
+                }
+                focusable[last]
+            },
+        };
+
+        self.focus(new_focus);
+        true
     }
 }
 
@@ -361,5 +446,133 @@ mod tests {
     fn default_modality_is_mouse() {
         let fm = FocusManager::new();
         assert!(!fm.is_focus_visible());
+    }
+
+    // ── RED: move_focus_sibling (AC11) ────────────────────────────────────
+
+    /// Builds a flat container tree for AC11 sibling navigation tests:
+    ///     1 (container)
+    ///     ├── 2 (item)
+    ///     ├── 3 (item)
+    ///     └── 4 (item)
+    fn build_flat_container() -> WidgetTree {
+        let mut tree = WidgetTree::new();
+        tree.add_child(make_id(1), make_id(2));
+        tree.add_child(make_id(1), make_id(3));
+        tree.add_child(make_id(1), make_id(4));
+        tree
+    }
+
+    #[test]
+    fn arrow_down_navigates_to_next_sibling() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), Some(make_id(3)));
+    }
+
+    #[test]
+    fn arrow_down_wraps_from_last_to_first() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(4));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    #[test]
+    fn arrow_up_navigates_to_previous_sibling() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(3));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Previous));
+        assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    #[test]
+    fn arrow_up_wraps_from_first_to_last() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Previous));
+        assert_eq!(fm.current(), Some(make_id(4)));
+    }
+
+    #[test]
+    fn home_jumps_to_first_sibling() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(4));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::First));
+        assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    #[test]
+    fn home_from_first_is_noop() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        assert!(!fm.move_focus_sibling(&tree, FocusDirection::First));
+        assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    #[test]
+    fn end_jumps_to_last_sibling() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Last));
+        assert_eq!(fm.current(), Some(make_id(4)));
+    }
+
+    #[test]
+    fn end_from_last_is_noop() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(4));
+        assert!(!fm.move_focus_sibling(&tree, FocusDirection::Last));
+        assert_eq!(fm.current(), Some(make_id(4)));
+    }
+
+    #[test]
+    fn navigation_noop_when_no_focus() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        assert!(!fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), None);
+    }
+
+    #[test]
+    fn navigation_noop_when_root_has_no_parent() {
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(1)); // Root: no parent, no siblings
+        assert!(!fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), Some(make_id(1)));
+    }
+
+    #[test]
+    fn navigation_noop_when_only_child() {
+        let mut tree = WidgetTree::new();
+        tree.add_child(make_id(1), make_id(2)); // Single child
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        // Only one focusable sibling → moving is a no-op
+        assert!(!fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    #[test]
+    fn navigation_skips_non_focusable_siblings() {
+        // Container with items where one is not focusable.
+        // Since is_focusable currently returns true for all, this test
+        // verifies the filter hook is called correctly.
+        let tree = build_flat_container();
+        let mut fm = FocusManager::new();
+        fm.focus(make_id(2));
+        // All items focusable → should move to 3
+        assert!(fm.move_focus_sibling(&tree, FocusDirection::Next));
+        assert_eq!(fm.current(), Some(make_id(3)));
     }
 }

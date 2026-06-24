@@ -17,7 +17,9 @@ pub use event::{
     MouseInputOrigin, NormalizedWindowPoint, logical_window_size_from_physical_size,
     normalize_platform_window_point,
 };
+pub use focus::FocusDirection;
 pub use focus::FocusManager;
+pub use focus::InputModality;
 pub use router::EventRouter;
 pub use widget_tree::WidgetTree;
 
