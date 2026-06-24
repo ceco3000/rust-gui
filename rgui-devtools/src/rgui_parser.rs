@@ -347,8 +347,7 @@ fn try_expand_node<M: AppMessage>(
             if let Some(rhai_path) = node.props.remove("_rhai_path") {
                 expanded.props.insert("_rhai_path", rhai_path);
             }
-            // 清理内部标记
-            expanded.props.remove("_tier");
+            // 保留 _tier 标记（paint 引擎需要），清理 _rgui_path（已展开）
             expanded.props.remove("_rgui_path");
 
             // T208: 解析子组件中的 {prop_name} 绑定
