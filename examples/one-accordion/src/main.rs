@@ -5,10 +5,12 @@
 //! 用户只需声明式 UI 和一行 `run_simple_app` 启动器。
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let rgui_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui.rgui");
+
     rgui::run_simple_app::<rgui_core::message::NoopMsg>(
         rgui::AppConfig::default()
             .title("Accordion Demo — Tier 2 (.rgui + .rhai)")
             .window_size(500.0, 400.0)
-            .rgui_path("ui.rgui"),
+            .rgui_path(&rgui_path),
     )
 }
