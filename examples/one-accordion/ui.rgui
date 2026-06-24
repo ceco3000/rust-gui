@@ -1,5 +1,5 @@
-<!-- Accordion 演示 —— 3 个面板项 -->
-<Accordion>
+<!-- Accordion 演示 —— 3 个面板项，mode="single" 兄弟联动 -->
+<Accordion mode="single">
   <AccordionItem label="Getting Started" expanded="true" content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
   </AccordionItem>
 

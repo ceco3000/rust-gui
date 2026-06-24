@@ -863,6 +863,15 @@ impl App {
     pub fn widget_state_store(&self) -> &crate::widget_state::WidgetStateStore {
         &self.widget_state_store
     }
+
+    /// 返回 widget 树的引用。
+    ///
+    /// 外部代码可借此查询 widget 层级关系（父子、兄弟等）。
+    #[must_use]
+    pub fn widget_tree(&self) -> &rgui_platform::widget_tree::WidgetTree {
+        &self.widget_tree
+    }
+
     /// 返回当前 DPI 缩放因子。
     ///
     /// 逻辑像素 × `scale_factor` = 物理像素。

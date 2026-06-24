@@ -85,6 +85,27 @@ impl WidgetTree {
         self.children.get(&widget_id).map_or(&[], Vec::as_slice)
     }
 
+    /// 获取 widget 的所有兄弟节点（同一父节点的其他子节点，不含自身）。
+    ///
+    /// 对于根节点（无父节点），返回空 Vec。
+    #[must_use]
+    pub fn siblings(&self, widget_id: WidgetId) -> Vec<WidgetId> {
+        if let Some(parent_id) = self.parent.get(&widget_id).copied() {
+            self.children
+                .get(&parent_id)
+                .map(|children| {
+                    children
+                        .iter()
+                        .copied()
+                        .filter(|&id| id != widget_id)
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
     /// 判断 widget 是否在树中。
     #[must_use]
     pub fn contains(&self, widget_id: WidgetId) -> bool {
@@ -552,6 +573,72 @@ mod tests {
     fn children_of_unknown_is_empty() {
         let tree = build_tree();
         assert!(tree.children(WidgetId::from_u64(99)).is_empty());
+    }
+
+    // ── RED: siblings ────────────────────────────────────────────────
+
+    #[test]
+    fn siblings_of_child() {
+        // child_a (2) and child_b (3) are siblings
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(2));
+        assert_eq!(sibs, vec![WidgetId::from_u64(3)]);
+    }
+
+    #[test]
+    fn siblings_of_other_child() {
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(3));
+        assert_eq!(sibs, vec![WidgetId::from_u64(2)]);
+    }
+
+    #[test]
+    fn siblings_of_leaf() {
+        // leaf_a1 (4) and leaf_a2 (5) are siblings
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(4));
+        assert_eq!(sibs, vec![WidgetId::from_u64(5)]);
+    }
+
+    #[test]
+    fn siblings_of_other_leaf() {
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(5));
+        assert_eq!(sibs, vec![WidgetId::from_u64(4)]);
+    }
+
+    #[test]
+    fn siblings_of_root_is_empty() {
+        // root (1) has no parent, thus no siblings
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(1));
+        assert!(sibs.is_empty());
+    }
+
+    #[test]
+    fn siblings_of_unknown_is_empty() {
+        let tree = build_tree();
+        let sibs = tree.siblings(WidgetId::from_u64(99));
+        assert!(sibs.is_empty());
+    }
+
+    #[test]
+    fn siblings_excludes_self() {
+        let mut tree = WidgetTree::new();
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(10));
+        // single child → no siblings
+        let sibs = tree.siblings(WidgetId::from_u64(10));
+        assert!(sibs.is_empty());
+    }
+
+    #[test]
+    fn siblings_many_children() {
+        let mut tree = WidgetTree::new();
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(10));
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(20));
+        tree.add_child(WidgetId::from_u64(1), WidgetId::from_u64(30));
+        let sibs = tree.siblings(WidgetId::from_u64(20));
+        assert_eq!(sibs, vec![WidgetId::from_u64(10), WidgetId::from_u64(30)]);
     }
 
     // ── RED: contains ────────────────────────────────────────────────

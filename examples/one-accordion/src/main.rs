@@ -2,6 +2,7 @@
 //!
 //! 展示用声明式格式定义的手风琴容器组件。
 //! AC07: 点击标题栏 → expanded 状态翻转 → paint 脚本重新执行。
+//! AC09: mode="single"/"single-collapsible" 兄弟联动——展开一个 item 自动折叠其他。
 //!
 //! 交互通过 `register_interaction` 注册点击回调。
 
@@ -53,7 +54,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = App::new(config);
 
-    // 5a. 注册 AccordionItem 点击交互
+    // 5a. 注册 AccordionItem 点击交互（AC09: mode 协调）
+    let mode = read_accordion_mode(&view);
+
     let expanded_states: Arc<Mutex<Vec<bool>>> = Arc::new(Mutex::new(vec![
         true,  // Item 0 (Getting Started) 初始展开
         false, // Item 1 (Installation) 初始折叠
@@ -64,11 +67,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let states = Arc::clone(&expanded_states);
         // 从布局引擎获取 item 的 bounds
         let item_rect = item_bounds(&initial_layout, item_id);
+        let mode_clone = mode.clone();
 
         app.register_interaction(item_id, item_rect, "toggle", move |_action| {
             if let Ok(mut expanded) = states.lock() {
                 if i < expanded.len() {
-                    expanded[i] = !expanded[i];
+                    match mode_clone.as_str() {
+                        "single" => {
+                            if !expanded[i] {
+                                // Expanding this item: collapse all others
+                                for j in 0..expanded.len() {
+                                    expanded[j] = false;
+                                }
+                                expanded[i] = true;
+                            }
+                            // In "single" mode, can't collapse the only open item
+                        },
+                        "single-collapsible" => {
+                            if expanded[i] {
+                                // Collapsing this item
+                                expanded[i] = false;
+                            } else {
+                                // Expanding: collapse all others first
+                                for j in 0..expanded.len() {
+                                    expanded[j] = false;
+                                }
+                                expanded[i] = true;
+                            }
+                        },
+                        _ => {
+                            // "multiple" mode (default): independent toggle
+                            expanded[i] = !expanded[i];
+                        },
+                    }
                 }
             }
         });
@@ -159,4 +190,25 @@ fn inject_recursive<M: AppMessage>(view: &mut WidgetView<M>, states: &[bool], id
     for child in &mut view.children {
         inject_recursive(child, states, idx);
     }
+}
+
+/// AC09: 从 WidgetView 树中读取 Accordion 容器的 mode prop。
+fn read_accordion_mode<M: AppMessage>(view: &WidgetView<M>) -> String {
+    if view.widget_type == "WaAccordion" {
+        return view
+            .props
+            .get("mode")
+            .and_then(|v| match v {
+                PropValue::Str(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "multiple".to_string());
+    }
+    for child in &view.children {
+        let mode = read_accordion_mode(child);
+        if mode != "multiple" {
+            return mode;
+        }
+    }
+    "multiple".to_string()
 }
