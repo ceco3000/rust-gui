@@ -1,4 +1,5 @@
-//! # rgui——Rust GUI 框架
+//! # rgui
+//! Rust GUI 框架
 
 #![allow(ambiguous_glob_reexports)]
 
@@ -14,7 +15,6 @@ pub mod widget_state;
 pub use app::run_simple_app;
 pub use app::{App, AppConfig};
 pub use rgui_a11y::*;
-pub use rgui_components::*;
 pub use rgui_core::*;
 pub use rgui_layout::*;
 pub use rgui_macros::{AppMessage, WidgetSpec, html};
@@ -28,7 +28,6 @@ pub use widget_node::WidgetNode;
 pub mod prelude {
     pub use crate::app::{App, AppConfig};
     pub use rgui_a11y::*;
-    pub use rgui_components::*;
     pub use rgui_core::prelude::*;
     pub use rgui_layout::*;
     pub use rgui_macros::{AppMessage, WidgetSpec, html};

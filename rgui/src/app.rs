@@ -499,23 +499,10 @@ pub fn run_simple_app<M: AppMessage + 'static>(
 /// 每帧渲染前 props 反映最新状态。
 #[cfg(feature = "devtools")]
 fn sync_store_to_props<M: AppMessage>(
-    view: &mut rgui_core::view::WidgetView<M>,
-    store: &crate::widget_state::WidgetStateStore,
+    _view: &mut rgui_core::view::WidgetView<M>,
+    _store: &crate::widget_state::WidgetStateStore,
 ) {
-    use rgui_components::wa_accordion_item::WaAccordionItemState;
-    use rgui_core::view::PropValue;
-
-    if view.widget_type == "WaAccordionItem" {
-        if let Some(widget_id) = view.id {
-            if let Some(state) = store.read::<WaAccordionItemState>(widget_id) {
-                view.props
-                    .insert("expanded", PropValue::Bool(state.expanded));
-            }
-        }
-    }
-    for child in &mut view.children {
-        sync_store_to_props(child, store);
-    }
+    // 无组件需要同步——待阶段 2 重新加入
 }
 
 /// 交互自动化 Harness。
