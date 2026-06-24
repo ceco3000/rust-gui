@@ -14,10 +14,11 @@ use rgui_platform::event::{
     logical_window_size_from_physical_size, normalize_platform_window_point,
 };
 use rgui_platform::focus::FocusManager;
+use rgui_platform::focus::InputModality;
 use rgui_platform::widget_tree::WidgetTree;
 use rgui_render::{
-    RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer, VelloBackend,
-    compute_view_layout,
+    FocusIndicator, RenderBackend, RenderBackendFactory, RenderParams, SceneGraph, TextRenderer,
+    VelloBackend, compute_view_layout,
 };
 #[cfg(feature = "devtools")]
 use rgui_script::PropRegistry;
@@ -2236,6 +2237,8 @@ impl ApplicationHandler for AppHandler {
                 button: WinitMouseButton::Left,
                 ..
             } => {
+                // AC06: 鼠标点击 → 输入模态为 Mouse，焦点不可见
+                self.app.focus.set_input_modality(InputModality::Mouse);
                 self.handle_click(self.mouse_window_position);
             },
 
@@ -2281,7 +2284,7 @@ impl ApplicationHandler for AppHandler {
                         !has_dirty && !self.app.needs_redraw && self.prev_scene.is_some();
 
                     // 场景构建回调，带异常隔离（D1 §11.3）
-                    let scene = if can_reuse {
+                    let mut scene = if can_reuse {
                         // RS06: 无脏 widget → 复用上一帧场景
                         self.prev_scene.clone().unwrap()
                     } else if let Some(ref mut view_builder) = self.view_scene_builder {
@@ -2305,6 +2308,27 @@ impl ApplicationHandler for AppHandler {
                     } else {
                         SceneGraph::new(frame)
                     };
+
+                    // AC06: 注入焦点 outline——仅当键盘聚焦时显示
+                    if self.app.focus.is_focus_visible() {
+                        if let Some(focus_id) = self.app.focus.current() {
+                            let fi = FocusIndicator::default();
+                            if let Ok(layout_guard) = self.app.current_layout.lock() {
+                                if let Some(engine) = layout_guard.as_ref() {
+                                    fi.inject_into_scene(&mut scene, Some(focus_id), |id| {
+                                        engine.get_layout(id).map(|c| {
+                                            rgui_core::geometry::Rect::new(
+                                                c.result.position.x,
+                                                c.result.position.y,
+                                                c.result.size.width,
+                                                c.result.size.height,
+                                            )
+                                        })
+                                    });
+                                }
+                            }
+                        }
+                    }
 
                     // RS06: 缓存本帧场景供下一帧复用
                     self.prev_scene = Some(scene.clone());
@@ -2401,6 +2425,18 @@ impl ApplicationHandler for AppHandler {
                     width: logical_size.width,
                     height: logical_size.height,
                 });
+            },
+            WindowEvent::KeyboardInput {
+                event: ref key_event,
+                ..
+            } => {
+                // AC06: 键盘输入 → 输入模态为 Keyboard，焦点可见
+                if key_event.state == ElementState::Pressed {
+                    self.app.focus.set_input_modality(InputModality::Keyboard);
+                }
+                if let Some(rgui_event) = self.convert_event(&event) {
+                    self.app.events.push(rgui_event);
+                }
             },
             _ => {
                 if let Some(rgui_event) = self.convert_event(&event) {

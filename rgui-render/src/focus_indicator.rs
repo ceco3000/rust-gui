@@ -19,7 +19,7 @@ use rgui_core::geometry::Rect;
 use rgui_core::id::WidgetId;
 
 use crate::primitives::{FillRule, LineCap, LineJoin, Paint, PathCommand, PathData, Stroke};
-use crate::scene::{DrawCommand, SceneGraphBuilder};
+use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer};
 
 /// 焦点指示器 z 轴顺序（高于所有正常 widget 层）。
 const FOCUS_Z_INDEX: i32 = 1_000_000;
@@ -68,7 +68,7 @@ impl FocusIndicator {
         Self::default()
     }
 
-    /// 向场景图中注入焦点 outline。
+    /// 向场景图中注入焦点 outline（使用 SceneGraphBuilder）。
     ///
     /// # 参数
     ///
@@ -84,27 +84,11 @@ impl FocusIndicator {
         focused_widget: Option<WidgetId>,
         get_bounds: impl Fn(WidgetId) -> Option<Rect>,
     ) {
-        let Some(focus_id) = focused_widget else {
+        let Some((focus_id, outline_rect, path, stroke, paint)) =
+            self.build_outline_layer_data(focused_widget, get_bounds)
+        else {
             return;
         };
-        let Some(bounds) = get_bounds(focus_id) else {
-            return;
-        };
-
-        let outline_rect = expand_rect(bounds, self.outline_offset as f64);
-
-        let path = build_rounded_rect_path(outline_rect, self.corner_radius);
-
-        let stroke = Stroke {
-            width: self.outline_width,
-            cap: LineCap::Butt,
-            join: LineJoin::Miter,
-            miter_limit: 4.0,
-            dash_pattern: None,
-            dash_offset: 0.0,
-        };
-
-        let paint = Paint::Solid(self.outline_color);
 
         scene.build_layer(
             focus_id,
@@ -117,6 +101,71 @@ impl FocusIndicator {
             }],
             true,
         );
+    }
+
+    /// 向已构建的 `SceneGraph` 中注入焦点 outline（后处理路径）。
+    ///
+    /// 用于在场景图已由 `build_scene_from_view` 等函数构建完成后，
+    /// 根据焦点状态追加 outline 层。与 `inject_outline` 的区别是
+    /// 直接操作 `SceneGraph.layers` 而非通过 `SceneGraphBuilder`。
+    ///
+    /// # 参数
+    ///
+    /// * `scene` - 已构建的场景图，outline 层将追加到 `layers` 末尾。
+    /// * `focused_widget` - 当前焦点 widget 的 ID。
+    /// * `get_bounds` - 根据 WidgetId 查询布局边界的闭包。
+    ///
+    /// 当焦点 widget 存在且 bounds 可查询时，追加焦点 outline 层。
+    pub fn inject_into_scene(
+        &self,
+        scene: &mut SceneGraph,
+        focused_widget: Option<WidgetId>,
+        get_bounds: impl Fn(WidgetId) -> Option<Rect>,
+    ) {
+        let Some((focus_id, outline_rect, path, stroke, paint)) =
+            self.build_outline_layer_data(focused_widget, get_bounds)
+        else {
+            return;
+        };
+
+        scene.layers.push(SceneLayer {
+            z_index: FOCUS_Z_INDEX,
+            bounds: outline_rect,
+            commands: vec![DrawCommand::StrokePath {
+                path,
+                stroke,
+                paint,
+            }],
+            widget_id: focus_id,
+            opacity: 1.0,
+            transform: None,
+        });
+    }
+
+    /// 构建 outline 层的绘制数据（内部辅助方法，消除 inject_outline 和 inject_into_scene 的重复代码）。
+    ///
+    /// 返回 `(focus_id, outline_rect, path, stroke, paint)` 或 `None`（无 focus 或 bounds 缺失）。
+    fn build_outline_layer_data(
+        &self,
+        focused_widget: Option<WidgetId>,
+        get_bounds: impl Fn(WidgetId) -> Option<Rect>,
+    ) -> Option<(WidgetId, Rect, PathData, Stroke, Paint)> {
+        let focus_id = focused_widget?;
+        let bounds = get_bounds(focus_id)?;
+
+        let outline_rect = expand_rect(bounds, self.outline_offset as f64);
+        let path = build_rounded_rect_path(outline_rect, self.corner_radius);
+        let stroke = Stroke {
+            width: self.outline_width,
+            cap: LineCap::Butt,
+            join: LineJoin::Miter,
+            miter_limit: 4.0,
+            dash_pattern: None,
+            dash_offset: 0.0,
+        };
+        let paint = Paint::Solid(self.outline_color);
+
+        Some((focus_id, outline_rect, path, stroke, paint))
     }
 
     /// 带标准 focus 偏移的默认 outline rect 快捷创建。
@@ -680,5 +729,108 @@ mod tests {
         });
         let sg = builder.finish();
         assert_eq!(sg.layer_count(), 1);
+    }
+
+    // ============================================================
+    // inject_into_scene 测试（后处理路径 —— AC06）
+    // ============================================================
+
+    #[test]
+    fn inject_into_scene_adds_layer_to_scene_graph() {
+        let mut scene = SceneGraph::new(1);
+        let fi = FocusIndicator::default();
+        let id = WidgetId::new();
+        let mut map = HashMap::new();
+        map.insert(id, Rect::new(50.0, 30.0, 200.0, 100.0));
+
+        assert_eq!(scene.layer_count(), 0);
+        fi.inject_into_scene(&mut scene, Some(id), bounds_lookup(&map));
+        assert_eq!(scene.layer_count(), 1);
+        assert_eq!(scene.layers[0].widget_id, id);
+        assert_eq!(scene.layers[0].z_index, FOCUS_Z_INDEX);
+    }
+
+    #[test]
+    fn inject_into_scene_no_focus_does_nothing() {
+        let mut scene = SceneGraph::new(1);
+        let fi = FocusIndicator::default();
+        let map = HashMap::new();
+
+        fi.inject_into_scene(&mut scene, None, bounds_lookup(&map));
+        assert_eq!(scene.layer_count(), 0);
+    }
+
+    #[test]
+    fn inject_into_scene_multiple_calls() {
+        let mut scene = SceneGraph::new(1);
+        let fi = FocusIndicator::default();
+        let id = WidgetId::new();
+        let mut map = HashMap::new();
+        map.insert(id, Rect::new(0.0, 0.0, 100.0, 100.0));
+
+        fi.inject_into_scene(&mut scene, Some(id), bounds_lookup(&map));
+        fi.inject_into_scene(&mut scene, Some(id), bounds_lookup(&map));
+        assert_eq!(scene.layer_count(), 2);
+    }
+
+    #[test]
+    fn inject_into_scene_preserves_existing_layers() {
+        let mut scene = SceneGraph::new(1);
+        // Add an existing layer
+        scene.layers.push(SceneLayer {
+            z_index: 10,
+            bounds: Rect::new(0.0, 0.0, 100.0, 100.0),
+            commands: vec![DrawCommand::FillRect {
+                rect: Rect::new(0.0, 0.0, 100.0, 100.0),
+                color: Color::WHITE,
+                radius: 0.0,
+            }],
+            widget_id: WidgetId::new(),
+            opacity: 1.0,
+            transform: None,
+        });
+
+        let fi = FocusIndicator::default();
+        let focus_id = WidgetId::new();
+        let mut map = HashMap::new();
+        map.insert(focus_id, Rect::new(50.0, 30.0, 200.0, 100.0));
+
+        fi.inject_into_scene(&mut scene, Some(focus_id), bounds_lookup(&map));
+
+        assert_eq!(scene.layer_count(), 2);
+        // Original layer preserved
+        assert_eq!(scene.layers[0].z_index, 10);
+        // Focus outline added
+        assert_eq!(scene.layers[1].z_index, FOCUS_Z_INDEX);
+    }
+
+    #[test]
+    fn inject_into_scene_with_custom_config() {
+        let mut scene = SceneGraph::new(1);
+        let fi = FocusIndicator {
+            outline_width: 4.0,
+            outline_color: Color::RED,
+            outline_offset: 3.0,
+            corner_radius: 0.0,
+        };
+        let id = WidgetId::new();
+        let mut map = HashMap::new();
+        map.insert(id, Rect::new(50.0, 30.0, 200.0, 100.0));
+
+        fi.inject_into_scene(&mut scene, Some(id), bounds_lookup(&map));
+
+        assert_eq!(scene.layer_count(), 1);
+        let layer = &scene.layers[0];
+        assert_eq!(layer.bounds, Rect::new(47.0, 27.0, 206.0, 106.0));
+        match &layer.commands[0] {
+            DrawCommand::StrokePath { stroke, paint, .. } => {
+                assert_eq!(stroke.width, 4.0);
+                match paint {
+                    Paint::Solid(color) => assert_eq!(*color, Color::RED),
+                    _ => panic!("预期 Solid paint"),
+                }
+            },
+            _ => panic!("预期 StrokePath"),
+        }
     }
 }

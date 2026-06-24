@@ -4,12 +4,28 @@ use crate::widget_tree::WidgetTree;
 use rgui_core::id::WidgetId;
 use std::fmt;
 
+/// 输入模态——跟踪最后一次输入是键盘还是鼠标。
+///
+/// 用于实现 CSS `:focus-visible` 行为：
+/// - 键盘导航（Tab/方向键）→ `Keyboard`
+/// - 鼠标点击 → `Mouse`
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputModality {
+    /// 键盘输入（Tab、方向键等）。
+    Keyboard,
+    /// 鼠标输入（点击等）。
+    #[default]
+    Mouse,
+}
+
 /// 焦点管理器。
 #[derive(Default)]
 pub struct FocusManager {
     current: Option<WidgetId>,
     history: Vec<WidgetId>,
     trap_stack: Vec<Vec<WidgetId>>,
+    /// 最后一次输入模态——用于判断焦点是否应该可见（focus-visible）。
+    input_modality: InputModality,
 }
 
 impl FocusManager {
@@ -19,12 +35,29 @@ impl FocusManager {
             current: None,
             history: Vec::new(),
             trap_stack: Vec::new(),
+            input_modality: InputModality::default(),
         }
     }
 
     #[must_use]
     pub fn current(&self) -> Option<WidgetId> {
         self.current
+    }
+
+    /// 设置输入模态——由 App 事件循环在键盘/鼠标事件时调用。
+    ///
+    /// CSS `:focus-visible` 行为：输入模态为 `Keyboard` 时焦点可见，
+    /// 为 `Mouse` 时焦点不可见。一旦模态改变，后续所有焦点变更遵循新模态。
+    pub fn set_input_modality(&mut self, modality: InputModality) {
+        self.input_modality = modality;
+    }
+
+    /// 返回当前焦点是否应该显示轮廓（focus-visible）。
+    ///
+    /// 仅当存在焦点 widget 且最后一次输入模态为 `Keyboard` 时返回 `true`。
+    #[must_use]
+    pub fn is_focus_visible(&self) -> bool {
+        self.current.is_some() && self.input_modality == InputModality::Keyboard
     }
 
     pub fn focus(&mut self, widget_id: WidgetId) {
@@ -275,5 +308,58 @@ mod tests {
         // (For this test, 2 is still in tree; we're removing 4 only.)
         fm.handle_widget_removal(make_id(4), &tree);
         assert_eq!(fm.current(), Some(make_id(2)));
+    }
+
+    // ── RED: focus-visible ────────────────────────────────────────────
+
+    #[test]
+    fn focus_visible_with_keyboard_modality() {
+        let mut fm = FocusManager::new();
+        fm.set_input_modality(InputModality::Keyboard);
+        fm.focus(WidgetId::from_u64(1));
+        assert!(fm.is_focus_visible());
+    }
+
+    #[test]
+    fn focus_not_visible_with_mouse_modality() {
+        let mut fm = FocusManager::new();
+        // Default modality is Mouse
+        fm.focus(WidgetId::from_u64(1));
+        assert!(!fm.is_focus_visible());
+    }
+
+    #[test]
+    fn focus_not_visible_when_blurred() {
+        let mut fm = FocusManager::new();
+        fm.set_input_modality(InputModality::Keyboard);
+        fm.focus(WidgetId::from_u64(1));
+        assert!(fm.is_focus_visible());
+        fm.blur();
+        assert!(!fm.is_focus_visible());
+    }
+
+    #[test]
+    fn modality_switch_changes_focus_visibility() {
+        let mut fm = FocusManager::new();
+        // Start with mouse
+        fm.set_input_modality(InputModality::Mouse);
+        fm.focus(WidgetId::from_u64(1));
+        assert!(!fm.is_focus_visible());
+
+        // Switch to keyboard
+        fm.set_input_modality(InputModality::Keyboard);
+        fm.focus(WidgetId::from_u64(2));
+        assert!(fm.is_focus_visible());
+
+        // Switch back to mouse
+        fm.set_input_modality(InputModality::Mouse);
+        fm.focus(WidgetId::from_u64(3));
+        assert!(!fm.is_focus_visible());
+    }
+
+    #[test]
+    fn default_modality_is_mouse() {
+        let fm = FocusManager::new();
+        assert!(!fm.is_focus_visible());
     }
 }
