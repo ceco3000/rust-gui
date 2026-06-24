@@ -116,7 +116,7 @@ my-crud-app/
 | `rgui-platform` | 窗口管理和输入事件（winit） | 不需要 |
 | `rgui-state` | 状态管理 | 了解即可 |
 | `rgui-style` | 样式系统 | 进阶需要 |
-| `rgui-components` | 内置组件库 | **使用**——Button、Label、TextField 等 |
+| `rgui-components` | 内置组件库 | **使用**——当前为空，Tier 2 (.rgui+.rhai) 示范组件见 `examples/one-accordion/` |
 | `rgui-a11y` | 无障碍系统 | 进阶需要 |
 | `rgui-macros` | 过程宏 | 进阶需要 |
 

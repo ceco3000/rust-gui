@@ -114,7 +114,7 @@
 | **rgui-a11y** | AccessibilityBackend trait、AccessKit 集成、无障碍树生成、焦点管理 | `accesskit`、`accesskit_winit` | ✅ 平台相关 |
 | **rgui-devtools** | 资源热重载 watcher、Rust 快速重启协议、双进程通信、状态恢复序列化 | `notify`、`serde_json`；内部依赖 `rgui-state`（快照协议）、`rgui-style`（.rgss 监控） | ❌ 纯 Rust |
 | **rgui-macros** | `html!` 声明式宏、`#[derive(WidgetSpec)]`、`#[derive(AppMessage)]`、`#[derive(PersistState)]` | `syn`、`quote`、`proc-macro2` | ❌ 纯 Rust |
-| **rgui-components** | 内置组件库（Button、TextField、DataGrid、Form 等） | `rgui-core` | ❌ 纯 Rust |
+| **rgui-components** | 内置组件库。当前为空——组件已迁移至 Tier 2 (.rgui + .rhai) 格式，Accordion 完成示范翻译 | `rgui-core` | ❌ 纯 Rust |
 | **rgui** | Facade crate：重新导出所有公共 API、`html!` 宏、`App` 启动器 | 所有上述 crate | ❌ 纯 Rust |
 | **rgui-script**（✅ 已实现） | Rhai 绑定、脚本热重载、命令处理器注册 | `rhai` | ❌ 纯 Rust |
 
@@ -979,7 +979,7 @@ rgui-core/
 | **性能** | 编译期优化（内联、死代码消除） | 热路径相同；冷路径（脚本执行一次）略慢 |
 | **热重载** | ❌ 需要 cargo build + 重启 | ✅ 改脚本秒级生效 |
 | **适用场景** | 框架内置组件库 | 应用层定制组件、业务 UI |
-| **典型例子** | WaAccordion、WaButton | 自定义卡片、数据表格行模板 |
+| **典型例子** | Accordion、AccordionItem（Tier 2 示范） | 自定义卡片、数据表格行模板 |
 
 > **与 Qt/QML 对照**：Tier 1 对应 C++ 注册的 QQuickItem，Tier 2 对应纯 QML 文件定义的组件。Qt 的实践表明——大量应用层组件走 Tier 2，只有性能关键或需要调用 C++ 底层 API 的才走 Tier 1。
 
@@ -1016,14 +1016,14 @@ rgui-core/
 
 | 类别 | 函数 | 优先级 |
 |------|------|:---:|
-| **绘制原语** 🔑 | `fill_rect` / `draw_text` | 🔴 P0 |
+| **绘制原语** 🔑 | `fill_rect` / `draw_text` | ✅ 已实现 |
 | Prop 读写 | `get_prop` / `set_prop` | ✅ 已实现 |
 | 类型转换 | `to_int` / `to_float` / `to_string` | 🔴 P1 |
 | 数组操作 | `push` / `pop` / `len` / `contains` | 🔴 P1 |
 | 字符串 | `to_upper` / `to_lower` / `contains` / `starts_with` | 🔴 P1 |
-| 颜色 | `rgb(r, g, b)` / `rgba(r, g, b, a)` | 🔴 P1 |
+| 颜色 | `rgb(r, g, b)` / `rgba(r, g, b, a)` | ✅ 已实现 |
 | 几何 | `rect(x, y, w, h)` | 🔴 P1 |
-| 子组件递归 | `paint_children(children)` | 🔴 P1 |
+| 子组件递归 | `paint_children(children)` | ✅ 已实现（Phase 0 no-op） |
 | 时间 | `now_timestamp` / `format_date` | 🟡 P2 |
 | 日志 | `log_info` / `log_warn` | 🟡 P2 |
 

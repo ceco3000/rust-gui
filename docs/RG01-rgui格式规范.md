@@ -437,6 +437,6 @@ WidgetView::new("column")
 
 | 类别 | 类型 |
 |------|------|
-| 基础 | `Button`, `WaButton`, `Label`, `TextField`, `CheckBox`, `Switch`, `RadioButton`, `Slider`, `ProgressBar`, `DataGrid` |
+| 基础 | `Accordion`, `AccordionItem`（Tier 2 示范组件） |
 | 容器/布局 | `Container`, `Row`, `Column`, `Padding`, `Center`, `Expanded`, `SizedBox`, `Card`, `Divider`, `Image`, `ScrollView`, `Stack`, `ListView` |
 | 隐式 | `Text` |
