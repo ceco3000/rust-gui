@@ -6,15 +6,19 @@
 //!
 //! 交互通过 `register_interaction` 注册点击回调。
 
-use rgui::app::{App, AppConfig};
-use rgui_core::geometry::Rect;
-use rgui_core::traits::AppMessage;
-use rgui_core::view::{PropValue, WidgetView};
-use rgui_render::compute_view_layout;
 use std::sync::{Arc, Mutex};
+
+use rgui::app::{App, AppConfig};
+use rgui_core::{
+    geometry::Rect,
+    traits::AppMessage,
+    view::{PropValue, WidgetView},
+};
+use rgui_render::compute_view_layout;
 
 /// Accordion demo 消息类型
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 enum AccordionMsg {
     /// Toggle 指定 index 的 AccordionItem expanded 状态
     Toggle(usize),
@@ -211,4 +215,208 @@ fn read_accordion_mode<M: AppMessage>(view: &WidgetView<M>) -> String {
         }
     }
     "multiple".to_string()
+}
+
+/// AC08: 展开全部非 disabled 的 AccordionItem。
+///
+/// `mode="single"` 时此函数为 no-op（单模式下只能展开一项）。
+/// 返回 `true` 表示有状态变更，调用方应调用 `app.request_redraw()` 触发重绘。
+#[allow(dead_code)]
+fn expand_all_items<M: AppMessage>(view: &WidgetView<M>, states: &Arc<Mutex<Vec<bool>>>) -> bool {
+    let mode = read_accordion_mode(view);
+    if mode == "single" {
+        // 单模式下无法同时展开全部项
+        return false;
+    }
+    let disabled_map = collect_disabled_map(view);
+    if let Ok(mut expanded) = states.lock() {
+        let mut changed = false;
+        for (i, is_expanded) in expanded.iter_mut().enumerate() {
+            if !disabled_map.get(&i).copied().unwrap_or(false) && !*is_expanded {
+                *is_expanded = true;
+                changed = true;
+            }
+        }
+        changed
+    } else {
+        false
+    }
+}
+
+/// AC08: 折叠全部 AccordionItem。
+///
+/// 返回 `true` 表示有状态变更，调用方应调用 `app.request_redraw()` 触发重绘。
+#[allow(dead_code)]
+fn collapse_all_items(states: &Arc<Mutex<Vec<bool>>>) -> bool {
+    if let Ok(mut expanded) = states.lock() {
+        let mut changed = false;
+        for is_expanded in expanded.iter_mut() {
+            if *is_expanded {
+                *is_expanded = false;
+                changed = true;
+            }
+        }
+        changed
+    } else {
+        false
+    }
+}
+
+/// AC08: 从 WidgetView 树中收集 AccordionItem 的 disabled 状态。
+///
+/// 返回 HashMap<index, bool>，index 对应 items 在 DFS 中的出现顺序。
+#[allow(dead_code)]
+fn collect_disabled_map<M: AppMessage>(
+    view: &WidgetView<M>,
+) -> std::collections::HashMap<usize, bool> {
+    let mut map = std::collections::HashMap::new();
+    let mut idx = 0;
+    collect_disabled_recursive(view, &mut map, &mut idx);
+    map
+}
+
+#[allow(dead_code)]
+fn collect_disabled_recursive<M: AppMessage>(
+    view: &WidgetView<M>,
+    map: &mut std::collections::HashMap<usize, bool>,
+    idx: &mut usize,
+) {
+    if view.widget_type == "WaAccordionItem" {
+        let disabled = view
+            .props
+            .get("disabled")
+            .and_then(|v| match v {
+                PropValue::Bool(b) => Some(*b),
+                _ => None,
+            })
+            .unwrap_or(false);
+        map.insert(*idx, disabled);
+        *idx += 1;
+    }
+    for child in &view.children {
+        collect_disabled_recursive(child, map, idx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use rgui_core::id::WidgetId;
+
+    use super::*;
+
+    /// 创建测试用的 Accordion WidgetView 树。
+    fn make_test_view<M: AppMessage>() -> WidgetView<M> {
+        WidgetView {
+            id: Some(WidgetId::new()),
+            widget_type: "WaAccordion",
+            props: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("mode", PropValue::Str("multiple".into()));
+                m
+            },
+            children: Vec::new(),
+            key: None,
+            message_bindings: Vec::new(),
+        }
+    }
+
+    /// 创建测试用的 AccordionItem WidgetView。
+    fn make_item<M: AppMessage>(id: Option<WidgetId>) -> WidgetView<M> {
+        WidgetView {
+            id,
+            widget_type: "WaAccordionItem",
+            props: std::collections::BTreeMap::new(),
+            children: Vec::new(),
+            key: None,
+            message_bindings: Vec::new(),
+        }
+    }
+
+    /// 创建测试用的 disabled AccordionItem。
+    fn make_disabled_item<M: AppMessage>(id: Option<WidgetId>) -> WidgetView<M> {
+        WidgetView {
+            id,
+            widget_type: "WaAccordionItem",
+            props: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("disabled", PropValue::Bool(true));
+                m
+            },
+            children: Vec::new(),
+            key: None,
+            message_bindings: Vec::new(),
+        }
+    }
+
+    /// AC08: collapse_all_items 将全部展开的项折叠。
+    #[test]
+    fn test_collapse_all() {
+        let states = Arc::new(Mutex::new(vec![true, true, false]));
+        let changed = collapse_all_items(&states);
+        assert!(changed);
+        let result = states.lock().unwrap();
+        assert_eq!(&*result, &[false, false, false]);
+    }
+
+    /// AC08: collapse_all_items 全部已折叠时无变更。
+    #[test]
+    fn test_collapse_all_noop() {
+        let states = Arc::new(Mutex::new(vec![false, false, false]));
+        let changed = collapse_all_items(&states);
+        assert!(!changed);
+    }
+
+    /// AC08: expand_all_items 模式为 "single" 时 no-op。
+    #[test]
+    fn test_expand_all_single_mode_noop() {
+        let mut view = WidgetView::<AccordionMsg> {
+            id: Some(WidgetId::new()),
+            widget_type: "WaAccordion",
+            props: {
+                let mut m = std::collections::BTreeMap::new();
+                m.insert("mode", PropValue::Str("single".into()));
+                m
+            },
+            children: Vec::new(),
+            key: None,
+            message_bindings: Vec::new(),
+        };
+        // 添加一个 AccordionItem
+        view.children.push(make_item(Some(WidgetId::new())));
+
+        let states = Arc::new(Mutex::new(vec![false]));
+        let changed = expand_all_items(&view, &states);
+        assert!(!changed, "single mode 下 expand_all 应为 no-op");
+        let result = states.lock().unwrap();
+        assert_eq!(&*result, &[false], "状态不应被修改");
+    }
+
+    /// AC08: expand_all_items 跳过 disabled 项。
+    #[test]
+    fn test_expand_all_skips_disabled() {
+        let mut view = make_test_view::<AccordionMsg>();
+        view.children.push(make_item(Some(WidgetId::new())));
+        view.children
+            .push(make_disabled_item(Some(WidgetId::new())));
+
+        let states = Arc::new(Mutex::new(vec![false, false]));
+        let changed = expand_all_items(&view, &states);
+        assert!(changed);
+        let result = states.lock().unwrap();
+        assert_eq!(result[0], true, "非 disabled 项应展开");
+        assert_eq!(result[1], false, "disabled 项应保持折叠");
+    }
+
+    /// AC08: expand_all_items 全部已展开时无变更。
+    #[test]
+    fn test_expand_all_already_expanded() {
+        let mut view = make_test_view::<AccordionMsg>();
+        view.children.push(make_item(Some(WidgetId::new())));
+
+        let states = Arc::new(Mutex::new(vec![true]));
+        let changed = expand_all_items(&view, &states);
+        assert!(!changed);
+    }
 }
