@@ -891,6 +891,17 @@ fn extract_taffy_style(
         style.min_size.height = taffy::Dimension::Length(44.0 + content_h);
     }
 
+    // Tier 2 组件 min_height —— paint 脚本无 Taffy 固有尺寸，
+    // 通过 _rhai_path 识别展开后的节点并提供最小高度。
+    if let Some(rgui_core::view::PropValue::Str(rhai_path)) = props.get("_rhai_path") {
+        let rhai = rhai_path.as_ref();
+        if rhai.contains("accordionitem") {
+            style.min_size.height = taffy::Dimension::Length(108.0);
+        } else if rhai.contains("accordion.rhai") {
+            style.min_size.height = taffy::Dimension::Length(44.0);
+        }
+    }
+
     style
 }
 
