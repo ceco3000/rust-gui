@@ -1,6 +1,6 @@
 <!-- Accordion 演示 —— 3 个面板项，mode="single" 兄弟联动 -->
 <Accordion mode="single">
-  <AccordionItem label="Getting Started" expanded="true" content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
+  <AccordionItem label="Getting Started" expanded="true" heading_level="2" content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
   </AccordionItem>
 
   <AccordionItem label="Installation" content="Install via your preferred package manager. The component requires rgui-core and rgui-devtools.">

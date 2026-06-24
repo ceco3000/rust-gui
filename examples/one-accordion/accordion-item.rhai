@@ -2,16 +2,34 @@
 // 绘制标题栏 (label + chevron) + 内容区背景 (展开时可见)
 //
 // 坐标以 widget 左上角为 (0, 0)。
-// 标题栏高度 44px，下方为内容区域。
+// 标题栏高度由 label_font_size 动态计算（AC03）。
 //
 // AC02: width/height 由框架注入（来自 Taffy 布局 bounds）。
 // AC07: expanded/label/content/disabled 等 prop 由框架注入为 Rhai 变量。
+// AC03: heading_level prop 控制标题字体大小和语义层级。
 
-let header_h = 44.0;
 let text_pad_left = 16.0;
 let text_pad_top = 12.0;
 let font_size = 16.0;
+
+// ── heading_level prop（AC03）──
+// WA renderHeadingWrapper() 对齐：heading-level 为 "1"~"6" 时渲染为对应语义标题，
+// "none" 时无标题包装（纯 <button>）。
+// 在此 Tier 2 实现中，语义通过 a11y 系统体现（Phase 2），
+// 当前用字体大小直观区分 heading 层级。
+let heading_level_val = if global::is_def_var("heading_level") { heading_level } else { "none" };
+let label_font_size = switch heading_level_val {
+    "1" => 28.0,
+    "2" => 24.0,
+    "3" => 20.0,
+    "4" => 18.0,
+    "5" => 16.0,
+    "6" => 14.0,
+    _ => font_size,  // "none" 或未定义 → 默认 16.0
+};
 let chevron_size = 14.0;
+// AC03: header 高度根据 label 字体大小自适应，确保大标题不被裁切
+let header_h = label_font_size + 24.0;
 let content_h = height - header_h;
 
 // ── prop 变量（AC07：由框架注入）──
@@ -32,12 +50,14 @@ fill_rect(0.0, header_h - 1.0, width, 1.0, sep_color, 0.0);
 // ── Label 文本（左侧对齐）──
 let text_color = rgb(0.1, 0.1, 0.15);
 let label_w = width - 60.0;  // 留 chevron + padding 空间
-draw_text(label_text, text_pad_left, text_pad_top, label_w, 24.0, text_color, font_size);
+let label_text_h = label_font_size + 8.0;
+draw_text(label_text, text_pad_left, text_pad_top, label_w, label_text_h, text_color, label_font_size);
 
 // ── Chevron 图标 (▶ collapsed / ▼ expanded) ── AC07
 let chevron_color = rgb(0.5, 0.5, 0.55);
 let chevron_x = width - 30.0;
-let chevron_y = 15.0;
+// AC03: chevron 在 header 中垂直居中
+let chevron_y = (header_h - chevron_size) / 2.0;
 if is_expanded {
     draw_text("\u{25BC}", chevron_x, chevron_y, 20.0, 20.0, chevron_color, chevron_size);
 } else {
