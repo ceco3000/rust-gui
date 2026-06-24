@@ -1670,6 +1670,44 @@ Tier 2 paint 脚本在加载时执行一次（非热路径），仍需处理异�
 
 > **设计原则**：paint 脚本的错误绝不让渲染管线崩溃——最坏情况是组件显示上一帧的缓存内容或空白区域，不影响其他组件。
 
+#### 9.4.5 mode 协调与兄弟联动（AC09 —— 待实现）
+
+WA Accordion `mode="single"/"single-collapsible"` 要求：展开一个 AccordionItem 时自动折叠容器内其他已展开的兄弟 item。组件层无法实现（.rhai 脚本无权访问兄弟节点状态），需框架提供泛型兄弟联动机制：
+
+```rust
+/// 容器级兄弟状态管理（AC09）
+impl WidgetStateStore {
+    /// 获取同容器下所有兄弟 WidgetId（按视觉顺序）
+    pub fn sibling_ids(&self, container_id: WidgetId) -> Vec<WidgetId>;
+    
+    /// 批量修改兄弟节点状态——展开 item 时自动折叠其他
+    /// 对齐 WA handleItemTrigger() 的 mode="single" 分支
+    pub fn batch_update_siblings(
+        &self,
+        container_id: WidgetId,
+        trigger_item: WidgetId,
+        mode: &str, // "single" | "single-collapsible" | "multiple"
+        action: impl Fn(&mut dyn Any) -> bool,
+    );
+}
+```
+
+对齐 WA `handleItemTrigger()` ——当 mode 为 single/single-collapsible 时，遍历兄弟折叠已展开项。
+
+#### 9.4.6 Tier 2 交互自动注册（AC10 —— 待实现）
+
+框架在加载 Tier 2 组件时自动扫描 `.rgui` 树中的事件属性，完成交互注册——无需应用代码编写 Rust 桥接：
+
+```
+遍历 WidgetView 树
+  │
+  ├─ onclick="handleToggle" → hit test 注册 + widget_instance handler
+  ├─ on:toggle="handleExpand" → 同上
+  └─ on:keydown="handleArrowKey" → 键盘事件路由注册
+```
+
+> **设计理由：** 对齐 QML 的 `onClicked: { ... }` 声明式事件绑定——QML 开发者不需要写 C++ 代码注册信号连接。rgui Tier 2 同理——应用开发者只需在 .rgui 中声明事件属性，框架自动完成底层注册。
+
 ---
 
 ## 10. 与其他子系统的交互

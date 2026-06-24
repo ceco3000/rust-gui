@@ -132,6 +132,51 @@ media_query   = "@media" "(" condition ")" "{" { rule } "}" ;
 
 阶段 1 使用 `cssparser` crate（Mozilla 的 CSS 解析器）复用词法分析和选择器解析，只自定义属性值处理。阶段 2 如有需要可替换为自研解析器。
 
+### 2.5 CSS 变量系统（AC01 —— 待实现）
+
+CSS 自定义属性（custom properties）在 `.rgss` 中的设计与实现约定。
+
+#### 2.5.1 变量定义
+
+```css
+:root {
+  --wa-spacing: 16px;
+  --wa-color-primary: #3B82F6;
+}
+
+Button {
+  --button-padding: var(--wa-spacing);
+}
+```
+
+- `:root {}` 块：全局变量，所有 `.rgss` 文件和组件可见
+- 组件级 `:host {}` 或类型选择器内：局部变量，仅当前组件及子节点可见（CSS 级联继承模型）
+- 子组件可覆盖父变量（重新声明同名变量）
+
+#### 2.5.2 变量求值
+
+`var(--name, fallback)` 语法在 StyleMerger 合并阶段求值：
+
+```rust
+/// 变量表——解析 `.rgss` 文件后填充
+struct VariableTable {
+    global: FxHashMap<String, PropValue>,   // :root {} 变量
+    scoped: FxHashMap<WidgetId, FxHashMap<String, PropValue>>, // :host {} 变量
+}
+```
+
+求值顺序：
+1. 查找当前组件作用域（`:host {}`）
+2. 未找到 → 查找父组件作用域（级联继承）
+3. 未找到 → 查找全局作用域（`:root {}`）
+4. 未找到 → 使用 fallback 值（若提供）或报错
+
+#### 2.5.3 与 ThemeVariables 的关系
+
+ST05 `ThemeVariables` 是编译期预定义主题色板（亮/暗色值），**注入**到 AC01 变量表的全局作用域中。`.rgss` 通过 `var(--wa-space-m)` 引用这些预定义主题变量，StyleMerger 在合并时一并求值。
+
+> **实现任务：** [D8 §9.18 AC01](./D8-阶段0开发任务分解.md#918-accordion-tier-2-翻译补全任务2026-06-24-wa-源)
+
 ```rust
 pub struct RgssParser { file_path: PathBuf }
 

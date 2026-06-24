@@ -1059,6 +1059,27 @@ notify 检测文件变更（rgui-devtools 已有）
 
 > **dirty 标记机制**：当 `.rhai` paint 脚本被热重载时，框架遍历 WidgetView 树，将 `widget_type` 匹配该组件的所有节点标记为 dirty。下一帧 `walk_view_tree` 对 dirty 节点重新调用 Rhai paint 脚本生成新 `PaintOp`，非 dirty 节点继续使用缓存的 `PaintOp`。这与 D2 的增量 diff 机制一致——只重建受影响节点的绘制数据。
 
+### 9.7 Tier 2 交互自动注册（AC10 —— 待实现）
+
+Tier 2 组件加载时，框架需自动扫描 `.rgui` 树中的事件属性，完成交互注册——无需应用代码（main.rs）编写 Rust 桥接代码。
+
+```
+加载 Tier 2 组件（parse_rgui_file → execute_tier2_paint_scripts）
+       │
+       ▼
+遍历 WidgetView 树，扫描 props 中的事件属性：
+  - onclick="handleToggle"     → 注册 hit test 区域 + widget_instance handler
+  - on:toggle="handleExpand"   → 同上
+  - on:keydown="handleKey"     → 键盘事件路由注册
+       │
+       ▼
+框架自动调用：
+  App::register_interaction_with_chain(widget_id, rect, chain, action, callback)
+  App::register_widget_instance(widget_id, handler_closure)
+```
+
+> **实现任务：** [D8 §9.18 AC10](./D8-阶段0开发任务分解.md#918-accordion-tier-2-翻译补全任务2026-06-24-wa-源)。当前 `register_interaction_with_chain` 为 `pub(crate)`，需在框架内完成注册或提升可见性。
+
 ---
 
 ## 10. 与子系统设计文档的接口
