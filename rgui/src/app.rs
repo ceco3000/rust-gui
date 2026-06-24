@@ -498,12 +498,35 @@ pub fn run_simple_app<M: AppMessage + 'static>(
 /// walk_view_tree 条件渲染（如 WaAccordionItem 折叠跳过子节点）
 /// 依赖 props 中的 expanded 值。handler 修改 store 后，此函数确保
 /// 每帧渲染前 props 反映最新状态。
+///
+/// AC10: 实现 expanded 状态的 store→props 同步，
+/// 使 widget_instance handler 的 toggle 操作能反映到渲染管线。
 #[cfg(feature = "devtools")]
 fn sync_store_to_props<M: AppMessage>(
-    _view: &mut rgui_core::view::WidgetView<M>,
-    _store: &crate::widget_state::WidgetStateStore,
+    view: &mut rgui_core::view::WidgetView<M>,
+    store: &crate::widget_state::WidgetStateStore,
 ) {
-    // 无组件需要同步——待阶段 2 重新加入
+    sync_store_to_props_recursive(view, store);
+}
+
+/// 递归辅助：遍历 WidgetView 树，将 WidgetStateStore 中的状态同步为 props。
+#[cfg(feature = "devtools")]
+fn sync_store_to_props_recursive<M: AppMessage>(
+    view: &mut rgui_core::view::WidgetView<M>,
+    store: &crate::widget_state::WidgetStateStore,
+) {
+    use rgui_core::view::PropValue;
+
+    if let Some(id) = view.id {
+        // AC10: 同步 expanded 状态
+        if let Some(expanded) = store.read::<bool>(id) {
+            view.props.insert("expanded", PropValue::Bool(expanded));
+        }
+    }
+
+    for child in &mut view.children {
+        sync_store_to_props_recursive(child, store);
+    }
 }
 
 /// 交互自动化 Harness。
