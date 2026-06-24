@@ -48,6 +48,17 @@ impl ThemeVariables {
         self.variables.get(name)
     }
 
+    /// 获取所有变量。
+    #[must_use]
+    pub fn all(&self) -> &FxHashMap<String, PropValue> {
+        &self.variables
+    }
+
+    /// 获取所有变量的迭代器。
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &PropValue)> {
+        self.variables.iter()
+    }
+
     /// 合并另一个变量的值（other 覆盖 self 中同名的）。
     pub fn merge(&mut self, other: &ThemeVariables) {
         for (key, value) in &other.variables {

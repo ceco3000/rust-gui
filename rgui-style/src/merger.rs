@@ -3,6 +3,7 @@
 //! 定义源自 D4 §6。
 
 use crate::theme::Theme;
+use crate::variable::VariableTable;
 use rgui_core::view::PropValue;
 use rustc_hash::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,6 +24,9 @@ impl StyleMerger {
     ///
     /// `!important` 标记的属性在任何层级声明后，会覆盖所有非 important 的同名属性。
     /// 高层 important 覆盖低层 important。
+    ///
+    /// `variable_table` 可选：CSS 变量表（AC01），用于解析 `var()` 引用。
+    /// 传入 `None` 时仅使用 Theme 中的主题变量。
     #[must_use]
     pub fn merge(
         default_style: &BTreeMap<&'static str, PropValue>,
@@ -31,6 +35,7 @@ impl StyleMerger {
         inline_style: &BTreeMap<&'static str, PropValue>,
         inline_important: &BTreeSet<&'static str>,
         theme: &Theme,
+        variable_table: Option<&VariableTable>,
     ) -> BTreeMap<Arc<str>, PropValue> {
         let mut result = BTreeMap::new();
 
@@ -57,24 +62,31 @@ impl StyleMerger {
             }
         }
 
-        // 第 4 层：解析 var() 引用（非 important）——递归解析 + 循环检测
+        // 第 4 层：解析 var() 引用（非 important）
+        // 优先使用 VariableTable (AC01 CSS 变量)，回退到 Theme
         let var_prefix = "var(";
         let keys: Vec<Arc<str>> = result.keys().cloned().collect();
         for key in keys {
             if let Some(PropValue::Str(ref s)) = result.get(&key) {
                 if s.starts_with(var_prefix) {
-                    let var_name = s
-                        .trim_start_matches(var_prefix)
-                        .trim_end_matches(')')
-                        .trim();
-                    // 递归解析变量链，跟踪已访问变量以检测循环
-                    let mut visited = FxHashSet::default();
-                    if let Some(resolved) =
-                        Self::resolve_var_recursive(var_name, theme, &mut visited)
-                    {
-                        result.insert(key, resolved);
+                    // 尝试通过 VariableTable 解析（含 fallback 支持）
+                    let resolved = variable_table.and_then(|vt| vt.resolve_var_ref(s, None));
+                    if let Some(value) = resolved {
+                        result.insert(key, value);
+                    } else {
+                        // 回退到 Theme 变量解析
+                        let var_name = s
+                            .trim_start_matches(var_prefix)
+                            .trim_end_matches(')')
+                            .trim();
+                        let mut visited = FxHashSet::default();
+                        if let Some(resolved) =
+                            Self::resolve_var_recursive(var_name, theme, &mut visited)
+                        {
+                            result.insert(key, resolved);
+                        }
                     }
-                    // 循环或未定义：保留原始引用（降级）
+                    // 两者都失败：保留原始引用（降级）
                 }
             }
         }
@@ -196,6 +208,7 @@ mod tests {
             &inline,
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         assert_eq!(
@@ -218,6 +231,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         // var() 被解析为主题变量值
@@ -259,6 +273,7 @@ mod tests {
             &inline,
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         // !important 的 red 应覆盖 inline 的 blue
@@ -291,6 +306,7 @@ mod tests {
             &inline,
             &inline_important,
             &theme,
+            None,
         );
 
         assert_eq!(
@@ -324,6 +340,7 @@ mod tests {
             &inline,
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         // color: rgss !important 覆盖 inline 的 blue
@@ -363,6 +380,7 @@ mod tests {
             &inline,
             &inline_important,
             &theme,
+            None,
         );
 
         // 高层 !important 覆盖低层 !important
@@ -390,6 +408,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let bg = result.get("background-color").and_then(|v| {
@@ -420,6 +439,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {
@@ -448,6 +468,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         // 循环检测：不应 panic，且 result 中 color 保持原始 var(--x) 引用（降级）
@@ -479,6 +500,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {
@@ -510,6 +532,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {
@@ -542,6 +565,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {
@@ -568,6 +592,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {
@@ -598,6 +623,7 @@ mod tests {
             &empty_inline_map(),
             &empty_inline_important(),
             &theme,
+            None,
         );
 
         let color = result.get("color").and_then(|v| {

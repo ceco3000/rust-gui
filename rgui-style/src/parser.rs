@@ -362,6 +362,17 @@ fn parse_selector(chars: &[char], pos: &mut usize) -> Result<Selector, ParseErro
         return Err(ParseError::Syntax("空选择器".into()));
     }
 
+    // :root 和 :host 伪类（CSS 变量作用域）
+    if chars[*pos] == ':' {
+        *pos += 1;
+        let pseudo = parse_identifier(chars, pos);
+        if pseudo == "root" || pseudo == "host" {
+            return Ok(Selector::Type(format!(":{pseudo}")));
+        }
+        // 其他伪类：回退到空类型选择器
+        return Ok(Selector::Type(String::new()));
+    }
+
     // 类选择器 `.classname[.classname2...]`
     if chars[*pos] == '.' {
         *pos += 1;
