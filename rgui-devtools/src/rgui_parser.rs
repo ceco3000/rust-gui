@@ -162,14 +162,42 @@ pub fn parse_rgui_str<M: AppMessage>(rgui: &str) -> Result<WidgetView<M>, RguiPa
 /// 读取文件内容后调用 [`parse_rgui_str`]，然后扫描同目录下的
 /// `<tag_name>.rgui` + `<tag_name>.rhai` 文件对，将匹配的节点标记为 Tier 2。
 ///
+/// **搜索路径（Qt 风格多路径组件查找）：**
+/// 1. `.rgui` 文件所在目录（用户自定义组件，高优先级）
+/// 2. `rgui-components/src/`（框架内置 Tier 2 组件，回退路径）
+///
 /// Tier 2 标记：在节点 props 中注入 `_tier`、`_rhai_path`、`_rgui_path`。
 pub fn parse_rgui_file<M: AppMessage>(path: &Path) -> Result<WidgetView<M>, RguiParseError> {
     let mut view = parse_rgui_file_without_tier2(path)?;
+
+    let mut search_dirs = Vec::new();
     if let Some(parent_dir) = path.parent() {
-        mark_tier2_nodes(&mut view, parent_dir);
-        expand_component_files(&mut view, parent_dir);
+        search_dirs.push(parent_dir.to_path_buf());
+    }
+    // 回退搜索路径：框架内置 Tier 2 组件目录
+    if let Some(framework_dir) = framework_components_dir() {
+        search_dirs.push(framework_dir);
+    }
+
+    if !search_dirs.is_empty() {
+        mark_tier2_nodes(&mut view, &search_dirs);
+        expand_component_files(&mut view, &search_dirs);
     }
     Ok(view)
+}
+
+/// 获取框架内置 Tier 2 组件目录 (`rgui-components/src/`)。
+///
+/// 通过编译期 `CARGO_MANIFEST_DIR` 推导 workspace 根目录，
+/// 定位到 `rgui-components/src/`。如果路径不存在则返回 `None`。
+fn framework_components_dir() -> Option<std::path::PathBuf> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../rgui-components/src");
+    if dir.is_dir() {
+        Some(dir)
+    } else {
+        None
+    }
 }
 
 /// 从 `.rgui` 文件解析为 WidgetView 树（不执行 Tier 2 扫描）。
@@ -182,25 +210,31 @@ fn parse_rgui_file_without_tier2<M: AppMessage>(
     parse_rgui_str(&content)
 }
 
-/// 在同目录下查找 `<tag_name>.rgui` + `<tag_name>.rhai` 文件对。
+/// 在多路径列表中查找 `<tag_name>.rgui` + `<tag_name>.rhai` 文件对。
 ///
-/// 返回 `(rgui_path, rhai_path)`，如果不存在完整文件对则返回 `None`。
+/// 按 `search_dirs` 顺序逐目录搜索（高优先级在前）。首个找到完整文件对的目录
+/// 即返回结果。Qt 风格的多路径组件查找机制，避免组件定义与引用耦合。
+///
+/// 返回 `(rgui_path, rhai_path)`，如果所有路径都不存在完整文件对则返回 `None`。
 /// 标签名统一转为小写后匹配文件名（`<MyCard>` → `mycard.rgui`）。
 pub fn find_file_pair(
-    dir: &Path,
+    search_dirs: &[std::path::PathBuf],
     tag_name: &str,
 ) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let tag_lower = tag_name.to_lowercase();
-    let rgui_path = dir.join(format!("{tag_lower}.rgui"));
-    let rhai_path = dir.join(format!("{tag_lower}.rhai"));
-    if rgui_path.is_file() && rhai_path.is_file() {
-        Some((rgui_path, rhai_path))
-    } else {
-        None
+    for dir in search_dirs {
+        let rgui_path = dir.join(format!("{tag_lower}.rgui"));
+        let rhai_path = dir.join(format!("{tag_lower}.rhai"));
+        if rgui_path.is_file() && rhai_path.is_file() {
+            return Some((rgui_path, rhai_path));
+        }
     }
+    None
 }
 
 /// 递归遍历 WidgetView 树，标记有对应 `.rgui`+`.rhai` 文件对的节点为 Tier 2。
+///
+/// 按 `search_dirs` 顺序搜索组件文件对（高优先级在前——用户目录优先，框架目录回退）。
 ///
 /// 匹配到文件对时，注入以下 props：
 /// - `_tier` = `"2"` — Tier 2 标识
@@ -208,14 +242,20 @@ pub fn find_file_pair(
 /// - `_rgui_path` — 子 .rgui 文件绝对路径
 ///
 /// 未匹配的节点保持 Tier 1（走 WidgetRegistry 回退）。
-pub fn mark_tier2_nodes<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
-    mark_tier2_nodes_recursive(view, dir);
+pub fn mark_tier2_nodes<M: AppMessage>(
+    view: &mut WidgetView<M>,
+    search_dirs: &[std::path::PathBuf],
+) {
+    mark_tier2_nodes_recursive(view, search_dirs);
 }
 
 /// 递归辅助函数。
-fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
+fn mark_tier2_nodes_recursive<M: AppMessage>(
+    view: &mut WidgetView<M>,
+    search_dirs: &[std::path::PathBuf],
+) {
     // 检查当前节点是否有对应的文件对
-    if let Some((rgui_path, rhai_path)) = find_file_pair(dir, view.widget_type) {
+    if let Some((rgui_path, rhai_path)) = find_file_pair(search_dirs, view.widget_type) {
         view.props
             .insert("_tier", PropValue::Str(std::sync::Arc::from("2")));
         view.props.insert(
@@ -233,7 +273,7 @@ fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Pat
     }
     // 递归处理子节点
     for child in &mut view.children {
-        mark_tier2_nodes_recursive(child, dir);
+        mark_tier2_nodes_recursive(child, search_dirs);
     }
 }
 
@@ -247,9 +287,12 @@ fn mark_tier2_nodes_recursive<M: AppMessage>(view: &mut WidgetView<M>, dir: &Pat
 /// 展开后保留 `_rhai_path` 供后续 Tier 2 paint 执行，清理 `_tier` 和 `_rgui_path`。
 ///
 /// T209：展开后调用 [`replace_slots`] 将父组件传入的子节点注入到子组件模板的 `<slot />` 占位符中。
-fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
+fn expand_component_files<M: AppMessage>(
+    view: &mut WidgetView<M>,
+    search_dirs: &[std::path::PathBuf],
+) {
     // 1. 检查根节点本身是否为组件，如果是则用展开结果替换整个 view
-    if let Some(mut expanded) = try_expand_node(view, dir) {
+    if let Some(mut expanded) = try_expand_node(view, search_dirs) {
         // T209: 替换 <slot /> 占位符——将父组件传入的子节点注入子组件模板
         let slot_children = std::mem::take(&mut view.children);
         replace_slots(&mut expanded, slot_children);
@@ -260,10 +303,10 @@ fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
     let mut new_children = Vec::with_capacity(view.children.len());
     for mut child in view.children.drain(..) {
         // 先递归展开子节点的子树
-        expand_component_files(&mut child, dir);
+        expand_component_files(&mut child, search_dirs);
 
         // 检查当前子节点是否为组件节点
-        if let Some(mut expanded) = try_expand_node(&mut child, dir) {
+        if let Some(mut expanded) = try_expand_node(&mut child, search_dirs) {
             // T209: 替换 <slot /> 占位符
             let slot_children = std::mem::take(&mut child.children);
             replace_slots(&mut expanded, slot_children);
@@ -280,7 +323,10 @@ fn expand_component_files<M: AppMessage>(view: &mut WidgetView<M>, dir: &Path) {
 ///
 /// T208：展开后将父节点 props 传入子组件作用域，解析 `{prop_name}` 绑定。
 /// 展开失败时返回红底占位符。非组件节点返回 `None`。
-fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Option<WidgetView<M>> {
+fn try_expand_node<M: AppMessage>(
+    node: &mut WidgetView<M>,
+    search_dirs: &[std::path::PathBuf],
+) -> Option<WidgetView<M>> {
     let rgui_path_str = match node.props.get("_rgui_path") {
         Some(PropValue::Str(s)) => s.clone(),
         _ => return None,
@@ -295,7 +341,7 @@ fn try_expand_node<M: AppMessage>(node: &mut WidgetView<M>, dir: &Path) -> Optio
         .collect();
 
     let rgui_path = std::path::Path::new(rgui_path_str.as_ref());
-    match expand_single_component::<M>(rgui_path, dir) {
+    match expand_single_component::<M>(rgui_path, search_dirs) {
         Ok(mut expanded) => {
             // 保留 _rhai_path 供后续 paint 执行
             if let Some(rhai_path) = node.props.remove("_rhai_path") {
@@ -532,10 +578,13 @@ fn prop_value_to_string(value: &PropValue) -> String {
 
 /// 加载并展开单个组件——读取子 `.rgui` 文件，解析为 WidgetView，递归展开。
 ///
+/// `search_dirs` 透传给内部 `mark_tier2_nodes` + `expand_component_files`，
+/// 确保递归嵌套的 Tier 2 组件也能在多个搜索路径中找到。
+///
 /// 如果文件不存在或解析失败，返回错误。
 fn expand_single_component<M: AppMessage>(
     rgui_path: &Path,
-    _dir: &Path,
+    search_dirs: &[std::path::PathBuf],
 ) -> Result<WidgetView<M>, RguiParseError> {
     // 递归解析子 .rgui（包含 mark_tier2_nodes + expand_component_files）
     let content = std::fs::read_to_string(rgui_path).map_err(|e| {
@@ -545,9 +594,9 @@ fn expand_single_component<M: AppMessage>(
         ))
     })?;
     let mut child_view = parse_rgui_str(&content)?;
-    if let Some(child_dir) = rgui_path.parent() {
-        mark_tier2_nodes(&mut child_view, child_dir);
-        expand_component_files(&mut child_view, child_dir);
+    if rgui_path.parent().is_some() {
+        mark_tier2_nodes(&mut child_view, search_dirs);
+        expand_component_files(&mut child_view, search_dirs);
     }
     Ok(child_view)
 }
@@ -1555,7 +1604,7 @@ mod tests {
         std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
         std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
 
-        let result = find_file_pair(dir.path(), "mycard");
+        let result = find_file_pair(&[dir.path().to_path_buf()], "mycard");
         assert!(result.is_some());
         let (rgui_path, rhai_path) = result.unwrap();
         assert!(rgui_path.ends_with("mycard.rgui"));
@@ -1569,7 +1618,7 @@ mod tests {
         std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
 
         // `<MyCard>` → mycard
-        let result = find_file_pair(dir.path(), "MyCard");
+        let result = find_file_pair(&[dir.path().to_path_buf()], "MyCard");
         assert!(result.is_some());
     }
 
@@ -1579,7 +1628,7 @@ mod tests {
         std::fs::write(dir.path().join("mycard.rgui"), "<Container/>").unwrap();
         // 无 .rhai 文件
 
-        let result = find_file_pair(dir.path(), "mycard");
+        let result = find_file_pair(&[dir.path().to_path_buf()], "mycard");
         assert!(result.is_none());
     }
 
@@ -1589,14 +1638,14 @@ mod tests {
         std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
         // 无 .rgui 文件
 
-        let result = find_file_pair(dir.path(), "mycard");
+        let result = find_file_pair(&[dir.path().to_path_buf()], "mycard");
         assert!(result.is_none());
     }
 
     #[test]
     fn find_file_pair_neither_exist_returns_none() {
         let dir = tempfile::tempdir().unwrap();
-        let result = find_file_pair(dir.path(), "nonexistent");
+        let result = find_file_pair(&[dir.path().to_path_buf()], "nonexistent");
         assert!(result.is_none());
     }
 
@@ -1607,7 +1656,7 @@ mod tests {
         std::fs::write(dir.path().join("mycard.rhai"), "fn paint() {}").unwrap();
 
         let mut view = WidgetView::<TestMsg>::new("mycard");
-        mark_tier2_nodes(&mut view, dir.path());
+        mark_tier2_nodes(&mut view, &[dir.path().to_path_buf()]);
 
         assert_eq!(
             view.props.get("_tier"),
@@ -1628,7 +1677,7 @@ mod tests {
         // 不创建任何文件
 
         let mut view = WidgetView::<TestMsg>::new("button");
-        mark_tier2_nodes(&mut view, dir.path());
+        mark_tier2_nodes(&mut view, &[dir.path().to_path_buf()]);
 
         // 无文件对 → 不应标记
         assert!(!view.props.contains_key("_tier"));
@@ -1647,7 +1696,7 @@ mod tests {
             .child(WidgetView::<TestMsg>::new("mycard"))
             .child(WidgetView::<TestMsg>::new("button"));
 
-        mark_tier2_nodes(&mut column, dir.path());
+        mark_tier2_nodes(&mut column, &[dir.path().to_path_buf()]);
 
         // mycard 应被标记
         let mycard = &column.children[0];
