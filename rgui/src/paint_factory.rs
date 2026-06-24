@@ -8,7 +8,7 @@ use rgui_core::geometry::Rect;
 use rgui_core::traits::AppMessage;
 use rgui_render::PaintFn;
 
-use crate::widget_state::WidgetStateStore;
+use rgui_core::widget_state::WidgetStateStore;
 
 /// 内部实现：PaintFn 工厂（共享 match 体，避免代码重复）。
 #[must_use]

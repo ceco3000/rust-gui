@@ -12,8 +12,9 @@ use rgui_core::traits::AppMessage;
 use rgui_core::view::{PropValue, WidgetView};
 use rgui_layout::LayoutEngine;
 
-use crate::app::{App, CoordinateTransformChain};
-use crate::widget_state::WidgetStateStore;
+use crate::app::App;
+use rgui_core::widget_state::WidgetStateStore;
+use rgui_core::coord_chain::CoordinateTransformChain;
 use rgui_core::traits::EventResult;
 
 pub fn init_widget_instances<M: AppMessage>(

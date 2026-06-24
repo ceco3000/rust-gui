@@ -9,7 +9,6 @@ pub mod interactive;
 pub mod paint_factory;
 pub mod render;
 pub mod widget_node;
-pub mod widget_state;
 
 #[cfg(feature = "devtools")]
 pub use app::run_simple_app;

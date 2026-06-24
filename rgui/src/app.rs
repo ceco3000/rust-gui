@@ -1,8 +1,10 @@
 //! App 启动器——winit 窗口 + 事件循环 + wgpu 渲染 + 交互。
 
 use rgui_core::context::UpdateContext;
+use rgui_core::coord_chain::CoordinateTransformChain;
 use rgui_core::geometry::{Point, Rect, Size};
 use rgui_core::id::{WidgetId, WindowId};
+use rgui_core::interaction::InteractionHost;
 use rgui_core::registry::WidgetRegistry;
 #[cfg(feature = "devtools")]
 use rgui_core::traits::AppMessage;
@@ -44,35 +46,6 @@ pub type InteractionCallback = Box<dyn FnMut(&str) + Send>;
 /// 接收动作名称和 UpdateContext，返回 EventResult 控制事件传播。
 pub type WidgetUpdateHandler =
     Box<dyn FnMut(&str, &mut UpdateContext) -> EventResult<String> + Send>;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum CoordinateTransformStep {
-    Translate { offset: Point },
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct CoordinateTransformChain {
-    steps: Vec<CoordinateTransformStep>,
-}
-
-impl CoordinateTransformChain {
-    #[must_use]
-    pub fn translated(&self, offset: Point) -> Self {
-        let mut next = self.clone();
-        next.steps
-            .push(CoordinateTransformStep::Translate { offset });
-        next
-    }
-
-    #[must_use]
-    fn window_to_local(&self, point: Point) -> Point {
-        self.steps.iter().fold(point, |current, step| match step {
-            CoordinateTransformStep::Translate { offset } => {
-                Point::new(current.x - offset.x, current.y - offset.y)
-            },
-        })
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 struct InteractionRegion {
@@ -266,7 +239,7 @@ pub struct App {
     /// .rgui 渲染路径中，paint_factory 每帧从 WidgetView.props 创建临时 state。
     /// widget_state_store 使交互组件（如 WaAccordionItem）能在此持久化自己的状态，
     /// paint_factory 读取 + widget_instance handler 写入，实现组件行为自包含。
-    pub(crate) widget_state_store: crate::widget_state::WidgetStateStore,
+    pub(crate) widget_state_store: rgui_core::widget_state::WidgetStateStore,
     /// 最新布局引擎——每帧渲染后更新，供 handle_click 做树形命中测试。
     pub(crate) current_layout: Arc<std::sync::Mutex<Option<rgui_layout::LayoutEngine>>>,
     /// 当前 WidgetView 树（消息擦除）——每帧渲染后更新，供 handle_click 做 DFS 树遍历命中测试。
@@ -504,7 +477,7 @@ pub fn run_simple_app<M: AppMessage + 'static>(
 #[cfg(feature = "devtools")]
 fn sync_store_to_props<M: AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
-    store: &crate::widget_state::WidgetStateStore,
+    store: &rgui_core::widget_state::WidgetStateStore,
 ) {
     sync_store_to_props_recursive(view, store);
 }
@@ -513,7 +486,7 @@ fn sync_store_to_props<M: AppMessage>(
 #[cfg(feature = "devtools")]
 fn sync_store_to_props_recursive<M: AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
-    store: &crate::widget_state::WidgetStateStore,
+    store: &rgui_core::widget_state::WidgetStateStore,
 ) {
     use rgui_core::view::PropValue;
 
@@ -853,7 +826,7 @@ impl App {
             state_store: Arc::new(RwLock::new(rgui_state::StateStore::new())),
             needs_redraw: false,
             scale_factor: 1.0,
-            widget_state_store: crate::widget_state::WidgetStateStore::new(),
+            widget_state_store: rgui_core::widget_state::WidgetStateStore::new(),
             current_layout: Arc::new(std::sync::Mutex::new(None)),
             current_view: Arc::new(std::sync::Mutex::new(None)),
             widget_tree: WidgetTree::new(),
@@ -883,9 +856,39 @@ impl App {
     ///
     /// 外部代码可借此初始化组件状态或读取当前交互状态。
     #[must_use]
-    pub fn widget_state_store(&self) -> &crate::widget_state::WidgetStateStore {
+    pub fn widget_state_store(&self) -> &rgui_core::widget_state::WidgetStateStore {
         &self.widget_state_store
     }
+}
+
+impl InteractionHost for App {
+    fn register_interaction(
+        &mut self,
+        id: WidgetId,
+        bounds: Rect,
+        action: &str,
+        cb: Box<dyn FnMut(&str) + Send>,
+    ) {
+        self.register_interaction(id, bounds, action.to_string(), cb);
+    }
+
+    fn register_interaction_with_chain(
+        &mut self,
+        id: WidgetId,
+        bounds: Rect,
+        window_to_local: CoordinateTransformChain,
+        action: &str,
+        cb: Box<dyn FnMut(&str) + Send>,
+    ) {
+        self.register_interaction_with_chain(id, bounds, window_to_local, action.to_string(), cb);
+    }
+
+    fn widget_state_store(&self) -> &rgui_core::widget_state::WidgetStateStore {
+        &self.widget_state_store
+    }
+}
+
+impl App {
 
     /// 返回 widget 树的引用。
     ///

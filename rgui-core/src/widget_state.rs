@@ -1,7 +1,7 @@
 //! 组件实例状态存储——为 .rgui 渲染路径提供跨帧持久状态。
 //!
 //! .rgui 声明式渲染中，paint_factory 每帧从 WidgetView.props 创建临时 state。
-//! 对于需要响应交互的组件（如 WaAccordionItem 点击切换展开/折叠），
+//! 对于需要响应交互的组件（如 AccordionItem 点击切换展开/折叠），
 //! 需要跨帧持久的状态存储，使得组件能自己管理自己的行为。
 //!
 //! WidgetStateStore 提供：
@@ -13,7 +13,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use rgui_core::id::WidgetId;
+use crate::id::WidgetId;
 
 /// 跨帧持久化的组件实例状态存储。
 ///
