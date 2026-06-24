@@ -343,13 +343,16 @@ fn try_expand_node<M: AppMessage>(
     let rgui_path = std::path::Path::new(rgui_path_str.as_ref());
     match expand_single_component::<M>(rgui_path, search_dirs) {
         Ok(mut expanded) => {
-            // 保留 _rhai_path 供后续 paint 执行
+            // 转移 _tier 标记到展开后根节点（paint 引擎需要）
+            if let Some(tier) = node.props.remove("_tier") {
+                expanded.props.insert("_tier", tier);
+            }
+            // 转移 _rhai_path 供后续 paint 执行
             if let Some(rhai_path) = node.props.remove("_rhai_path") {
                 expanded.props.insert("_rhai_path", rhai_path);
             }
-            // 保留 _tier 标记（paint 引擎需要），清理 _rgui_path（已展开）
+            // 清理 _rgui_path（已展开，不再需要）
             expanded.props.remove("_rgui_path");
-
             // T208: 解析子组件中的 {prop_name} 绑定
             resolve_prop_bindings(&mut expanded, &parent_props);
 
