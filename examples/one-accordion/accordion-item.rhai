@@ -37,20 +37,21 @@ let is_expanded = if global::is_def_var("expanded") { expanded } else { false };
 let label_text = if global::is_def_var("label") { label } else { "Section Title" };
 let content_text = if global::is_def_var("content") { content } else { "Accordion item content goes here." };
 let is_disabled = if global::is_def_var("disabled") { disabled } else { false };
+let alpha = if is_disabled { 0.5 } else { 1.0 };
 // AC04: icon-placement prop —— "end"（默认，右侧）或 "start"（左侧）
 let icon_placement = if global::is_def_var("icon_placement") { icon_placement } else { "end" };
 
 // ── 标题栏背景 ──
 // outlined/filled-outlined: 浅灰背景
-let header_bg = rgb(0.97, 0.97, 0.98);
+let header_bg = rgba(0.97, 0.97, 0.98, alpha);
 fill_rect(0.0, 0.0, width, header_h, header_bg, 0.0);
 
 // ── 标题栏底部分隔线 ──
-let sep_color = rgb(0.82, 0.82, 0.85);
+let sep_color = rgba(0.82, 0.82, 0.85, alpha);
 fill_rect(0.0, header_h - 1.0, width, 1.0, sep_color, 0.0);
 
 // ── Label 文本 ── AC04: icon_placement 控制 label 偏移
-let text_color = rgb(0.1, 0.1, 0.15);
+let text_color = rgba(0.1, 0.1, 0.15, alpha);
 // "start" 时 chevron 在 label 左侧，label 需向右偏移
 let label_offset = if icon_placement == "start" { 28.0 } else { 16.0 };
 let label_w = width - 46.0;  // 留 chevron + padding 空间
@@ -58,7 +59,7 @@ let label_text_h = label_font_size + 8.0;
 draw_text(label_text, label_offset, text_pad_top, label_w, label_text_h, text_color, label_font_size);
 
 // ── Chevron 图标 (▶ collapsed / ▼ expanded) ── AC04 + AC07
-let chevron_color = rgb(0.5, 0.5, 0.55);
+let chevron_color = rgba(0.5, 0.5, 0.55, alpha);
 // AC04: icon-placement 控制 chevron 位置
 // "start" → chevron 在 label 左侧; "end" → chevron 在右侧（默认）
 let chevron_x = if icon_placement == "start" { 6.0 } else { width - 30.0 };
@@ -72,11 +73,11 @@ if is_expanded {
 
 // ── 内容区域（展开时渲染）── AC07
 if is_expanded && content_h > 0.0 {
-    let content_bg = rgb(0.98, 0.98, 0.98);
+    let content_bg = rgba(0.98, 0.98, 0.98, alpha);
     fill_rect(0.0, header_h, width, content_h, content_bg, 0.0);
 
     // 内容文本
-    let content_color = rgb(0.25, 0.25, 0.35);
+    let content_color = rgba(0.25, 0.25, 0.35, alpha);
     draw_text(content_text, 20.0, header_h + 12.0, width - 40.0, 22.0, content_color, 14.0);
 }
 
