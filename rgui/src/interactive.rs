@@ -87,7 +87,9 @@ fn register_event_handlers<M: AppMessage>(
 
     let action = ontoggle_action.or(onclick_action);
 
-    // 检查是否为 Tier 2 AccordionItem（通过 _rhai_path）
+    // 检查是否为 Tier 2 AccordionItem（通过 _rhai_path 字符串匹配）
+    // 这是组件识别机制：Tier 2 展开后 widget_type 变为 "Column"，
+    // 唯一稳定的识别方式是通过 mark_tier2_nodes 注入的 _rhai_path prop。
     let is_tier2_accordion_item = view
         .props
         .get("_rhai_path")
@@ -206,6 +208,9 @@ fn register_accordion_mode_coordination(app: &mut App, ctx: &AccordionContext) {
         let item_ids = item_ids.clone();
 
         for &item_id in &item_ids {
+            // AC09: 重写 widget_instance handler，替换 register_event_handlers 中
+            // 注册的独立 toggle handler。这里通过再次调用 register_widget_instance
+            // 覆盖前一个 handler，实现 mode 协调——这是有意为之的重写行为。
             let sibling_ids = item_ids
                 .iter()
                 .filter(|&&id| id != item_id)
@@ -268,6 +273,7 @@ fn is_accordion_item<M: AppMessage>(view: &WidgetView<M>) -> bool {
         .unwrap_or(false)
 }
 
+#[allow(dead_code)]
 fn read_mode<M: AppMessage>(view: &WidgetView<M>) -> String {
     view.props
         .get("mode")
