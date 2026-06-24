@@ -37,6 +37,8 @@ let is_expanded = if global::is_def_var("expanded") { expanded } else { false };
 let label_text = if global::is_def_var("label") { label } else { "Section Title" };
 let content_text = if global::is_def_var("content") { content } else { "Accordion item content goes here." };
 let is_disabled = if global::is_def_var("disabled") { disabled } else { false };
+// AC04: icon-placement prop —— "end"（默认，右侧）或 "start"（左侧）
+let icon_placement = if global::is_def_var("icon_placement") { icon_placement } else { "end" };
 
 // ── 标题栏背景 ──
 // outlined/filled-outlined: 浅灰背景
@@ -47,15 +49,19 @@ fill_rect(0.0, 0.0, width, header_h, header_bg, 0.0);
 let sep_color = rgb(0.82, 0.82, 0.85);
 fill_rect(0.0, header_h - 1.0, width, 1.0, sep_color, 0.0);
 
-// ── Label 文本（左侧对齐）──
+// ── Label 文本 ── AC04: icon_placement 控制 label 偏移
 let text_color = rgb(0.1, 0.1, 0.15);
-let label_w = width - 60.0;  // 留 chevron + padding 空间
+// "start" 时 chevron 在 label 左侧，label 需向右偏移
+let label_offset = if icon_placement == "start" { 28.0 } else { 16.0 };
+let label_w = width - 46.0;  // 留 chevron + padding 空间
 let label_text_h = label_font_size + 8.0;
-draw_text(label_text, text_pad_left, text_pad_top, label_w, label_text_h, text_color, label_font_size);
+draw_text(label_text, label_offset, text_pad_top, label_w, label_text_h, text_color, label_font_size);
 
-// ── Chevron 图标 (▶ collapsed / ▼ expanded) ── AC07
+// ── Chevron 图标 (▶ collapsed / ▼ expanded) ── AC04 + AC07
 let chevron_color = rgb(0.5, 0.5, 0.55);
-let chevron_x = width - 30.0;
+// AC04: icon-placement 控制 chevron 位置
+// "start" → chevron 在 label 左侧; "end" → chevron 在右侧（默认）
+let chevron_x = if icon_placement == "start" { 6.0 } else { width - 30.0 };
 // AC03: chevron 在 header 中垂直居中
 let chevron_y = (header_h - chevron_size) / 2.0;
 if is_expanded {
