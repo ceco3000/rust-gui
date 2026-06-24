@@ -1839,6 +1839,81 @@ impl AppHandler {
         }
     }
 
+    /// AC12: 键盘触发——Enter/Space 键触发当前聚焦 widget 的 toggle action。
+    ///
+    /// 行为等价于鼠标 click，但使用 `focus.current()` 作为目标 widget，
+    /// 而非命中测试。调用路径与 `handle_click` 相同：
+    /// widget_instances handler → Rhai 命令处理器 → 旧回调。
+    fn handle_keyboard_trigger(&mut self) {
+        let focused_id = match self.app.focus.current() {
+            Some(id) => id,
+            None => return,
+        };
+
+        let mut update_ctx = UpdateContext::new();
+        let mut skip_default = false;
+
+        // 从 interactions 获取 action name
+        let action = self
+            .app
+            .interactions
+            .get(&focused_id)
+            .map(|(a, _)| a.clone())
+            .unwrap_or_default();
+
+        // ─── WidgetSpec 实例处理器（优先）───
+        if let Some(handler) = self.app.widget_instances.get_mut(&focused_id) {
+            match handler(&action, &mut update_ctx) {
+                EventResult::Handled => {
+                    self.app.request_redraw();
+                    return;
+                },
+                EventResult::Prevented => {
+                    skip_default = true;
+                    self.app.request_redraw();
+                },
+                EventResult::Continue(_) => {},
+            }
+        }
+
+        // ─── Rhai 命令处理器 ───
+        #[cfg(feature = "devtools")]
+        if let Some(ref mut registry) = self.command_registry {
+            if !action.is_empty() {
+                let fn_name = action.strip_suffix("()").unwrap_or(&action);
+                match registry.call_fn::<()>(fn_name, ()) {
+                    Ok(()) => {
+                        self.app.request_redraw();
+                        return;
+                    },
+                    Err(_e) => {},
+                }
+            }
+        }
+
+        // ─── 旧回调路径（交互回调）───
+        if !skip_default {
+            if let Some((_action, cb)) = self.app.interactions.get_mut(&focused_id) {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    cb(&action);
+                }));
+                if let Err(e) = result {
+                    let msg = if let Some(s) = e.downcast_ref::<&str>() {
+                        *s
+                    } else if let Some(s) = e.downcast_ref::<String>() {
+                        s.as_str()
+                    } else {
+                        "unknown panic"
+                    };
+                    eprintln!(
+                        "[rgui] keyboard trigger callback panic (widget={focused_id:?}): {msg}"
+                    );
+                }
+                self.app.request_redraw();
+            }
+        }
+    }
+
     /// P04e: 更新悬停状态——比较当前鼠标位置下的 widget 与上一帧的悬停目标。
     ///
     /// D5 §3.1 悬停事件算法：每帧比较鼠标位置，自动计算 enter/leave 关系，
@@ -2465,6 +2540,23 @@ impl ApplicationHandler for AppHandler {
                 // AC06: 键盘输入 → 输入模态为 Keyboard，焦点可见
                 if key_event.state == ElementState::Pressed {
                     self.app.focus.set_input_modality(InputModality::Keyboard);
+
+                    // AC12: Enter/Space 触发聚焦 widget 的 toggle action
+                    if !key_event.repeat {
+                        let ac12_key = match &key_event.logical_key {
+                            WinitKey::Named(n) => Some(convert_named_key(n)),
+                            WinitKey::Character(c) => Some(convert_char_key(c)),
+                            _ => None,
+                        };
+                        if let Some(ref key) = ac12_key {
+                            if matches!(
+                                key,
+                                rgui_platform::event::Key::Enter | rgui_platform::event::Key::Space
+                            ) {
+                                self.handle_keyboard_trigger();
+                            }
+                        }
+                    }
                 }
                 if let Some(rgui_event) = self.convert_event(&event) {
                     self.app.events.push(rgui_event);
@@ -3851,5 +3943,114 @@ mod tests {
             clicked.load(Ordering::SeqCst),
             "DPI 变化后第一次点击应使用重新计算后的逻辑坐标命中组件"
         );
+    }
+
+    // ========================================================================
+    // AC12: 键盘 Enter/Space 触发 toggle 测试
+    // ========================================================================
+
+    /// 无焦点 widget 时 handle_keyboard_trigger 不 panic（noop）。
+    #[test]
+    fn keyboard_trigger_no_focus_is_noop() {
+        let app = App::new(AppConfig::default());
+        let mut handler = AppHandler::new(app);
+        // 不应 panic
+        handler.handle_keyboard_trigger();
+    }
+
+    /// 聚焦 widget 有交互回调时 Enter/Space 触发回调。
+    #[test]
+    fn keyboard_trigger_calls_interaction_callback() {
+        let widget_id = WidgetId::from_u64(42);
+
+        let mut app = App::new(AppConfig::default());
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let called_clone = std::sync::Arc::clone(&called);
+
+        app.register_interaction(
+            widget_id,
+            Rect::new(0.0, 0.0, 100.0, 40.0),
+            "toggle",
+            move |action| {
+                assert_eq!(action, "toggle");
+                called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            },
+        );
+
+        let mut handler = AppHandler::new(app);
+        handler.app.focus.focus(widget_id);
+
+        handler.handle_keyboard_trigger();
+
+        assert!(
+            called.load(std::sync::atomic::Ordering::SeqCst),
+            "键盘触发应调用交互回调"
+        );
+    }
+
+    /// 聚焦 widget 有 widget_instance 处理器时 Enter/Space 触发处理器。
+    #[test]
+    fn keyboard_trigger_calls_widget_instance_handler() {
+        let widget_id = WidgetId::from_u64(99);
+
+        let mut app = App::new(AppConfig::default());
+        app.register_interaction(
+            widget_id,
+            Rect::new(0.0, 0.0, 50.0, 50.0),
+            "toggle",
+            move |_| {},
+        );
+
+        let handled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handled_clone = std::sync::Arc::clone(&handled);
+
+        app.register_widget_instance(
+            widget_id,
+            move |action, _ctx| {
+                assert_eq!(action, "toggle");
+                handled_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+                EventResult::Handled
+            },
+        );
+
+        let mut handler = AppHandler::new(app);
+        handler.app.focus.focus(widget_id);
+
+        handler.handle_keyboard_trigger();
+
+        assert!(
+            handled.load(std::sync::atomic::Ordering::SeqCst),
+            "键盘触发应调用 widget_instance 处理器"
+        );
+    }
+
+    /// Enter 键触发与 Space 键触发效果一致。
+    #[test]
+    fn keyboard_trigger_enter_and_space_both_work() {
+        let widget_id = WidgetId::from_u64(1);
+
+        let mut app = App::new(AppConfig::default());
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let called_clone = std::sync::Arc::clone(&called);
+
+        app.register_interaction(
+            widget_id,
+            Rect::new(0.0, 0.0, 100.0, 40.0),
+            "toggle",
+            move |_| {
+                called_clone.store(true, std::sync::atomic::Ordering::SeqCst);
+            },
+        );
+
+        let mut handler = AppHandler::new(app);
+        handler.app.focus.focus(widget_id);
+
+        // 两次调用应都成功
+        handler.handle_keyboard_trigger();
+        assert!(called.load(std::sync::atomic::Ordering::SeqCst));
+
+        called.store(false, std::sync::atomic::Ordering::SeqCst);
+        handler.handle_keyboard_trigger();
+        assert!(called.load(std::sync::atomic::Ordering::SeqCst));
     }
 }
