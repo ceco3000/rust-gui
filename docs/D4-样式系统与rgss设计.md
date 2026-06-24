@@ -105,7 +105,7 @@ TextField:focus { border-color: var(--color-primary); }
 | 注释 | `/* ... */` |
 | 颜色 | `#RRGGBB`、`#RRGGBBAA`、`rgb(r,g,b)`、`rgba(r,g,b,a)` |
 | 数值 | 整数（`12`）、浮点（`1.5`）、带单位（`14px`、`2em`、`100%`） |
-| 变量引用 | `var(--name)` |
+| 变量引用 | `var(--name)` | ⚠️ 设计目标——AC01 CSS 变量系统（⬜ 未实现） |
 | CSS 函数 | `calc()`、`min()`、`max()`、`clamp()` |
 
 ### 2.3 EBNF 语法（简化）

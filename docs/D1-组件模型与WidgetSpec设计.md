@@ -1481,15 +1481,17 @@ extract_taffy_style → Taffy 布局引擎 → 计算 bounds
        ▼
 walk_view_tree：
   - 对 Tier 1 节点：调用 WidgetSpec::paint()
-  - 对 Tier 2 节点：从 WidgetTree 取 bounds + children
-    → 传递给 Rhai paint 脚本（bounds, props, children）
-    → paint 脚本生成 PaintOp → 存入 WidgetView.props["paint_ops"]
+  - 对 Tier 2 节点：检查 props["paint_ops"] 是否有预计算 PaintOp
+    → 有则直接消费（加载时已由 execute_tier2_paint_scripts 生成）
+    → 无则回退到 paint_fn（Tier 1 路径）
+  - **当前为降级模式**：bounds 注入（AC02）+ 动态重执行（AC07）完成后，
+    walk_view_tree 可传递 bounds/props/children 给 Rhai 脚本实时生成 PaintOp
        │
        ▼
 Vello → GPU
 ```
 
-> Tier 2 组件的 `Container/Row/Column/Text` 等子节点在 `.rgui` 中声明，Taffy 自动计算其布局。paint 脚本中的 `bounds` 参数是 Taffy 计算后的绝对坐标，`children` 是子节点的 WidgetView 列表（递归渲染由 `paint_children` 完成）。
+> Tier 2 组件的 `Container/Row/Column/Text` 等子节点在 `.rgui` 中声明，Taffy 自动计算其布局。**AC02 完成后**，paint 脚本将接收 `bounds`/`props`/`children` 参数——`bounds` 为 Taffy 计算后的绝对坐标，`children` 是子节点列表（递归渲染由 `paint_children` 完成）。
 
 #### 9.4.1.2 节点识别
 
@@ -1501,9 +1503,10 @@ Vello → GPU
        ▼  parse_rgui_file 解析时
   查找同目录下 my_card.rgui + my_card.rhai 文件对
        │
-       ├── 找到 → 标记为 Tier 2 节点
-       │    → 框架内部将 my_card.rhai 的 paint 函数注册到 paint_fn_registry
-       │    → 节点 props 中自动注入文件路径引用
+       |       ├── 找到 → 标记为 Tier 2 节点
+       |       │    → execute_tier2_paint_scripts 在加载时执行 Rhai 脚本
+       |       │    → 生成的 PaintOp 存入 view.props["paint_ops"]
+       |       │    → 节点 props 中自动注入文件路径引用（_tier/_rhai_path/_rgui_path）
        │
        └── 未找到 → 按 Tier 1 处理
             → widget_type 匹配 WidgetRegistry 中已注册的 Rust 组件
@@ -1549,7 +1552,7 @@ parse_rgui_file("ui.rgui")
 </Container>
 ```
 
-`.rhai`（paint 脚本，加载时执行一次生成 PaintOp）：
+`.rhai`（paint 脚本，加载时执行一次生成 PaintOp）。**注意：当前脚本不接收参数——`bounds`/`props`/`children` 注入需待 AC02 完成后支持。以下为 AC02+AC07 完成后的目标语法：**
 
 ```rust
 // my_card.rhai —— 描述组件的外观
