@@ -16,6 +16,9 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
     "WaAccordion",
     "WaAccordionItem",
+    // Tier 2 自定义组件（.rgui + .rhai）
+    "Accordion",
+    "AccordionItem",
     // 布局容器（框架内置，非组件 crate）
     "Container",
     "Row",
@@ -577,8 +580,10 @@ mod tests {
 
     #[test]
     fn h07_find_best_match_exact() {
-        // 精确匹配应返回 None（完全相同，无需建议）
-        assert_eq!(find_best_match("WaAccordion"), None);
+        // 精确匹配返回 None（仅有大小写差异的变体）
+        assert_eq!(find_best_match("CONTAINER"), None);
+        // 近匹配返回建议（Contaner 距离 Container 仅 1）
+        assert_eq!(find_best_match("Contaner"), Some("Container"));
     }
 
     #[test]

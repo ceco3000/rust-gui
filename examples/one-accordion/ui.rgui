@@ -1,49 +1,11 @@
-<!-- WaAccordion Demo: 展示不同 appearance、mode、icon-placement 变体 -->
+<!-- Accordion 演示 —— 3 个面板项 -->
+<Accordion>
+  <AccordionItem label="Getting Started" expanded="true" content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
+  </AccordionItem>
 
-<!-- ====== 1. outlined (default), single mode, icon-placement end ====== -->
-<WaAccordion mode="single" appearance="outlined" icon-placement="end">
-  <WaAccordionItem
-    id="s1"
-    label="Section 1 — What is an Accordion?"
-    expanded="true"
-    content="An accordion is a vertically stacked set of interactive headings that each contain a title, representing a section of content. Click a heading to reveal or hide its content." />
-  <WaAccordionItem
-    id="s2"
-    label="Section 2 — Modes of Operation"
-    content="The accordion supports three modes: multiple (any number open), single (one at a time), and single-collapsible (one at a time, all can be closed)." />
-  <WaAccordionItem
-    id="s3"
-    label="Section 3 — Appearance Variants"
-    content="Available appearances: outlined (with borders), filled (solid background), filled-outlined (both), and plain (no decoration). Each variant changes the visual style while keeping the same behavior." />
-</WaAccordion>
+  <AccordionItem label="Installation" content="Install via your preferred package manager. The component requires rgui-core and rgui-devtools.">
+  </AccordionItem>
 
-<!-- ====== 2. filled appearance, multiple mode ====== -->
-<WaAccordion mode="multiple" appearance="filled" icon-placement="end">
-  <WaAccordionItem
-    id="f1"
-    label="Accessibility"
-    expanded="true"
-    content="Accordion items use proper ARIA roles (button for trigger, region for panel) and support keyboard navigation with ArrowUp, ArrowDown, Home, and End keys." />
-  <WaAccordionItem
-    id="f2"
-    label="Icon Placement"
-    content="The expand/collapse icon can be placed at the start or end of the header. The default is end (right side). Use icon-placement=&quot;start&quot; to move it to the left side." />
-  <WaAccordionItem
-    id="f3"
-    label="Disabled Items"
-    disabled="true"
-    content="This content is hidden because the item is disabled. Disabled items cannot be toggled and appear with reduced opacity." />
-</WaAccordion>
-
-<!-- ====== 3. plain appearance, icon-placement start ====== -->
-<WaAccordion mode="single-collapsible" appearance="plain" icon-placement="start">
-  <WaAccordionItem
-    id="p1"
-    label="Plain Appearance"
-    content="The plain appearance removes all borders and backgrounds, giving a clean look. Useful for inline or embedded accordion sections." />
-  <WaAccordionItem
-    id="p2"
-    label="Single-Collapsible Mode"
-    expanded="true"
-    content="In single-collapsible mode, only one item can be open at a time, but all items can be collapsed. Clicking an open item closes it, allowing zero open items." />
-</WaAccordion>
+  <AccordionItem label="API Reference" disabled="true" content="Complete API documentation for Accordion, AccordionItem, and available properties.">
+  </AccordionItem>
+</Accordion>

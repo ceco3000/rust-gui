@@ -25,6 +25,9 @@ members = [
     "rgui-components",
     "rgui",
     "rgui-script",
+
+    # 示例
+    "examples/one-accordion",
 ]
 
 [workspace.package]
