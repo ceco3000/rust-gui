@@ -1605,6 +1605,10 @@ impl AppHandler {
                     return Some(hit);
                 }
             }
+            // AC05a: Skip disabled widgets in hit testing (pointer-events: none 等价)
+            if let Some(PropValue::Bool(true)) = view.props.get("disabled") {
+                return None;
+            }
             let candidate_origin = Point::new(
                 window_point.x - local_point.x,
                 window_point.y - local_point.y,

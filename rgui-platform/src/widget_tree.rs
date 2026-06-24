@@ -14,7 +14,7 @@ use rgui_core::context::UpdateContext;
 use rgui_core::geometry::{Point, Rect};
 use rgui_core::id::WidgetId;
 use rgui_core::traits::WidgetLifecycle;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Widget 层级树。
 ///
@@ -192,10 +192,26 @@ impl WidgetTree {
     ///
     /// 使用 `self.bounds` 中的绝对坐标边界矩形（由布局系统每帧更新）。
     /// 空树或点不在任何 widget 内时返回 `None`。
+    ///
+    /// 向后兼容：省略 `disabled_ids` 等价于传入空集（不跳过任何 widget）。
     #[must_use]
     pub fn hit_test(&self, point: Point) -> Option<WidgetId> {
         let root = self.root()?;
-        self.hit_test_tree(root, point)
+        self.hit_test_tree(root, point, &FxHashSet::default())
+    }
+
+    /// 带 disabled 集合的命中测试（AC05a）。
+    ///
+    /// `disabled_ids` 中的 widget 将被跳过（视为不可命中），
+    /// 对齐 WA `pointer-events: none` 语义。
+    #[must_use]
+    pub fn hit_test_disabled(
+        &self,
+        point: Point,
+        disabled_ids: &FxHashSet<WidgetId>,
+    ) -> Option<WidgetId> {
+        let root = self.root()?;
+        self.hit_test_tree(root, point, disabled_ids)
     }
 
     /// DFS 递归命中测试（内部辅助）。
@@ -203,7 +219,16 @@ impl WidgetTree {
     /// 从给定 `widget_id` 开始向下递归，返回包含 `point` 的最深后代。
     /// 子节点按逆序迭代（`.rev()`）——后渲染的 widget 在 z-order 上层，
     /// 应优先命中。
-    fn hit_test_tree(&self, widget_id: WidgetId, point: Point) -> Option<WidgetId> {
+    fn hit_test_tree(
+        &self,
+        widget_id: WidgetId,
+        point: Point,
+        disabled_ids: &FxHashSet<WidgetId>,
+    ) -> Option<WidgetId> {
+        // AC05a: 跳过 disabled widget
+        if disabled_ids.contains(&widget_id) {
+            return None;
+        }
         let bounds = self.bounds.get(&widget_id)?;
         if !bounds.contains(point) {
             return None;
@@ -211,7 +236,7 @@ impl WidgetTree {
         // 检查子节点（反向，z-order 后渲染在上层）
         if let Some(children) = self.children.get(&widget_id) {
             for child in children.iter().rev() {
-                if let Some(hit) = self.hit_test_tree(*child, point) {
+                if let Some(hit) = self.hit_test_tree(*child, point, disabled_ids) {
                     return Some(hit);
                 }
             }
