@@ -1,4 +1,0 @@
-<!-- Accordion 容器 —— 纯布局包裹，视觉样式由 accordion.rhai 渲染 -->
-<Column class="accordion">
-  <slot />
-</Column>

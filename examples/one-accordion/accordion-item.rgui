@@ -1,4 +1,0 @@
-<!-- AccordionItem —— 标题栏+内容面板。视觉样式由 accordion-item.rhai 渲染 -->
-<Column class="accordion-item">
-  <slot />
-</Column>
