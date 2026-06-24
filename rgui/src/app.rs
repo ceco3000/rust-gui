@@ -51,13 +51,13 @@ enum CoordinateTransformStep {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(crate) struct CoordinateTransformChain {
+pub struct CoordinateTransformChain {
     steps: Vec<CoordinateTransformStep>,
 }
 
 impl CoordinateTransformChain {
     #[must_use]
-    pub(crate) fn translated(&self, offset: Point) -> Self {
+    pub fn translated(&self, offset: Point) -> Self {
         let mut next = self.clone();
         next.steps
             .push(CoordinateTransformStep::Translate { offset });
@@ -908,7 +908,7 @@ impl App {
         );
     }
 
-    pub(crate) fn register_interaction_with_chain(
+    pub fn register_interaction_with_chain(
         &mut self,
         id: WidgetId,
         bounds: Rect,

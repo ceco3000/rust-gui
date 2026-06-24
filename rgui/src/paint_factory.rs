@@ -54,6 +54,9 @@ pub fn default_paint_fn_with_state<M: AppMessage>(store: WidgetStateStore) -> Pa
 ///
 /// `layout_engine` 提供每个 widget 的布局 bounds，
 /// 注入为 Rhai 作用域的 `width`/`height` 变量（AC02）。
+///
+/// **AC07：** 此函数每次调用都会重新执行所有 Tier 2 节点的 paint 脚本。
+/// 调用方负责在 props 变更后调用本函数以刷新 `paint_ops` 缓存。
 #[cfg(feature = "devtools")]
 pub fn execute_tier2_paint_scripts<M: AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
@@ -83,16 +86,17 @@ fn execute_tier2_paint_scripts_recursive<M: AppMessage>(
 
         if let Some(rhai_path) = rhai_path {
             // AC02: 从布局引擎获取 bounds，注入为 width/height
-            let (width, height) = view.id.and_then(|id| {
-                layout_engine.get_layout(id).map(|cached| {
-                    (
-                        cached.result.size.width,
-                        cached.result.size.height,
-                    )
+            let (width, height) = view
+                .id
+                .and_then(|id| {
+                    layout_engine
+                        .get_layout(id)
+                        .map(|cached| (cached.result.size.width, cached.result.size.height))
                 })
-            }).unwrap_or((400.0, 300.0));
+                .unwrap_or((400.0, 300.0));
 
-            match execute_rhai_paint_script(&rhai_path, width, height) {
+            // AC07: 传递 view.props 以注入 expanded/label/content 等 prop 变量
+            match execute_rhai_paint_script(&rhai_path, width, height, &view.props) {
                 Ok(ops) => {
                     view.props.insert("paint_ops", PropValue::PaintOps(ops));
                 },
@@ -121,6 +125,7 @@ fn execute_rhai_paint_script(
     path: &std::path::Path,
     width: f64,
     height: f64,
+    props: &std::collections::BTreeMap<&'static str, rgui_core::view::PropValue>,
 ) -> Result<Vec<PaintOp>, Box<dyn std::error::Error>> {
     use rgui_script::ScriptEngine;
     use rgui_script::paint_primitives::{PaintOpsAccumulator, register_paint_primitives};
@@ -139,6 +144,31 @@ fn execute_rhai_paint_script(
         let mut scope = ScriptEngine::new_static_scope();
         scope.push("width", width);
         scope.push("height", height);
+
+        // AC07: 注入 widget props 为 Rhai 变量（expanded, label, content, disabled 等）
+        for (key, value) in props {
+            // 跳过内部元数据 props（以 _ 开头）
+            if key.starts_with('_') {
+                continue;
+            }
+            match value {
+                rgui_core::view::PropValue::Str(s) => {
+                    scope.push(key.to_string(), s.to_string());
+                },
+                rgui_core::view::PropValue::Bool(b) => {
+                    scope.push(key.to_string(), *b);
+                },
+                rgui_core::view::PropValue::Int(i) => {
+                    scope.push(key.to_string(), *i);
+                },
+                rgui_core::view::PropValue::Float(f) => {
+                    scope.push(key.to_string(), f.0);
+                },
+                _ => {
+                    // 跳过复杂类型（Color, Size, Rect, List, Map, Enum, Callback, PaintOps）
+                },
+            }
+        }
 
         engine.run_with_scope(&mut scope, &script)?;
 
@@ -208,7 +238,8 @@ mod tests {
         )
         .expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
+        let result =
+            execute_rhai_paint_script(&rhai_path, 100.0, 50.0, &std::collections::BTreeMap::new());
         assert!(
             result.is_ok(),
             "valid script should succeed: {:?}",
@@ -226,7 +257,8 @@ mod tests {
         let rhai_path = dir.path().join("broken.rhai");
         std::fs::write(&rhai_path, "fn broken( {").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
+        let result =
+            execute_rhai_paint_script(&rhai_path, 100.0, 50.0, &std::collections::BTreeMap::new());
         assert!(result.is_err(), "syntax error should return Err");
     }
 
@@ -237,7 +269,8 @@ mod tests {
         let rhai_path = dir.path().join("empty.rhai");
         std::fs::write(&rhai_path, "").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 100.0, 50.0);
+        let result =
+            execute_rhai_paint_script(&rhai_path, 100.0, 50.0, &std::collections::BTreeMap::new());
         assert!(result.is_ok(), "empty script should succeed");
         let ops = result.unwrap();
         assert!(ops.is_empty(), "empty script should produce no ops");
@@ -250,7 +283,8 @@ mod tests {
         let rhai_path = dir.path().join("runtime_err.rhai");
         std::fs::write(&rhai_path, "nonexistent_fn();").expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
+        let result =
+            execute_rhai_paint_script(&rhai_path, 400.0, 300.0, &std::collections::BTreeMap::new());
         assert!(result.is_err(), "runtime error should return Err");
     }
 
@@ -267,7 +301,8 @@ mod tests {
         )
         .expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
+        let result =
+            execute_rhai_paint_script(&rhai_path, 400.0, 300.0, &std::collections::BTreeMap::new());
         assert!(
             result.is_ok(),
             "script using width/height should succeed: {:?}",
@@ -302,8 +337,12 @@ mod tests {
         )
         .expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
-        assert!(result.is_ok(), "script without width/height refs should still work");
+        let result =
+            execute_rhai_paint_script(&rhai_path, 400.0, 300.0, &std::collections::BTreeMap::new());
+        assert!(
+            result.is_ok(),
+            "script without width/height refs should still work"
+        );
     }
 
     #[cfg(feature = "devtools")]
@@ -317,8 +356,12 @@ mod tests {
         )
         .expect("write rhai file");
 
-        let result = execute_rhai_paint_script(&rhai_path, 400.0, 300.0);
-        assert!(result.is_ok(), "script using width/height in expressions should succeed");
+        let result =
+            execute_rhai_paint_script(&rhai_path, 400.0, 300.0, &std::collections::BTreeMap::new());
+        assert!(
+            result.is_ok(),
+            "script using width/height in expressions should succeed"
+        );
         let ops = result.unwrap();
         assert_eq!(ops.len(), 1, "should produce 1 PaintOp");
     }
