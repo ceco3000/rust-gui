@@ -2,6 +2,7 @@
 
 use crate::widget_tree::WidgetTree;
 use rgui_core::id::WidgetId;
+use rustc_hash::FxHashMap;
 use std::fmt;
 
 /// 输入模态——跟踪最后一次输入是键盘还是鼠标。
@@ -39,6 +40,12 @@ pub struct FocusManager {
     trap_stack: Vec<Vec<WidgetId>>,
     /// 最后一次输入模态——用于判断焦点是否应该可见（focus-visible）。
     input_modality: InputModality,
+    /// Roving tabindex 容器注册表（AC13）。
+    /// Key: 容器 WidgetId。Value: 当前 tabbable 的子组件 WidgetId。
+    roving_containers: FxHashMap<WidgetId, WidgetId>,
+    /// 反向映射：子组件 WidgetId → 容器 WidgetId（AC13）。
+    /// 用于 `focus()` 中的 O(1) roving 更新。
+    roving_child_to_container: FxHashMap<WidgetId, WidgetId>,
 }
 
 impl FocusManager {
@@ -49,6 +56,8 @@ impl FocusManager {
             history: Vec::new(),
             trap_stack: Vec::new(),
             input_modality: InputModality::default(),
+            roving_containers: FxHashMap::default(),
+            roving_child_to_container: FxHashMap::default(),
         }
     }
 
@@ -86,6 +95,11 @@ impl FocusManager {
             }
         }
         self.current = Some(widget_id);
+
+        // AC13: 自动更新 roving tabbable
+        if let Some(&container_id) = self.roving_child_to_container.get(&widget_id) {
+            self.roving_containers.insert(container_id, widget_id);
+        }
     }
 
     /// 清除当前焦点（不修改历史栈）。
@@ -235,6 +249,72 @@ impl FocusManager {
         };
 
         self.focus(new_focus);
+        true
+    }
+
+    // ── Roving tabindex (AC13) ──────────────────────────────────────────────
+
+    /// 启用 roving tabindex 模式（AC13）。
+    ///
+    /// 注册一个容器为 roving 模式，管理子组件的 Tab 可达性。
+    /// `container_id` 为容器 WidgetId，`item_ids` 为子组件有序列表。
+    /// 初始 tabbable 子组件为 `item_ids` 的第一个。
+    ///
+    /// 对齐 WA `initRovingTabIndex()`。
+    pub fn enable_roving(&mut self, container_id: WidgetId, item_ids: Vec<WidgetId>) {
+        // 清理旧的反向映射
+        self.roving_child_to_container
+            .retain(|_, &mut c| c != container_id);
+
+        // 注册新的反向映射
+        for &item_id in &item_ids {
+            self.roving_child_to_container.insert(item_id, container_id);
+        }
+
+        // 初始 tabbable 为第一个 item
+        if let Some(&first) = item_ids.first() {
+            self.roving_containers.insert(container_id, first);
+        }
+    }
+
+    /// 取消 roving tabindex 模式（AC13）。
+    pub fn disable_roving(&mut self, container_id: WidgetId) {
+        self.roving_containers.remove(&container_id);
+        self.roving_child_to_container
+            .retain(|_, &mut c| c != container_id);
+    }
+
+    /// 获取指定容器的当前 tabbable 子组件（AC13）。
+    ///
+    /// 返回 `None` 表示该容器未注册 roving 模式。
+    #[must_use]
+    pub fn get_roving_tabbable(&self, container_id: WidgetId) -> Option<WidgetId> {
+        self.roving_containers.get(&container_id).copied()
+    }
+
+    /// 判断 widget 是否当前 Tab 可达（AC13）。
+    ///
+    /// - 若 widget 属于某个 roving 容器，仅当其是该容器当前 tabbable 子组件时返回 `true`
+    /// - 若 widget 不属于任何 roving 容器，返回 `true`（默认可达）
+    ///
+    /// `tree` 用于查询 widget 的父容器。
+    #[must_use]
+    pub fn is_tabbable(&self, widget_id: WidgetId, tree: &WidgetTree) -> bool {
+        // 查找 widget 的父容器
+        let parent_id = match tree.parent(widget_id) {
+            Some(parent) => parent,
+            None => return true, // 无父节点，默认 tabbable
+        };
+
+        // 如果父容器是 roving 容器，检查 widget 是否在 roving 组内
+        if let Some(&tabbable) = self.roving_containers.get(&parent_id) {
+            // 仅当 widget 已注册到 roving 组内时才应用 tabindex 限制
+            if self.roving_child_to_container.contains_key(&widget_id) {
+                return widget_id == tabbable;
+            }
+            // widget 在 roving 容器下但不在 roving 组内 → 默认 tabbable
+        }
+
         true
     }
 }
@@ -574,5 +654,52 @@ mod tests {
         // All items focusable → should move to 3
         assert!(fm.move_focus_sibling(&tree, FocusDirection::Next));
         assert_eq!(fm.current(), Some(make_id(3)));
+    }
+
+    // ── RED: roving tabindex (AC13) ─────────────────────────────────────────
+
+    #[test]
+    fn roving_initial_tabbable_is_first_item() {
+        let mut fm = FocusManager::new();
+        let items = vec![make_id(2), make_id(3), make_id(4)];
+        fm.enable_roving(make_id(1), items);
+        assert_eq!(fm.get_roving_tabbable(make_id(1)), Some(make_id(2)));
+    }
+
+    #[test]
+    fn roving_focus_updates_tabbable() {
+        let mut fm = FocusManager::new();
+        let items = vec![make_id(2), make_id(3), make_id(4)];
+        fm.enable_roving(make_id(1), items);
+        // Focus on item 3 → tabbable should update to 3
+        fm.focus(make_id(3));
+        assert_eq!(fm.get_roving_tabbable(make_id(1)), Some(make_id(3)));
+    }
+
+    #[test]
+    fn roving_non_tabbable_returns_false() {
+        let mut fm = FocusManager::new();
+        let tree = build_flat_container();
+        let items = vec![make_id(2), make_id(3), make_id(4)];
+        fm.enable_roving(make_id(1), items);
+        // item 2 is tabbable, item 3 is not
+        assert!(fm.is_tabbable(make_id(2), &tree));
+        assert!(!fm.is_tabbable(make_id(3), &tree));
+    }
+
+    #[test]
+    fn roving_unknown_container_returns_none() {
+        let fm = FocusManager::new();
+        assert_eq!(fm.get_roving_tabbable(make_id(999)), None);
+    }
+
+    #[test]
+    fn roving_widget_not_in_group_is_tabbable() {
+        let mut fm = FocusManager::new();
+        let tree = build_flat_container();
+        let items = vec![make_id(2), make_id(3)];
+        fm.enable_roving(make_id(1), items);
+        // Widget 4 is not a child of the roving container → should be tabbable
+        assert!(fm.is_tabbable(make_id(4), &tree));
     }
 }
