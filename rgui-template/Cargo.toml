@@ -6,6 +6,7 @@ rust-version = "1.85"
 
 [dependencies]
 rgui = "0.1"
+log = "0.4"
 
 [lints.rust]
 unsafe_code = "deny"

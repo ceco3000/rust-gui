@@ -14,3 +14,4 @@ categories = ["gui"]
 rgui-core.workspace = true
 taffy.workspace = true
 rustc-hash.workspace = true
+log.workspace = true

@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |_| {
             let mut guard = c1.lock().unwrap_or_else(|e| e.into_inner());
             *guard += 1;
-            println!("计数: {guard}");
+            log::info!(target: "rgui::core", "计数: {guard}");
         },
     );
 
@@ -34,12 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "reset",
         move |_| {
             *c2.lock().unwrap_or_else(|e| e.into_inner()) = 0;
-            println!("重置完成");
+            log::info!(target: "rgui::core", "重置完成");
         },
     );
 
     // 3. 运行应用（打开窗口，进入事件循环）
-    println!("\n{{project-name}} 已启动。");
-    println!("点击窗口中的 [+1] 区域递增计数，[reset] 清空。");
+    log::info!(target: "rgui::core", "\n{{project-name}} 已启动。");
+    log::info!(target: "rgui::core", "点击窗口中的 [+1] 区域递增计数，[reset] 清空。");
     app.run()
 }

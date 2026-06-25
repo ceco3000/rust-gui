@@ -83,7 +83,7 @@ impl<M: AppMessage> WidgetNode<M> {
             } else {
                 "unknown panic"
             };
-            eprintln!("[rgui] WidgetNode::handle panic (id={:?}): {msg}", self.id);
+            log::error!(target: "rgui::core", "[rgui] WidgetNode::handle panic (id={:?}): {msg}", self.id);
         }
     }
 

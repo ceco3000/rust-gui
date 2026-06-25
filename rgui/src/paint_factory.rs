@@ -22,7 +22,7 @@ fn paint_fn_impl<M: AppMessage>(_store: Option<WidgetStateStore>) -> PaintFn<M> 
 
                 // ── 未翻译 / 未知 ──
                 unknown => {
-                    eprintln!(
+                    log::warn!(target: "rgui::core",
                         "[rgui] paint_factory: 未知 widget_type=\"{unknown}\"，无 paint 实现，返回空"
                     );
                     Vec::new()
@@ -66,6 +66,8 @@ pub fn execute_tier2_paint_scripts<M: AppMessage>(
 }
 
 /// 递归辅助函数。
+///
+/// C8: 脚本执行失败时，从 _old_paint_ops 恢复旧的 paint_ops 缓存作为降级方案。
 #[cfg(feature = "devtools")]
 fn execute_tier2_paint_scripts_recursive<M: AppMessage>(
     view: &mut rgui_core::view::WidgetView<M>,
@@ -99,12 +101,20 @@ fn execute_tier2_paint_scripts_recursive<M: AppMessage>(
             match execute_rhai_paint_script(&rhai_path, width, height, &view.props) {
                 Ok(ops) => {
                     view.props.insert("paint_ops", PropValue::PaintOps(ops));
+                    // C8: 成功执行后清理 _old_paint_ops
+                    view.props.remove("_old_paint_ops");
                 },
                 Err(e) => {
-                    eprintln!(
+                    log::error!(target: "rgui::script",
                         "[rgui] execute_tier2_paint_scripts: Rhai 脚本执行失败 ({}): {e}",
                         rhai_path.display()
                     );
+                    // C8: 恢复旧的 paint_ops 缓存作为降级方案
+                    if let Some(old_ops) = view.props.remove("_old_paint_ops") {
+                        view.props.insert("paint_ops", old_ops);
+                        log::warn!(target: "rgui::script",
+                            "[rgui] 降级：使用旧的 paint_ops 缓存 ({})", rhai_path.display());
+                    }
                 },
             }
         }

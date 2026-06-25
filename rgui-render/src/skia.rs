@@ -120,7 +120,7 @@ impl SkiaBackend {
 
         // 逐层绘制
         let mut opacity_stack: Vec<f32> = vec![1.0];
-        for layer in &scene.layers {
+        for layer in scene.layers.iter() {
             let layer_opacity = layer.opacity;
             if layer_opacity <= 0.0 {
                 continue;

@@ -6,6 +6,7 @@
 pub mod app;
 pub mod error_boundary;
 pub mod interactive;
+pub mod logging;
 pub mod paint_factory;
 pub mod render;
 pub mod widget_node;
@@ -13,6 +14,7 @@ pub mod widget_node;
 #[cfg(feature = "devtools")]
 pub use app::run_simple_app;
 pub use app::{App, AppConfig};
+pub use logging::init_logging;
 pub use rgui_a11y::*;
 pub use rgui_core::*;
 pub use rgui_layout::*;

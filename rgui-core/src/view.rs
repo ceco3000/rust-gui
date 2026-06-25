@@ -440,7 +440,7 @@ impl<M: AppMessage> MessageHandler<M> {
                 },
             }
         } else {
-            eprintln!("[rgui] 消息类型不匹配: 预期 {}", std::any::type_name::<M>());
+            log::warn!(target: "rgui::core", "[rgui] 消息类型不匹配: 预期 {}", std::any::type_name::<M>());
             None
         }
     }

@@ -1,0 +1,20 @@
+# rgui 日志系统配置文件
+# 此文件控制日志级别、文件输出和性能日志开关
+
+# 全局日志级别
+# 可选值: trace | debug | info | warn | error
+level = "debug"
+
+[file]
+# 日志输出目录（相对于当前工作目录）
+directory = "logs"
+# 滚动策略（当前仅支持 daily）
+rotation = "daily"
+# 保留的最大日志文件数
+max_files = 7
+
+[perf]
+# 高频日志开关（需 level = debug 或 trace 才生效）
+enabled = false
+# 批量写入缓冲区大小（KB）
+buffer_kb = 8

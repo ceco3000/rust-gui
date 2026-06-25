@@ -62,7 +62,7 @@ impl LayoutEngine {
 
         for &child in children {
             if let Err(e) = self.tree.add_child(node.0, child.0) {
-                eprintln!(
+                log::error!(target: "rgui::layout",
                     "[rgui] LayoutEngine::add_node: add_child({:?}, {:?}) 失败: {e:?}",
                     node, child
                 );
@@ -76,7 +76,7 @@ impl LayoutEngine {
 
     pub fn set_style(&mut self, node: LayoutNode, style: Style) {
         if let Err(e) = self.tree.set_style(node.0, style) {
-            eprintln!("[rgui] LayoutEngine::set_style({node:?}) 失败: {e:?}");
+            log::error!(target: "rgui::layout", "[rgui] LayoutEngine::set_style({node:?}) 失败: {e:?}");
         }
     }
 
@@ -84,7 +84,7 @@ impl LayoutEngine {
         if let Some(node) = self.widget_to_node.remove(&widget_id) {
             self.node_to_widget.remove(&node);
             if let Err(e) = self.tree.remove(node.0) {
-                eprintln!(
+                log::error!(target: "rgui::layout",
                     "[rgui] LayoutEngine::remove({widget_id:?}) → node({node:?}) 失败: {e:?}"
                 );
             }
@@ -100,7 +100,7 @@ impl LayoutEngine {
                 height: AvailableSpace::Definite(available.height as f32),
             },
         ) {
-            eprintln!("[rgui] LayoutEngine::compute_layout({root:?}, {available:?}) 失败: {e:?}");
+            log::error!(target: "rgui::layout", "[rgui] LayoutEngine::compute_layout({root:?}, {available:?}) 失败: {e:?}");
         }
 
         for (&node, &widget_id) in &self.node_to_widget {
@@ -121,7 +121,7 @@ impl LayoutEngine {
                     );
                 },
                 Err(e) => {
-                    eprintln!(
+                    log::error!(target: "rgui::layout",
                         "[rgui] LayoutEngine::compute_layout: tree.layout({node:?}) (widget={widget_id:?}) 失败: {e:?}"
                     );
                 },

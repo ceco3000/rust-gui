@@ -16,6 +16,7 @@ ordered-float.workspace = true
 rustc-hash.workspace = true
 thiserror.workspace = true
 erased-serde.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 serde = { workspace = true }

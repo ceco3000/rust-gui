@@ -81,23 +81,36 @@ fn register_event_handlers<M: AppMessage>(
     let action = ontoggle_action.or(onclick_action);
 
     // Tier 2 组件识别：通过 _rhai_path 字符串匹配
-    let is_tier2 = view.props.get("_rhai_path")
-        .and_then(|v| match v { PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")), _ => None })
+    let is_tier2 = view
+        .props
+        .get("_rhai_path")
+        .and_then(|v| match v {
+            PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")),
+            _ => None,
+        })
         .unwrap_or(false);
 
     if action.is_none() && !is_tier2 {
         return;
     }
 
-    let size = layout.get_layout(widget_id).map(|c| c.result.size).unwrap_or(Size::ZERO);
+    let size = layout
+        .get_layout(widget_id)
+        .map(|c| c.result.size)
+        .unwrap_or(Size::ZERO);
     let abs_pos = layout.absolute_position(widget_id).unwrap_or(Point::ZERO);
     let rect = rgui_core::geometry::Rect::new(abs_pos.x, abs_pos.y, size.width, size.height);
 
     let action_str = action.unwrap_or_else(|| "toggle".to_string());
     app.register_interaction_with_chain(widget_id, rect, widget_chain.clone(), &action_str, |_| {});
 
-    let initial_expanded = view.props.get("expanded")
-        .and_then(|v| match v { PropValue::Bool(b) => Some(*b), _ => None })
+    let initial_expanded = view
+        .props
+        .get("expanded")
+        .and_then(|v| match v {
+            PropValue::Bool(b) => Some(*b),
+            _ => None,
+        })
         .unwrap_or(false);
     store.insert(widget_id, initial_expanded);
 

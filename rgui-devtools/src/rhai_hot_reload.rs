@@ -158,7 +158,7 @@ impl RhaiHotReload {
 
         // 规范化路径以匹配 notify 事件路径
         let canonical = std::fs::canonicalize(&source_path).unwrap_or_else(|e| {
-            eprintln!(
+            log::warn!(target: "rgui::devtools",
                 "[rgui] RhaiHotReload: canonicalize({source_path:?}) 失败: {e}，使用原始路径"
             );
             source_path.clone()

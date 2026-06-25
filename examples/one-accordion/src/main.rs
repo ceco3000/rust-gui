@@ -5,6 +5,8 @@
 //! 用户只需声明式 UI 和一行 `run_simple_app` 启动器。
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    rgui::init_logging();
+
     let rgui_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui.rgui");
 
     rgui::run_simple_app::<rgui_core::message::NoopMsg>(

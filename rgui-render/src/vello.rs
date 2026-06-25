@@ -388,35 +388,29 @@ pub fn encode_scene_to_vello(
     }
 
     // 逐层编码
-    for layer in &scene.layers {
+    for layer in scene.layers.iter() {
         if layer.opacity <= 0.0 {
             continue;
         }
 
-        // 层级别变换或透明度 → push_layer
-        let needs_layer = layer.transform.is_some() || (layer.opacity - 1.0).abs() > f32::EPSILON;
-
-        if needs_layer {
-            let xform = layer
-                .transform
-                .as_ref()
-                .map_or(vello::kurbo::Affine::IDENTITY, to_kurbo_affine);
-            vello_scene.push_layer(
-                vello::peniko::Fill::NonZero,
-                vello::peniko::BlendMode::default(),
-                layer.opacity,
-                xform,
-                &vello::kurbo::Rect::new(0.0, 0.0, w, h),
-            );
-        }
+        // 所有 layer 统一使用 push_layer（避免 mixed push/non-push 合成问题）
+        let xform = layer
+            .transform
+            .as_ref()
+            .map_or(vello::kurbo::Affine::IDENTITY, to_kurbo_affine);
+        vello_scene.push_layer(
+            vello::peniko::Fill::NonZero,
+            vello::peniko::BlendMode::default(),
+            layer.opacity,
+            xform,
+            &vello::kurbo::Rect::new(0.0, 0.0, w, h),
+        );
 
         for cmd in &layer.commands {
             encode_draw_command(&mut vello_scene, cmd, font_data);
         }
 
-        if needs_layer {
-            vello_scene.pop_layer();
-        }
+        vello_scene.pop_layer();
     }
 
     if needs_dpi_scale {
@@ -834,15 +828,20 @@ fn to_kurbo_path(path_data: &PathData) -> vello::kurbo::BezPath {
 }
 
 /// 将 rgui Transform 转换为 kurbo::Affine。
+///
+/// Transform 使用 [a, b, tx, c, d, ty] 布局（见 primitives.rs），
+/// kurbo::Affine 使用 [a, b, c, d, e, f] 对应 (x' = a*x + c*y + e, y' = b*x + d*y + f)。
 fn to_kurbo_affine(xform: &Transform) -> vello::kurbo::Affine {
     let m = xform.matrix;
+    // Transform: [a, b, tx, c, d, ty]
+    // kurbo:     [a, c,  e, b, d,  f]
     vello::kurbo::Affine::new([
-        m[0].into(),
-        m[1].into(),
-        m[2].into(),
-        m[3].into(),
-        m[4].into(),
-        m[5].into(),
+        m[0] as f64,  // a
+        m[3] as f64,  // b
+        m[1] as f64,  // c
+        m[4] as f64,  // d
+        m[2] as f64,  // e (tx)
+        m[5] as f64,  // f (ty)
     ])
 }
 

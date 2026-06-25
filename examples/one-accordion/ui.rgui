@@ -4,11 +4,11 @@
     content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
   </AccordionItem>
 
-  <AccordionItem label="Installation" icon_placement="start"
+  <AccordionItem label="Installation"
     content="Install via your preferred package manager. The component requires rgui-core and rgui-devtools.">
   </AccordionItem>
 
-  <AccordionItem label="API Reference" disabled="true"
+  <AccordionItem label="API Reference"
     content="Complete API documentation for Accordion, AccordionItem, and available properties.">
   </AccordionItem>
 </Accordion>

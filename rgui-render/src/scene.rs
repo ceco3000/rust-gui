@@ -211,7 +211,7 @@ impl SceneGraphBuilder {
             commands,
             widget_id,
             opacity: 1.0,
-            transform: None,
+            transform: None, // 坐标偏移已在 walk_view_tree 中通过 offset_draw_command 应用
         });
         if is_dirty {
             self.dirty_layers.push(layer_index);

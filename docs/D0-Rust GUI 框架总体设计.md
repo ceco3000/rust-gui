@@ -860,12 +860,33 @@ pub enum RenderError {
 
 ### 8.4 日志
 
-使用 `log` crate（框架内部）：
-- `trace!`：每帧每个 widget 的内部状态变更
-- `debug!`：每帧 dirty 节点数量、diff patch 数量
-- `info!`：应用启动、窗口创建、后端选择
-- `warn!`：降级行为（如 Skia fallback 被激活）
-- `error!`：渲染失败、事件循环异常
+本框架使用 `tracing` 生态作为统一日志系统：
+
+**门面层**：`tracing` crate + `log` feature，向后兼容所有现有 `log::*` 宏调用（`trace!`、`debug!`、`info!`、`warn!`、`error!`）。
+
+**订阅者层**：`tracing-subscriber` 多层 Layer 架构：
+- **终端 Layer**：输出到 stderr，格式简洁（`[时间] 级别: 消息`），无颜色/无 target 字段
+- **文件 Layer**：`tracing-appender::non_blocking` + `RollingFileAppender`，按天滚动，格式完整（`[时间戳] [级别] [target] 消息`）
+
+**配置文件**：`logging.toml`（扁平结构）：
+```toml
+level = "info"           # trace | debug | info | warn | error
+
+[file]
+directory = "logs"       # 日志目录（相对于工作目录）
+rotation = "daily"       # daily（按天滚动，当前唯一策略）
+max_files = 7            # 保留最近 N 个文件
+
+[perf]
+enabled = false          # 高频日志开关（需 level ≤ debug 才生效）
+buffer_kb = 8            # 批量写入缓冲区大小（KB）
+```
+
+**初始化入口**：`rgui::init_logging()`（内部使用 `std::sync::Once` 保证单次初始化），读取 `logging.toml`，降级到默认配置（info 级别、logs/ 目录、保留 7 天）。
+
+**RUST_LOG 环境变量**优先级高于配置文件中的 `level`。
+
+**高频日志独立开关**：`perf.enabled` 控制每帧渲染状态、dirty 节点数、帧耗时等高频日志；仅当 `level ≤ debug` 时 `perf.enabled = true` 才生效，使用 `BufWriter` 批量写入（默认 8KB 缓冲）降低系统调用频率。
 
 ### 8.5 代码组织
 

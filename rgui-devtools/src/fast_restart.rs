@@ -195,7 +195,7 @@ mod tests {
         // 确认 cargo 可用
         let cargo_check = Command::new("cargo").arg("--version").output();
         if cargo_check.is_err() {
-            eprintln!("跳过测试：cargo 未安装");
+            log::warn!("跳过测试：cargo 未安装");
             return;
         }
 
@@ -217,7 +217,7 @@ mod tests {
         match result.unwrap() {
             BuildResult::Success => {},
             BuildResult::Failed { stderr } => {
-                eprintln!("cargo build 失败:\n{}", stderr);
+                log::error!("cargo build 失败:\n{}", stderr);
             },
             BuildResult::UpToDate => {
                 // 也可能因为依赖已缓存而 UpToDate
@@ -229,7 +229,7 @@ mod tests {
     fn test_build_with_syntax_error() {
         let cargo_check = Command::new("cargo").arg("--version").output();
         if cargo_check.is_err() {
-            eprintln!("跳过测试：cargo 未安装");
+            log::warn!("跳过测试：cargo 未安装");
             return;
         }
 

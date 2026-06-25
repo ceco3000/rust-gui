@@ -85,4 +85,17 @@ impl WidgetStateStore {
         let guard = self.inner.lock().expect("WidgetStateStore lock poisoned");
         guard.contains_key(&id)
     }
+
+    /// 返回当前存储中所有 WidgetId 键。
+    #[must_use]
+    pub fn keys(&self) -> Vec<WidgetId> {
+        let guard = self.inner.lock().expect("WidgetStateStore lock poisoned");
+        guard.keys().copied().collect()
+    }
+
+    /// 移除指定 widget 的状态。
+    pub fn remove(&self, id: WidgetId) {
+        let mut guard = self.inner.lock().expect("WidgetStateStore lock poisoned");
+        guard.remove(&id);
+    }
 }
