@@ -35,7 +35,7 @@ use crate::glyph::{GlyphKey, RasterizedGlyph};
 ///
 /// ```ignore
 /// let mut engine = TextEngine::new();
-/// let glyphs = engine.shape_text("Hello", 24.0, Attrs::new());
+/// let glyphs = engine.shape_text("Hello", 24.0, Attrs::new(), None);
 /// for shaped in glyphs {
 ///     let rasterized = engine.rasterize_glyph(&shaped.key);
 ///     // 将光栅化结果上传到 GlyphAtlas
@@ -107,21 +107,31 @@ impl TextEngine {
     /// * `text` — 待塑形的文本内容。
     /// * `font_size` — 字号（像素单位）。
     /// * `attrs` — 文本属性（字体族、字重、斜体等）。
+    /// * `max_width` — 最大行宽（像素单位）。
+    ///   - `None`：使用 8192.0（禁用换行，向后兼容）。
+    ///   - `Some(w)`：启用自动换行，每行宽度不超过 `w`。
     ///
     /// # 返回
     ///
     /// `Vec<ShapedGlyph>` — 每个字形的塑形信息，包含用于 atlas 查询的
-    /// `GlyphKey` 和用于渲染位置计算的布局数据。
+    /// `GlyphKey`、布局位置数据和 `line_index`（可视行索引）。
     #[must_use]
-    pub fn shape_text(&mut self, text: &str, font_size: f32, attrs: Attrs<'_>) -> Vec<ShapedGlyph> {
+    pub fn shape_text(&mut self, text: &str, font_size: f32, attrs: Attrs<'_>, max_width: Option<f32>) -> Vec<ShapedGlyph> {
         let metrics = Metrics {
             font_size,
             line_height: font_size * 1.2,
         };
         let mut buffer = Buffer::new(&mut self.font_system, metrics);
 
-        // 设置足够大的宽度以避免换行（8192px 为合理的最大行宽上限）
-        buffer.set_size(&mut self.font_system, Some(8192.0), Some(font_size * 2.0));
+        // 设置行宽：None 时保持旧行为（8192px 单行），Some(w) 时启用换行
+        let width = max_width.unwrap_or(8192.0);
+        // 高度：None（单行）时复用旧行为 font_size*2.0；Some（可能多行）时使用大值
+        let height = if max_width.is_some() {
+            Some(8192.0)
+        } else {
+            Some(font_size * 2.0)
+        };
+        buffer.set_size(&mut self.font_system, Some(width), height);
 
         // cosmic-text 0.12: set_text 接受 4 个参数
         buffer.set_text(&mut self.font_system, text, attrs, Shaping::Advanced);
@@ -131,7 +141,19 @@ impl TextEngine {
         let mut result = Vec::new();
         let font_size_u32 = font_size as u32;
 
+        // 跟踪可视行索引：每个 LayoutRun（uniform styling）对应一个可视行
+        let mut line_index: u32 = 0;
+        let mut prev_line_y: Option<f32> = None;
+
         for run in buffer.layout_runs() {
+            // 当 line_y 发生显著变化时（> line_height * 0.5），视为新行
+            if let Some(prev) = prev_line_y {
+                if (run.line_y - prev).abs() > metrics.line_height * 0.5 {
+                    line_index += 1;
+                }
+            }
+            prev_line_y = Some(run.line_y);
+
             for glyph in run.glyphs.iter() {
                 let internal_font_id = self.intern_font_id(glyph.font_id);
                 result.push(ShapedGlyph {
@@ -144,6 +166,7 @@ impl TextEngine {
                     x: glyph.x,
                     y: glyph.y,
                     advance: glyph.w,
+                    line_index,
                 });
             }
         }
@@ -274,6 +297,9 @@ pub struct ShapedGlyph {
     pub y: f32,
     /// 字形步进宽度（advance width，像素单位）。
     pub advance: f32,
+    /// 字形所在的可视行索引（从 0 开始）。
+    /// 用于换行渲染时的行分组。
+    pub line_index: u32,
 }
 
 // ============================================================================
@@ -342,7 +368,7 @@ mod tests {
     #[test]
     fn shape_latin_text_produces_glyphs() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("Hello", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("Hello", 24.0, Attrs::new(), None);
         assert!(
             !glyphs.is_empty(),
             "Latin 文本应产生至少一个字形，实际得到 {} 个",
@@ -354,7 +380,7 @@ mod tests {
     #[test]
     fn shaped_glyphs_have_plausible_advance() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("Test", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("Test", 24.0, Attrs::new(), None);
         for g in &glyphs {
             assert!(g.advance > 0.0, "字形 advance 应大于 0");
             assert!(g.advance < 100.0, "字形 advance 不应异常大");
@@ -366,7 +392,7 @@ mod tests {
     #[test]
     fn rasterize_glyph_produces_valid_bitmap() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("A", 32.0, Attrs::new());
+        let glyphs = engine.shape_text("A", 32.0, Attrs::new(), None);
         assert!(!glyphs.is_empty(), "字符 'A' 应产生字形");
 
         let rasterized = engine.rasterize_glyph(&glyphs[0].key);
@@ -390,7 +416,7 @@ mod tests {
     #[test]
     fn rasterize_space_handling() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text(" ", 24.0, Attrs::new());
+        let glyphs = engine.shape_text(" ", 24.0, Attrs::new(), None);
         // 空格可能塑形出宽度为 0 的字形
         if !glyphs.is_empty() {
             let result = engine.rasterize_glyph(&glyphs[0].key);
@@ -403,8 +429,8 @@ mod tests {
     #[test]
     fn consistent_shaping_for_same_text() {
         let mut engine = TextEngine::new();
-        let glyphs1 = engine.shape_text("Hello", 24.0, Attrs::new());
-        let glyphs2 = engine.shape_text("Hello", 24.0, Attrs::new());
+        let glyphs1 = engine.shape_text("Hello", 24.0, Attrs::new(), None);
+        let glyphs2 = engine.shape_text("Hello", 24.0, Attrs::new(), None);
         assert_eq!(glyphs1.len(), glyphs2.len());
     }
 
@@ -415,7 +441,7 @@ mod tests {
         use crate::texture::TextureId;
 
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("A", 32.0, Attrs::new());
+        let glyphs = engine.shape_text("A", 32.0, Attrs::new(), None);
         assert!(!glyphs.is_empty());
 
         let mut atlas = GlyphAtlas::new(TextureId(1), 256, 256);
@@ -432,7 +458,7 @@ mod tests {
         use crate::texture::TextureId;
 
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("Hello", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("Hello", 24.0, Attrs::new(), None);
         assert!(glyphs.len() >= 4, "Hello 至少应有 4 个字形");
 
         let mut atlas = GlyphAtlas::new(TextureId(1), 512, 512);
@@ -456,8 +482,8 @@ mod tests {
     fn different_font_sizes_produce_different_bitmaps() {
         let mut engine = TextEngine::new();
 
-        let glyphs_16 = engine.shape_text("A", 16.0, Attrs::new());
-        let glyphs_32 = engine.shape_text("A", 32.0, Attrs::new());
+        let glyphs_16 = engine.shape_text("A", 16.0, Attrs::new(), None);
+        let glyphs_32 = engine.shape_text("A", 32.0, Attrs::new(), None);
 
         let r16 = engine.rasterize_glyph(&glyphs_16[0].key);
         let r32 = engine.rasterize_glyph(&glyphs_32[0].key);
@@ -471,7 +497,7 @@ mod tests {
     #[test]
     fn empty_text_produces_no_glyphs() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("", 24.0, Attrs::new(), None);
         assert!(glyphs.is_empty(), "空字符串不应产生字形");
     }
 
@@ -479,7 +505,7 @@ mod tests {
     #[test]
     fn shaped_glyph_is_clone() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("A", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("A", 24.0, Attrs::new(), None);
         assert!(!glyphs.is_empty());
         let cloned = glyphs[0].clone();
         assert_eq!(cloned.x, glyphs[0].x);
@@ -497,7 +523,7 @@ mod tests {
     #[test]
     fn font_id_intern_consistency() {
         let mut engine = TextEngine::new();
-        let glyphs = engine.shape_text("AB", 24.0, Attrs::new());
+        let glyphs = engine.shape_text("AB", 24.0, Attrs::new(), None);
 
         // 同一字体的字形应有相同的 font_id
         assert!(glyphs.len() >= 2);

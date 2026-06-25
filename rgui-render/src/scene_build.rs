@@ -25,37 +25,42 @@ use crate::text_renderer::TextRenderer;
 /// `PaintOp::DrawText` 会被转换为填充矩形占位符。
 /// 如需真正的字形渲染，请使用
 /// [`paint_op_to_draw_command_with_text`] 并传入 `TextRenderer`。
-pub fn paint_op_to_draw_command(op: &PaintOp) -> DrawCommand {
+pub fn paint_op_to_draw_command(op: &PaintOp) -> Vec<DrawCommand> {
     paint_op_to_draw_command_inner(op, None)
 }
 
-/// 将单个 `PaintOp` 转换为 `DrawCommand`，支持文本渲染。
+/// 将单个 `PaintOp` 转换为 `DrawCommand` 列表，支持文本渲染。
 ///
 /// 当 `text_renderer` 为 `Some` 且遇到 `PaintOp::DrawText` 时，
 /// 会通过 `TextRenderer` 进行字形塑形和光栅化，生成真正的
-/// `DrawCommand::DrawGlyphs` 指令。
+/// `DrawCommand::DrawGlyphs` 指令。返回 `Vec<DrawCommand>` 以支持
+/// `DrawText` 展开为多条指令（PushClip + 多行 DrawGlyphs + PopClip）。
 pub fn paint_op_to_draw_command_with_text(
     op: &PaintOp,
     text_renderer: &crate::text_renderer::TextRenderer,
-) -> DrawCommand {
+) -> Vec<DrawCommand> {
     paint_op_to_draw_command_inner(op, Some(text_renderer))
 }
 
 /// 内部实现：根据可选的 TextRenderer 决定文本渲染策略。
+///
+/// 返回 `Vec<DrawCommand>`：FillRect/DrawImage 返回单元素 Vec；
+/// DrawText（含 TextRenderer + bounds 宽度 > 0）返回
+/// PushClip + N×DrawGlyphs + PopClip；空文本返回空 Vec。
 fn paint_op_to_draw_command_inner(
     op: &PaintOp,
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
-) -> DrawCommand {
+) -> Vec<DrawCommand> {
     match *op {
         PaintOp::FillRect {
             rect,
             color,
             radius,
-        } => DrawCommand::FillRect {
+        } => vec![DrawCommand::FillRect {
             rect,
             color,
             radius,
-        },
+        }],
         PaintOp::DrawText {
             ref text,
             bounds,
@@ -63,64 +68,105 @@ fn paint_op_to_draw_command_inner(
             font_size,
         } => {
             if let Some(tr) = text_renderer {
-                // 一次光栅化同时拿到渲染指令和度量数据（ascent/descent）
-                let (mut commands, metrics) = tr.render_text(text, 0.0, 0.0, color, font_size);
-                if commands.is_empty() {
-                    return DrawCommand::FillRect {
-                        rect: Rect::ZERO,
-                        color: Color::TRANSPARENT,
-                        radius: 0.0,
-                    };
-                }
-                // 水平居中
-                let baseline_x = bounds.origin.x as f32
-                    + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
-                // 垂直：按 ascent 居中（视觉内容居中，忽略 descent 空白区）
-                let baseline_y =
-                    bounds.origin.y as f32 + (bounds.size.height as f32 + metrics.ascent) / 2.0;
-                // 将预先计算的基线偏移应用到 glyph 位置
-                let dx = baseline_x;
-                let dy = baseline_y;
-                let cmd = commands.remove(0);
-                if let DrawCommand::DrawGlyphs {
-                    texture_id,
-                    mut glyphs,
-                    font_size: fs,
-                    color: c,
-                } = cmd
-                {
-                    for g in &mut glyphs {
-                        g.offset_x += dx;
-                        g.offset_y += dy;
+                if bounds.size.width > 0.0 {
+                    // ---- 换行渲染 + PushClip/PopClip 裁剪 ----
+                    // 先计算基线位置（水平居中 + 垂直按 ascent 居中），
+                    // render_text_wrapped 内部会按行叠加 line_height。
+                    let bounds_width = bounds.size.width as f32;
+                    let bounds_height = bounds.size.height as f32;
+
+                    // 暂用 (0,0) 作为基线起点，先获取度量数据
+                    let (wrapped_cmds, metrics) =
+                        tr.render_text_wrapped(text, bounds_width, 0.0, 0.0, color, font_size);
+
+                    if wrapped_cmds.is_empty() {
+                        return Vec::new();
                     }
-                    DrawCommand::DrawGlyphs {
+
+                    // 水平居中
+                    let baseline_x = bounds.origin.x as f32
+                        + ((bounds_width - metrics.width) / 2.0).max(0.0);
+                    // 垂直：按 wrapped_height 居中（多行文本块整体居中）
+                    let baseline_y = bounds.origin.y as f32
+                        + (bounds_height - metrics.wrapped_height) / 2.0
+                        + metrics.ascent;
+
+                    // 重新渲染——这次带着正确的基线偏移
+                    let (mut final_cmds, _) = tr.render_text_wrapped(
+                        text, bounds_width, baseline_x, baseline_y, color, font_size,
+                    );
+
+                    // 空文本二次校验
+                    if final_cmds.is_empty() {
+                        return Vec::new();
+                    }
+
+                    // 组装：PushClip + 渲染命令 + PopClip
+                    let mut result = Vec::with_capacity(final_cmds.len() + 2);
+                    result.push(DrawCommand::PushClip { rect: bounds });
+                    result.append(&mut final_cmds);
+                    result.push(DrawCommand::PopClip);
+                    result
+                } else {
+                    // bounds 宽度 = 0：走旧单行路径（向后兼容）
+                    let (mut commands, metrics) =
+                        tr.render_text(text, 0.0, 0.0, color, font_size);
+                    if commands.is_empty() {
+                        return vec![DrawCommand::FillRect {
+                            rect: Rect::ZERO,
+                            color: Color::TRANSPARENT,
+                            radius: 0.0,
+                        }];
+                    }
+                    // 水平居中
+                    let baseline_x = bounds.origin.x as f32
+                        + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
+                    // 垂直：按 ascent 居中
+                    let baseline_y = bounds.origin.y as f32
+                        + (bounds.size.height as f32 + metrics.ascent) / 2.0;
+                    let cmd = commands.remove(0);
+                    if let DrawCommand::DrawGlyphs {
                         texture_id,
-                        glyphs,
+                        mut glyphs,
                         font_size: fs,
                         color: c,
+                    } = cmd
+                    {
+                        let dx = baseline_x;
+                        let dy = baseline_y;
+                        for g in &mut glyphs {
+                            g.offset_x += dx;
+                            g.offset_y += dy;
+                        }
+                        vec![DrawCommand::DrawGlyphs {
+                            texture_id,
+                            glyphs,
+                            font_size: fs,
+                            color: c,
+                        }]
+                    } else {
+                        vec![cmd]
                     }
-                } else {
-                    cmd
                 }
             } else {
                 // 文本渲染失败时（如 CJK 无字体），产生不可见占位指令，
                 // 避免 FillRect 遮盖同层其他元素
-                DrawCommand::FillRect {
+                vec![DrawCommand::FillRect {
                     rect: Rect::ZERO,
                     color: Color::TRANSPARENT,
                     radius: 0.0,
-                }
+                }]
             }
         },
         PaintOp::DrawImage { rect } => {
             // 阶段 0：DrawImage 占位——VelloBackend 以洋红色半透明矩形渲染
             // 未来阶段：通过纹理注册机制使用实际 RGBA 像素数据
-            DrawCommand::DrawImage {
+            vec![DrawCommand::DrawImage {
                 texture_id: crate::texture::TextureId(0),
                 src: Rect::ZERO,
                 dst: rect,
                 blend_mode: crate::primitives::BlendMode::SrcOver,
-            }
+            }]
         },
     }
 }
@@ -215,8 +261,8 @@ pub fn build_scene_from_paint_data(
         }
 
         for op in &layer.operations {
-            let cmd = paint_op_to_draw_command_inner(op, text_renderer);
-            commands.push(cmd);
+            let cmds = paint_op_to_draw_command_inner(op, text_renderer);
+            commands.extend(cmds);
         }
 
         // 后 PopTransform（如果有）——与 Push 顺序相反
@@ -315,7 +361,7 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     text_renderer: Option<&crate::text_renderer::TextRenderer>,
 ) {
     let widget_id = view.id.unwrap_or_else(|| {
-        eprintln!(
+        log::warn!(target: "rgui::render",
             "[rgui] walk_view_tree: WidgetView.id 缺失，widget_type=\"{}\"，回退到 WidgetId(0)",
             view.widget_type
         );
@@ -336,7 +382,7 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
             })
         })
         .unwrap_or_else(|| {
-            eprintln!(
+            log::warn!(target: "rgui::render",
                 "[rgui] walk_view_tree: 布局引擎无 WidgetId({widget_id:?}) (widget_type=\"{}\") 的缓存，回退到 Rect::ZERO",
                 view.widget_type
             );
@@ -351,9 +397,18 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
         paint_fn(view, bounds)
     };
 
-    let mut commands = Vec::with_capacity(ops.len());
+    let mut commands = Vec::with_capacity(ops.len() * 3);
     for op in &ops {
-        commands.push(paint_op_to_draw_command_inner(op, text_renderer));
+        commands.extend(paint_op_to_draw_command_inner(op, text_renderer));
+    }
+
+    // 手动将 bounds.origin offset 应用到 commands（绕过 Vello push_layer transform bug）
+    let offset_dx = bounds.origin.x as f32;
+    let offset_dy = bounds.origin.y as f32;
+    if offset_dx.abs() > f32::EPSILON || offset_dy.abs() > f32::EPSILON {
+        for cmd in &mut commands {
+            offset_draw_command(cmd, offset_dx, offset_dy);
+        }
     }
 
     // 从 props 读取 z-index，未指定时回退到 DFS 顺序计数
@@ -454,9 +509,9 @@ fn compute_widget_commands<M: rgui_core::traits::AppMessage>(
     } else {
         paint_fn(view, bounds)
     };
-    let mut commands = Vec::with_capacity(ops.len());
+    let mut commands = Vec::with_capacity(ops.len() * 3);
     for op in &ops {
-        commands.push(paint_op_to_draw_command_inner(op, text_renderer));
+        commands.extend(paint_op_to_draw_command_inner(op, text_renderer));
     }
     commands
 }
@@ -479,7 +534,7 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
     paint_cache: &mut PaintCache,
 ) {
     let widget_id = view.id.unwrap_or_else(|| {
-        eprintln!(
+        log::warn!(target: "rgui::render",
             "[rgui] walk_view_tree_incremental: WidgetView.id 缺失，widget_type=\"{}\"，回退到 WidgetId(0)",
             view.widget_type
         );
@@ -500,7 +555,7 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
             })
         })
         .unwrap_or_else(|| {
-            eprintln!(
+            log::warn!(target: "rgui::render",
                 "[rgui] walk_view_tree_incremental: 布局引擎无 WidgetId({widget_id:?}) (widget_type=\"{}\") 的缓存，回退到 Rect::ZERO",
                 view.widget_type
             );
@@ -509,6 +564,11 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
 
     // 判断是否为脏 widget
     let is_dirty = dirty_widgets.is_none_or(|dirty| dirty.contains(&widget_id));
+
+    log::debug!(target: "rgui::render",
+        "[rgui] 组件渲染(增量): id={widget_id:?}, type=\"{}\", bounds=({:.1}, {:.1}, {:.1}x{:.1}), dirty={}",
+        view.widget_type, bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height, is_dirty
+    );
 
     let commands = if is_dirty {
         // 脏：正常调用 paint_fn 生成新绘制指令
@@ -719,6 +779,27 @@ fn has_str_prop(
     )
 }
 
+/// 根据 `heading_level` 计算 AccordionItem 标题栏高度。
+///
+/// 与 `accordionitem.rhai` L15-22 的映射保持同步：
+/// - font_size 映射：h1→28, h2→24, h3→20, h4→18, h5→16, h6→14
+/// - header_h = font_size + pad_v(12) * 2 = font_size + 24.0
+///
+/// 同步契约：修改 rhai 侧 heading_level→font_size 映射时，必须同步更新本函数。
+/// 无效/缺失 heading_level → 回退 h3=44.0（与 rhai L16 `default "3"` 一致）。
+fn accordion_header_height(heading_level: Option<&str>) -> f32 {
+    let font_size = match heading_level {
+        Some("1") => 28.0,
+        Some("2") => 24.0,
+        Some("3") => 20.0,
+        Some("4") => 18.0,
+        Some("5") => 16.0,
+        Some("6") => 14.0,
+        _ => 20.0, // 无效/缺失 → 回退 h3
+    };
+    font_size + 24.0 // pad_v(12) * 2
+}
+
 /// 从 `WidgetView.props` 中提取 CSS 布局属性并转换为 Taffy `Style`。
 ///
 /// 首先根据 `widget_type` 注入默认布局样式（如 Center→flex+center、Column→flex+column），
@@ -884,19 +965,76 @@ fn extract_taffy_style(
         }
     }
 
-    // 第四步：WaAccordionItem 内容面板高度——有 content 时始终预留空间，
-    // 避免折叠/展开导致布局变化，使 hit_test rect 失效。
+    // 第四步：WaAccordionItem 内容面板高度（Tier 1 回退路径）
+    // 有 content 时始终预留空间，避免折叠/展开布局变化导致 hit_test rect 失效。
+    // 注意：此路径在当前 Tier 2 架构中实际不被触发（组件已迁移到 .rgui+.rhai），
+    // 保留作为 Tier 1 回退的稳定基线。不做修改。
     if widget_type == "WaAccordionItem" && has_str_prop(props, "content") {
         let content_h: f32 = 64.0;
         style.min_size.height = taffy::Dimension::Length(44.0 + content_h);
     }
 
-    // Tier 2 组件 min_height —— paint 脚本无 Taffy 固有尺寸，
-    // 通过 _rhai_path 识别展开后的节点并提供最小高度。
+    // 第五步：Tier 2 组件 min_height —— 基于 expanded prop 动态计算。
+    // 通过 _rhai_path 识别 AccordionItem Tier 2 节点，读取 expanded/content/heading_level
+    // props 决定布局高度：折叠→header_h，展开→header_h + 64.0（content 非空时）。
     if let Some(rgui_core::view::PropValue::Str(rhai_path)) = props.get("_rhai_path") {
         let rhai = rhai_path.as_ref();
         if rhai.contains("accordionitem") {
-            style.min_size.height = taffy::Dimension::Length(108.0);
+            // 读取 heading_level（默认 h3）
+            let heading_level =
+                props
+                    .get("heading_level")
+                    .and_then(|v| match v {
+                        rgui_core::view::PropValue::Str(s) => Some(s.as_ref()),
+                        _ => None,
+                    });
+            let header_h = accordion_header_height(heading_level);
+
+            // 读取 expanded prop（默认 false = 折叠）
+            let expanded = props
+                .get("expanded")
+                .and_then(|v| match v {
+                    rgui_core::view::PropValue::Bool(b) => Some(*b),
+                    _ => None,
+                })
+                .unwrap_or(false);
+
+            // 读取 content 字符串
+            let content_str = props.get("content").and_then(|v| match v {
+                rgui_core::view::PropValue::Str(s) => {
+                    if s.is_empty() { None } else { Some(s.as_ref()) }
+                }
+                _ => None,
+            });
+
+            if expanded {
+                if let Some(content) = content_str {
+                    // 动态估算 content 面板高度
+                    // 参数对齐 accordionitem.rhai: pad_h=16.0, pad_v=12.0, font_size=14.0
+                    let content_panel_h: f32 = if let Some(tr) = text_renderer {
+                        // 获取估算宽度：优先 props.width，其次默认 400.0
+                        let estimated_width = get_f32("width").unwrap_or(400.0);
+                        let pad_h: f32 = 16.0;
+                        // 估算内容宽度（对齐 rhai L65: width - (pad_h + 4.0) * 2）
+                        let content_width = estimated_width - (pad_h + 4.0) * 2.0;
+                        if content_width > 0.0 {
+                            let metrics = tr.measure_text_wrapped(content, content_width, 14.0);
+                            let pad_v: f32 = 12.0;
+                            let wrapped_h = metrics.wrapped_height + pad_v * 2.0;
+                            wrapped_h.max(40.0) // minimum_panel_height = 40.0
+                        } else {
+                            64.0 // 降级：估算宽度不足，回退旧行为
+                        }
+                    } else {
+                        64.0 // 降级：TextRenderer 不可用，回退旧行为
+                    };
+                    style.min_size.height = taffy::Dimension::Length(header_h + content_panel_h);
+                } else {
+                    style.min_size.height = taffy::Dimension::Length(header_h);
+                }
+            } else {
+                style.min_size.height = taffy::Dimension::Length(header_h);
+            }
         } else if rhai.contains("accordion.rhai") {
             style.min_size.height = taffy::Dimension::Length(44.0);
         }
@@ -1016,7 +1154,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         },
         // Label、Divider、SizedBox 等——无默认，由内容或 props 决定
         _ => {
-            eprintln!(
+            log::warn!(target: "rgui::render",
                 "[rgui] default_layout_for_type: 未知 widget_type=\"{widget_type}\"，回退到 Style::default() (0×0)"
             );
             Style::default()
@@ -1044,19 +1182,20 @@ mod tests {
             color: Color::RED,
             radius: 4.0,
         };
-        let cmd = paint_op_to_draw_command(&op);
+        let cmds = paint_op_to_draw_command(&op);
+        assert_eq!(cmds.len(), 1);
         assert!(matches!(
-            cmd,
+            &cmds[0],
             DrawCommand::FillRect {
                 rect: r,
                 color: c,
                 radius: 4.0,
-            } if r == rect && c == Color::RED
+            } if *r == rect && *c == Color::RED
         ));
     }
 
     #[test]
-    fn convert_draw_text() {
+    fn convert_draw_text_no_renderer_fallback() {
         let bounds = Rect::new(0.0, 0.0, 200.0, 30.0);
         let op = PaintOp::DrawText {
             text: "Hello".into(),
@@ -1064,9 +1203,35 @@ mod tests {
             color: Color::BLACK,
             font_size: 14.0,
         };
-        let cmd = paint_op_to_draw_command(&op);
-        // 当前阶段文本渲染使用 FillRect 占位
-        assert!(matches!(cmd, DrawCommand::FillRect { .. }));
+        let cmds = paint_op_to_draw_command(&op);
+        // 当前阶段文本渲染使用 FillRect 占位（Vec 单元素）
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], DrawCommand::FillRect { .. }));
+    }
+
+    #[test]
+    fn convert_draw_text_empty_text_no_renderer_returns_placeholder() {
+        // 无 TextRenderer 时：空文本仍返回透明 FillRect 占位（保持不变式）
+        let bounds = Rect::new(0.0, 0.0, 200.0, 30.0);
+        let op = PaintOp::DrawText {
+            text: String::new(),
+            bounds,
+            color: Color::BLACK,
+            font_size: 14.0,
+        };
+        let cmds = paint_op_to_draw_command(&op);
+        assert_eq!(cmds.len(), 1,
+            "无 TextRenderer 时空文本应返回透明 FillRect 占位（保持不变式）");
+        assert!(matches!(cmds[0], DrawCommand::FillRect { .. }));
+    }
+
+    #[test]
+    fn convert_draw_image_returns_single_element_vec() {
+        let rect = Rect::new(0.0, 0.0, 64.0, 64.0);
+        let op = PaintOp::DrawImage { rect };
+        let cmds = paint_op_to_draw_command(&op);
+        assert_eq!(cmds.len(), 1);
+        assert!(matches!(cmds[0], DrawCommand::DrawImage { .. }));
     }
 
     // --- build_scene_from_paint_data ---
@@ -2026,5 +2191,285 @@ mod tests {
 
         // Column + Label = 2 个图层
         assert_eq!(scene.layer_count(), 2);
+    }
+
+    // --- AccordionItem 布局高度测试 (Task 1.3) ---
+
+    #[test]
+    fn test_accordion_header_height_by_level() {
+        // 验证 heading_level → header_h 映射（与 accordionitem.rhai 同步）
+        assert_eq!(accordion_header_height(Some("1")), 52.0, "h1 → 52.0");
+        assert_eq!(accordion_header_height(Some("2")), 48.0, "h2 → 48.0");
+        assert_eq!(accordion_header_height(Some("3")), 44.0, "h3 → 44.0");
+        assert_eq!(accordion_header_height(Some("4")), 42.0, "h4 → 42.0");
+        assert_eq!(accordion_header_height(Some("5")), 40.0, "h5 → 40.0");
+        assert_eq!(accordion_header_height(Some("6")), 38.0, "h6 → 38.0");
+        // 无效/缺失 → 回退 h3=44.0
+        assert_eq!(accordion_header_height(Some("7")), 44.0, "无效值回退 h3");
+        assert_eq!(accordion_header_height(Some("0")), 44.0, "\"0\" 回退 h3");
+        assert_eq!(accordion_header_height(Some("abc")), 44.0, "非数字回退 h3");
+        assert_eq!(accordion_header_height(None), 44.0, "None 回退 h3");
+    }
+
+    /// 辅助函数：创建带 _rhai_path 和可选 props 的 props map
+    fn make_accordion_props(
+        heading_level: Option<&str>,
+        expanded: Option<bool>,
+        content: Option<&str>,
+    ) -> std::collections::BTreeMap<&'static str, rgui_core::view::PropValue> {
+        let mut props = std::collections::BTreeMap::new();
+        // _rhai_path 设置为 accordionitem 以触发 Tier 2 路径
+        props.insert(
+            "_rhai_path",
+            rgui_core::view::PropValue::Str(std::sync::Arc::from(
+                "rgui-components/src/accordionitem.rhai",
+            )),
+        );
+        if let Some(hl) = heading_level {
+            props.insert("heading_level", rgui_core::view::PropValue::Str(std::sync::Arc::from(hl)));
+        }
+        if let Some(exp) = expanded {
+            props.insert("expanded", rgui_core::view::PropValue::Bool(exp));
+        }
+        if let Some(c) = content {
+            props.insert("content", rgui_core::view::PropValue::Str(std::sync::Arc::from(c)));
+        }
+        props
+    }
+
+    #[test]
+    fn test_accordion_item_collapsed_min_height() {
+        // 折叠态 h3 → 44.0
+        let props = make_accordion_props(Some("3"), Some(false), Some("some content"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "折叠态 min_height 应为 header_h (h3=44.0)"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_expanded_min_height() {
+        // 展开态 h3 + content → 44.0 + 64.0 = 108.0
+        let props = make_accordion_props(Some("3"), Some(true), Some("some content"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(108.0),
+            "展开态 min_height 应为 header_h + 64.0 (h3=44.0+64.0=108.0)"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_empty_content() {
+        // expanded=true 但 content="" → 同折叠态 header_h
+        let props = make_accordion_props(Some("3"), Some(true), Some(""));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "content 为空时不应预留内容面板高度"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_h2_collapsed() {
+        // h2 折叠态 → 48.0
+        let props = make_accordion_props(Some("2"), Some(false), Some("text"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(48.0),
+            "h2 折叠态 → 48.0"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_h6_collapsed() {
+        // h6 折叠态 → 38.0
+        let props = make_accordion_props(Some("6"), Some(false), Some("text"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(38.0),
+            "h6 折叠态 → 38.0"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_missing_expanded_defaults_collapsed() {
+        // expanded prop 缺失 → 默认折叠 (header_h only)
+        let props = make_accordion_props(Some("3"), None, Some("text"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "expanded 缺失时应默认折叠"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_missing_heading_defaults_h3() {
+        // heading_level 缺失 → 回退 h3=44.0
+        let props = make_accordion_props(None, Some(false), Some("text"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "heading_level 缺失时回退 h3=44.0"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_content_missing_no_panel() {
+        // expanded=true 但 content prop 缺失 → 不预留内容面板高度
+        let props = make_accordion_props(Some("3"), Some(true), None);
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "content prop 缺失时不预留内容面板高度"
+        );
+    }
+
+    // --- Task 3: 动态高度估算测试 ---
+
+    /// 辅助：创建 TextRenderer 用于动态高度估算测试
+    fn make_text_renderer() -> TextRenderer {
+        TextRenderer::new(crate::texture::TextureId(999))
+    }
+
+    #[test]
+    fn test_accordion_item_dynamic_short_text_min_panel() {
+        // Scenario: 短文字保持最小高度 (Requirement 3)
+        // content="Short"，在 content_width≈360px 下仅占一行
+        // wrapped_height ≈ 14.0*1.2 = 16.8, + pad_v*2(24.0) = 40.8, max(40.8, 40.0)=40.8
+        // header_h=44.0, min_height ≈ 44.0+40.8 = 84.8
+        let tr = make_text_renderer();
+        let props = make_accordion_props(Some("3"), Some(true), Some("Short"));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        let h = match style.min_size.height {
+            taffy::Dimension::Length(h) => h,
+            _ => panic!("expected Length"),
+        };
+        // header_h(44.0) + minimum_panel(40.0) <= h <= header_h(44.0) + short_panel(~41.0)
+        assert!(h >= 84.0 && h <= 90.0,
+            "短文字 min_height 应在 header_h+min_panel 附近，got {}", h);
+    }
+
+    #[test]
+    fn test_accordion_item_dynamic_long_text_expands() {
+        // Scenario: 长文字撑大组件高度 (Requirement 3)
+        // 多行文字，在 content_width≈360px、14px下需多行
+        let tr = make_text_renderer();
+        let long_text = "Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.";
+        let props = make_accordion_props(Some("3"), Some(true), Some(long_text));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        let h = match style.min_size.height {
+            taffy::Dimension::Length(h) => h,
+            _ => panic!("expected Length"),
+        };
+        // 长文字应 > header_h + 64.0 (旧硬编码)，因为需要更多行
+        assert!(h > 44.0 + 40.0,
+            "长文字 min_height 应 > header_h+min_panel，got {} (h3=44.0)", h);
+    }
+
+    #[test]
+    fn test_accordion_item_dynamic_collapsed_no_measure() {
+        // Scenario: 折叠状态不执行测量 (Requirement 3)
+        let tr = make_text_renderer();
+        let props = make_accordion_props(Some("3"), Some(false), Some("some long text that would wrap"));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "折叠态 min_height 应为 header_h，不执行测量"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_dynamic_empty_content_no_panel() {
+        // Scenario: 无 content 文字 (Requirement 3)
+        let tr = make_text_renderer();
+        let props = make_accordion_props(Some("3"), Some(true), Some(""));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0),
+            "空 content 时 min_height 应为 header_h"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_degradation_no_text_renderer() {
+        // Scenario: TextRenderer 不可用时降级 (Requirement 3)
+        // 回归旧行为 header_h + 64.0
+        let props = make_accordion_props(Some("3"), Some(true), Some("some content"));
+        let style = extract_taffy_style("Container", &props, None);
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0 + 64.0),
+            "TextRenderer 为 None 时应回退到 header_h + 64.0"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_degradation_zero_width() {
+        // Scenario: 估算宽度为 0 时降级 (content_width <= 0)
+        let tr = make_text_renderer();
+        let mut props = make_accordion_props(Some("3"), Some(true), Some("content"));
+        // 设置 width=0，使得 content_width = 0 - 40.0 < 0
+        props.insert("width", rgui_core::view::PropValue::from(0.0_f64));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        assert_eq!(
+            style.min_size.height,
+            taffy::Dimension::Length(44.0 + 64.0),
+            "估算宽度 <= 0 时应回退到 header_h + 64.0"
+        );
+    }
+
+    #[test]
+    fn test_accordion_item_dynamic_with_explicit_width() {
+        // Scenario: 使用 props 中的显式 width 进行估算
+        let tr = make_text_renderer();
+        let mut props = make_accordion_props(Some("3"), Some(true), Some("Hello World"));
+        // 设置窄宽度，使文字换行
+        props.insert("width", rgui_core::view::PropValue::from(120.0_f64));
+        let style = extract_taffy_style("Container", &props, Some(&tr));
+        let h = match style.min_size.height {
+            taffy::Dimension::Length(h) => h,
+            _ => panic!("expected Length"),
+        };
+        // content_width = 120 - 40 = 80, 窄宽度会换多行
+        // 至少 > header_h + min_panel
+        assert!(h > 44.0 + 40.0,
+            "窄宽度下文字换行，min_height 应 > header_h+min_panel，got {}", h);
+    }
+}
+
+/// 手动 offset DrawCommand 中的坐标（绕过 Vello push_layer transform bug）。
+/// 处理 FillRect、DrawGlyphs、DrawImage、PushClip 的坐标偏移。
+fn offset_draw_command(cmd: &mut DrawCommand, dx: f32, dy: f32) {
+    match cmd {
+        DrawCommand::FillRect { rect, .. } => {
+            rect.origin.x += dx as f64;
+            rect.origin.y += dy as f64;
+        }
+        DrawCommand::DrawGlyphs { glyphs, .. } => {
+            for g in glyphs.iter_mut() {
+                g.offset_x += dx;
+                g.offset_y += dy;
+            }
+        }
+        DrawCommand::DrawImage { dst, .. } => {
+            dst.origin.x += dx as f64;
+            dst.origin.y += dy as f64;
+        }
+        DrawCommand::PushClip { rect } => {
+            rect.origin.x += dx as f64;
+            rect.origin.y += dy as f64;
+        }
+        _ => {}
     }
 }
