@@ -29,6 +29,8 @@ fn paint_fn_impl<M: AppMessage>(_store: Option<WidgetStateStore>) -> PaintFn<M> 
                         .get("label")
                         .and_then(|v| match v {
                             PropValue::Str(s) => Some(s.to_string()),
+                            PropValue::Int(i) => Some(i.to_string()),
+                            PropValue::Float(f) => Some(f.0.to_string()),
                             _ => None,
                         })
                         .unwrap_or_default();

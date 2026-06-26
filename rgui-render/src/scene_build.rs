@@ -841,6 +841,17 @@ fn extract_taffy_style(
         }
     };
 
+    /// 提取 label/text 属性文本，兼容 Str/Int/Float 类型。
+    /// 返回 `Option<String>`（持有临时 String），与 `get_str` 语义等价但覆盖数值类型。
+    let get_label_text = |key: &str| -> Option<String> {
+        match props.get(key) {
+            Some(PropValue::Str(s)) => Some(s.to_string()),
+            Some(PropValue::Int(i)) => Some(i.to_string()),
+            Some(PropValue::Float(f)) => Some(f.0.to_string()),
+            _ => None,
+        }
+    };
+
     let get_f32 = |key: &str| -> Option<f32> {
         match props.get(key) {
             Some(PropValue::Float(f)) => Some(f.0 as f32),
@@ -903,7 +914,7 @@ fn extract_taffy_style(
         let has_explicit_height = props.get("height").is_some();
 
         if !has_explicit_width || !has_explicit_height {
-            if let Some(text) = get_str("label").or(get_str("text")) {
+            if let Some(text) = get_label_text("label").or(get_label_text("text")) {
                 // Noto Sans CJK SC Regular: ascent=1.160, descent=-0.288 → em_height=1.448
                 let em_height: f32 = 1.448;
 
@@ -947,7 +958,7 @@ fn extract_taffy_style(
                 if !has_explicit_width {
                     let font_size = final_height * paint_font_ratio;
                     let content_width: f32 = if let Some(tr) = text_renderer {
-                        let text_px = tr.measure_text(text, font_size);
+                        let text_px = tr.measure_text(&text, font_size);
                         let pad_w: f32 = if widget_type == "WaButton" {
                             32.0
                         } else if widget_type == "WaBreadcrumbItem" {
