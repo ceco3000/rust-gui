@@ -18,12 +18,11 @@
 
 // 模块声明
 pub mod a11y;
-pub mod coord_chain;
-pub mod interaction;
-pub mod widget_state;
 pub mod context;
+pub mod coord_chain;
 pub mod geometry;
 pub mod id;
+pub mod interaction;
 pub mod locale;
 pub mod message;
 pub mod registry;
@@ -31,6 +30,7 @@ pub mod state_binding;
 pub mod traits;
 pub mod view;
 pub mod widget_id_map;
+pub mod widget_state;
 
 // 标识符
 pub use id::{NodeHandle, WidgetId, WindowId};

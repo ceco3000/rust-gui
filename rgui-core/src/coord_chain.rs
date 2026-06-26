@@ -34,7 +34,7 @@ impl CoordinateTransformChain {
         self.steps.iter().fold(point, |current, step| match step {
             CoordinateTransformStep::Translate { offset } => {
                 Point::new(current.x - offset.x, current.y - offset.y)
-            }
+            },
         })
     }
 
@@ -44,7 +44,7 @@ impl CoordinateTransformChain {
         self.steps.iter().fold(point, |current, step| match step {
             CoordinateTransformStep::Translate { offset } => {
                 Point::new(current.x + offset.x, current.y + offset.y)
-            }
+            },
         })
     }
 }

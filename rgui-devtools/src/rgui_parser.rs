@@ -191,13 +191,8 @@ pub fn parse_rgui_file<M: AppMessage>(path: &Path) -> Result<WidgetView<M>, Rgui
 /// 通过编译期 `CARGO_MANIFEST_DIR` 推导 workspace 根目录，
 /// 定位到 `rgui-components/src/`。如果路径不存在则返回 `None`。
 fn framework_components_dir() -> Option<std::path::PathBuf> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../rgui-components/src");
-    if dir.is_dir() {
-        Some(dir)
-    } else {
-        None
-    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../rgui-components/src");
+    if dir.is_dir() { Some(dir) } else { None }
 }
 
 /// 从 `.rgui` 文件解析为 WidgetView 树（不执行 Tier 2 扫描）。

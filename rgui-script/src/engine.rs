@@ -268,7 +268,9 @@ mod tests {
         scope.push("x", 42_i64);
         // Now mutable borrow is fine
         engine.engine_mut().register_fn("double", |x: i64| x * 2);
-        engine.run_with_scope(&mut scope, "let y = x + double(1);").unwrap();
+        engine
+            .run_with_scope(&mut scope, "let y = x + double(1);")
+            .unwrap();
         let y: i64 = scope.get_value::<i64>("y").unwrap();
         assert_eq!(y, 44);
     }

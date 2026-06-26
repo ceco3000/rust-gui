@@ -17,7 +17,11 @@ use rgui_layout::LayoutEngine;
 ///
 /// 识别 Tier 2 展开后的节点（通过 `_rhai_path` prop），自动注册 toggle handler
 /// 和 mode 协调逻辑。应在 `init_widget_instances` 之后调用。
-pub fn init(app: &mut impl InteractionHost, view: &WidgetView<impl AppMessage>, layout: &LayoutEngine) {
+pub fn init(
+    app: &mut impl InteractionHost,
+    view: &WidgetView<impl AppMessage>,
+    layout: &LayoutEngine,
+) {
     let mut ctx = AccordionContext::default();
     collect_accordion_nodes(view, layout, &mut ctx);
     register_mode_coordination(app, &ctx);
@@ -52,7 +56,9 @@ fn collect_recursive<M: AppMessage>(
     if let Some(id) = view.id {
         if is_accordion {
             let mode = read_mode(view);
-            ctx.containers.entry(id).or_insert_with(|| (mode, Vec::new()));
+            ctx.containers
+                .entry(id)
+                .or_insert_with(|| (mode, Vec::new()));
         }
         if is_item {
             if let Some(acc_id) = current_accordion {
@@ -64,7 +70,11 @@ fn collect_recursive<M: AppMessage>(
         }
     }
 
-    let next = if is_accordion { view.id } else { current_accordion };
+    let next = if is_accordion {
+        view.id
+    } else {
+        current_accordion
+    };
     for child in &view.children {
         collect_recursive(child, ctx, next);
     }
@@ -92,39 +102,46 @@ fn register_mode_coordination(app: &mut impl InteractionHost, ctx: &AccordionCon
         for &item_id in &item_ids {
             // 重写 handler——替换 register_event_handlers 注册的独立 toggle handler，
             // 实现 mode 协调（这是有意为之的覆盖行为）。
-            let sibling_ids: Vec<WidgetId> = item_ids.iter().filter(|&&id| id != item_id).copied().collect();
+            let sibling_ids: Vec<WidgetId> = item_ids
+                .iter()
+                .filter(|&&id| id != item_id)
+                .copied()
+                .collect();
             let s = store.clone();
             let m = mode.clone();
 
-            app.register_widget_instance(item_id, Box::new(move |_action, _ctx| {
-                match m.as_str() {
-                    "single" => {
-                        let was_expanded = s.read::<bool>(item_id).unwrap_or(false);
-                        if !was_expanded {
-                            for &sid in &sibling_ids {
-                                s.insert(sid, false);
+            app.register_widget_instance(
+                item_id,
+                Box::new(move |_action, _ctx| {
+                    match m.as_str() {
+                        "single" => {
+                            let was_expanded = s.read::<bool>(item_id).unwrap_or(false);
+                            if !was_expanded {
+                                for &sid in &sibling_ids {
+                                    s.insert(sid, false);
+                                }
+                                s.insert(item_id, true);
                             }
-                            s.insert(item_id, true);
-                        }
-                    }
-                    "single-collapsible" => {
-                        let was_expanded = s.read::<bool>(item_id).unwrap_or(false);
-                        if was_expanded {
-                            s.insert(item_id, false);
-                        } else {
-                            for &sid in &sibling_ids {
-                                s.insert(sid, false);
+                        },
+                        "single-collapsible" => {
+                            let was_expanded = s.read::<bool>(item_id).unwrap_or(false);
+                            if was_expanded {
+                                s.insert(item_id, false);
+                            } else {
+                                for &sid in &sibling_ids {
+                                    s.insert(sid, false);
+                                }
+                                s.insert(item_id, true);
                             }
-                            s.insert(item_id, true);
-                        }
+                        },
+                        _ => {
+                            let expanded = s.read::<bool>(item_id).unwrap_or(false);
+                            s.insert(item_id, !expanded);
+                        },
                     }
-                    _ => {
-                        let expanded = s.read::<bool>(item_id).unwrap_or(false);
-                        s.insert(item_id, !expanded);
-                    }
-                }
-                EventResult::Handled
-            }));
+                    EventResult::Handled
+                }),
+            );
         }
     }
 }
@@ -134,20 +151,32 @@ fn register_mode_coordination(app: &mut impl InteractionHost, ctx: &AccordionCon
 // ═══════════════════════════════════════
 
 fn is_accordion_container<M: AppMessage>(view: &WidgetView<M>) -> bool {
-    view.props.get("_rhai_path")
-        .and_then(|v| match v { PropValue::Str(s) => Some(s.as_ref().contains("accordion.rhai")), _ => None })
+    view.props
+        .get("_rhai_path")
+        .and_then(|v| match v {
+            PropValue::Str(s) => Some(s.as_ref().contains("accordion.rhai")),
+            _ => None,
+        })
         .unwrap_or(false)
 }
 
 fn is_accordion_item<M: AppMessage>(view: &WidgetView<M>) -> bool {
-    view.props.get("_rhai_path")
-        .and_then(|v| match v { PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")), _ => None })
+    view.props
+        .get("_rhai_path")
+        .and_then(|v| match v {
+            PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")),
+            _ => None,
+        })
         .unwrap_or(false)
 }
 
 #[allow(dead_code)]
 fn read_mode<M: AppMessage>(view: &WidgetView<M>) -> String {
-    view.props.get("mode")
-        .and_then(|v| match v { PropValue::Str(s) => Some(s.to_string()), _ => None })
+    view.props
+        .get("mode")
+        .and_then(|v| match v {
+            PropValue::Str(s) => Some(s.to_string()),
+            _ => None,
+        })
         .unwrap_or_else(|| "multiple".to_string())
 }
