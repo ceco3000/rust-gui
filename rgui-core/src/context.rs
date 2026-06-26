@@ -213,16 +213,16 @@ impl Default for MeasureContext {
     }
 }
 
-/// 默认字体度量缓存（Inter Regular）。
+/// 默认字体度量缓存（Noto Sans CJK SC Regular）。
 ///
-/// 使用硬编码的 Inter Regular 字体度量值。这些值与嵌入的
-/// Inter-Regular.ttf 完全匹配。
+/// 使用实测的 Noto Sans CJK SC Regular 字体度量值。这些值与嵌入的
+/// NotoSansCJKsc-Regular.otf 完全匹配。
 static FONT_METRICS_CACHE_DEFAULT: FontMetricsCache = FontMetricsCache::new(FontMetrics::new(
-    0.96875,  // ascent:  2728/2816
-    -0.22727, // descent: -640/2816
-    0.0,      // line_gap: 0/2816
-    0.54545,  // x_height: 1536/2816
-    0.72727,  // cap_height: 2048/2816
+    1.160,  // ascent:  1160/1000
+    -0.288, // descent: -288/1000
+    0.0,    // line_gap: 0/1000
+    0.543,  // x_height: 543/1000
+    0.733,  // cap_height: 733/1000
 ));
 
 // ============================================================================
@@ -499,8 +499,8 @@ mod tests {
     #[test]
     fn measure_context_has_font_metrics() {
         let ctx = MeasureContext::default();
-        assert!((ctx.font_metrics.default_metrics.ascent - 0.96875).abs() < 0.001);
-        assert!((ctx.font_metrics.default_metrics.descent - (-0.22727)).abs() < 0.001);
+        assert!((ctx.font_metrics.default_metrics.ascent - 1.160).abs() < 0.001);
+        assert!((ctx.font_metrics.default_metrics.descent - (-0.288)).abs() < 0.001);
     }
 
     #[test]
@@ -579,11 +579,11 @@ mod tests {
     }
 
     #[test]
-    fn default_font_metrics_cache_is_inter_regular() {
+    fn default_font_metrics_cache_is_noto_cjk() {
         let ctx = MeasureContext::default();
         let m = ctx.font_metrics.default_metrics;
-        // Inter Regular metrics
-        assert!((m.ascent - 0.96875).abs() < 0.01);
+        // Noto Sans CJK SC Regular metrics
+        assert!((m.ascent - 1.160).abs() < 0.01);
         assert!(m.descent < -0.2);
         assert!(m.x_height > 0.4);
         assert!(m.cap_height > 0.6);

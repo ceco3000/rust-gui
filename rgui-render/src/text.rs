@@ -116,7 +116,13 @@ impl TextEngine {
     /// `Vec<ShapedGlyph>` — 每个字形的塑形信息，包含用于 atlas 查询的
     /// `GlyphKey`、布局位置数据和 `line_index`（可视行索引）。
     #[must_use]
-    pub fn shape_text(&mut self, text: &str, font_size: f32, attrs: Attrs<'_>, max_width: Option<f32>) -> Vec<ShapedGlyph> {
+    pub fn shape_text(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        attrs: Attrs<'_>,
+        max_width: Option<f32>,
+    ) -> Vec<ShapedGlyph> {
         let metrics = Metrics {
             font_size,
             line_height: font_size * 1.2,
@@ -531,5 +537,88 @@ mod tests {
             glyphs[0].key.font_id, glyphs[1].key.font_id,
             "同一字体的字形应有相同内部 font_id"
         );
+    }
+
+    // ================================================================
+    // CJK 文本渲染测试（SubTask 4.1）
+    // ================================================================
+
+    /// 验证 CJK 文本 "你好世界" 塑形产生至少 4 个字形，每个 advance > 0。
+    #[test]
+    fn shape_cjk_text_produces_glyphs() {
+        let mut engine = TextEngine::new();
+        let glyphs = engine.shape_text("你好世界", 24.0, Attrs::new(), None);
+        assert!(
+            glyphs.len() >= 4,
+            "CJK 文本 '你好世界' 应产生至少 4 个字形，实际得到 {} 个",
+            glyphs.len()
+        );
+        for g in &glyphs {
+            assert!(
+                g.advance > 0.0,
+                "CJK 字形 advance 应大于 0，实际 {}",
+                g.advance
+            );
+        }
+    }
+
+    /// 验证 CJK 字符 "中" 光栅化产生有效位图（width > 0 && height > 0）。
+    #[test]
+    fn rasterize_cjk_glyph() {
+        let mut engine = TextEngine::new();
+        let glyphs = engine.shape_text("中", 32.0, Attrs::new(), None);
+        assert!(!glyphs.is_empty(), "CJK 字符 '中' 应产生字形");
+
+        let rasterized = engine.rasterize_glyph(&glyphs[0].key);
+        assert!(rasterized.is_some(), "CJK 字符 '中' 应可光栅化");
+
+        let rasterized = rasterized.unwrap();
+        assert!(
+            rasterized.width > 0 && rasterized.height > 0,
+            "CJK 字形光栅化尺寸应大于 0，实际 {}x{}",
+            rasterized.width,
+            rasterized.height
+        );
+    }
+
+    /// 验证混合 Latin + CJK 文本塑形，glyph_id 均非 NOTDEF。
+    #[test]
+    fn shape_mixed_latin_cjk() {
+        let mut engine = TextEngine::new();
+        let glyphs = engine.shape_text("你好 World", 24.0, Attrs::new(), None);
+        assert!(
+            glyphs.len() >= 4,
+            "混合文本 '你好 World' 应产生至少 4 个字形，实际得到 {} 个",
+            glyphs.len()
+        );
+        // 验证所有字形 glyph_id 不为 NOTDEF (0)
+        for g in &glyphs {
+            assert_ne!(g.key.glyph_id, 0, "字形 glyph_id 不应为 NOTDEF(0)");
+        }
+    }
+
+    /// 验证空字符串塑形返回空列表。
+    #[test]
+    fn shape_empty_text() {
+        let mut engine = TextEngine::new();
+        let glyphs = engine.shape_text("", 24.0, Attrs::new(), None);
+        assert!(glyphs.is_empty(), "空字符串不应产生字形");
+    }
+
+    /// 验证不支持字符（Emoji/数学符号）回退：不 panic，advance 正常。
+    #[test]
+    fn unsupported_char_fallback() {
+        let mut engine = TextEngine::new();
+        let glyphs = engine.shape_text("😀∑", 24.0, Attrs::new(), None);
+        // 塑形不 panic，且应产生字形（即使是 NOTDEF）
+        assert!(!glyphs.is_empty(), "不支持字符也应产生字形（NOTDEF）");
+        for g in &glyphs {
+            // advance 应合理（> 0，即使 NOTDEF 也有推进距离）
+            assert!(
+                g.advance > 0.0,
+                "NOTDEF 字形 advance 应大于 0，实际 {}",
+                g.advance
+            );
+        }
     }
 }

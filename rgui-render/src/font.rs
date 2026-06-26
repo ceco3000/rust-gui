@@ -17,9 +17,7 @@
 //!
 //! | 字体 | 用途 | 文件 |
 //! |------|------|------|
-//! | Inter | 拉丁/数字 UI 字体 | `Inter-Regular.ttf`, `Inter-Bold.ttf` |
-//! | Noto Sans CJK SC | 中日韩字符 | `NotoSansCJKsc-Regular.otf`（可选） |
-//! | Noto Color Emoji | Emoji | `NotoColorEmoji.ttf`（可选） |
+//! | Noto Sans CJK SC | 拉丁+中日韩统一字体 | `NotoSansCJKsc-Regular.otf` |
 //!
 //! # Feature flags
 //!
@@ -45,25 +43,16 @@ pub struct EmbeddedFont {
 
 /// 内置嵌入字体列表。
 ///
-/// 当前包含 Inter Regular + Inter Bold 两种字重。
-/// 条目按 `(family, weight)` 排序，先普通后粗体。
+/// 当前包含 Noto Sans CJK SC Regular 单字体。
+/// 条目包含拉丁和 CJK 全覆盖字形。
 pub static EMBEDDED_FONTS: &[EmbeddedFont] = &[
-    // -- Inter Latin UI 字体 --
+    // -- Noto Sans CJK SC 统一字体（拉丁 + CJK） --
     EmbeddedFont {
-        data: include_bytes!("../../assets/fonts/Inter-Regular.ttf"),
-        family: "Inter",
+        data: include_bytes!("../../assets/fonts/NotoSansCJKsc-Regular.otf"),
+        family: "Noto Sans CJK SC",
         weight: 400,
         style: fontdb::Style::Normal,
     },
-    EmbeddedFont {
-        data: include_bytes!("../../assets/fonts/Inter-Bold.ttf"),
-        family: "Inter",
-        weight: 700,
-        style: fontdb::Style::Normal,
-    },
-    // -- Noto Sans CJK SC + Noto Color Emoji（未来扩展）--
-    // 当字体文件准备就绪后，在此处添加条目并使用 `#[cfg(feature = "embed-all-fonts")]` 控制编译。
-    // CJK 和 Emoji 字体体积较大（各约 10-15MB），通过 feature flag 控制以减小默认二进制体积。
 ];
 
 /// 将所有嵌入字体注册到 `fontdb::Database`。
@@ -114,25 +103,17 @@ mod tests {
     }
 
     #[test]
-    fn inter_regular_is_present() {
-        let has_inter_regular = EMBEDDED_FONTS
-            .iter()
-            .any(|f| f.family == "Inter" && f.weight == 400 && f.style == fontdb::Style::Normal);
-        assert!(has_inter_regular, "Inter Regular should be embedded");
+    fn noto_cjk_is_present() {
+        let has_noto_cjk = EMBEDDED_FONTS.iter().any(|f| {
+            f.family == "Noto Sans CJK SC" && f.weight == 400 && f.style == fontdb::Style::Normal
+        });
+        assert!(has_noto_cjk, "Noto Sans CJK SC Regular should be embedded");
     }
 
     #[test]
-    fn inter_bold_is_present() {
-        let has_inter_bold = EMBEDDED_FONTS
-            .iter()
-            .any(|f| f.family == "Inter" && f.weight == 700 && f.style == fontdb::Style::Normal);
-        assert!(has_inter_bold, "Inter Bold should be embedded");
-    }
-
-    #[test]
-    fn embedded_font_data_is_valid_ttf() {
-        // 验证嵌入字体数据至少有最小的有效 TTF 头部
-        // TrueType 字体以 0x00010000 或 0x74727565 ('true') 开头
+    fn embedded_font_data_is_valid_otf() {
+        // 验证嵌入字体数据至少有最小的有效 OTF 头部
+        // OpenType 字体以 'OTTO' (0x4f54544f) 开头
         for font in EMBEDDED_FONTS {
             assert!(
                 font.data.len() > 12,
@@ -199,20 +180,20 @@ mod tests {
 
     #[test]
     fn embedded_font_metadata_matches_data() {
-        // 验证 Inter Regular 的数据长度在合理范围内
-        let inter_reg = EMBEDDED_FONTS
+        // 验证 Noto Sans CJK SC Regular 的数据长度在合理范围内（OTF 约 16MB）
+        let noto_cjk = EMBEDDED_FONTS
             .iter()
-            .find(|f| f.family == "Inter" && f.weight == 400)
-            .expect("Inter Regular should exist");
+            .find(|f| f.family == "Noto Sans CJK SC" && f.weight == 400)
+            .expect("Noto Sans CJK SC Regular should exist");
         assert!(
-            inter_reg.data.len() > 100_000,
-            "Inter Regular should be at least 100KB, got {} bytes",
-            inter_reg.data.len()
+            noto_cjk.data.len() > 10_000_000,
+            "Noto Sans CJK SC should be at least 10MB, got {} bytes",
+            noto_cjk.data.len()
         );
         assert!(
-            inter_reg.data.len() < 2_000_000,
-            "Inter Regular should be under 2MB, got {} bytes",
-            inter_reg.data.len()
+            noto_cjk.data.len() < 25_000_000,
+            "Noto Sans CJK SC should be under 25MB, got {} bytes",
+            noto_cjk.data.len()
         );
     }
 
@@ -222,18 +203,18 @@ mod tests {
         // fontdb::Database::faces() 返回 impl Iterator<Item = &FaceInfo>
         let faces: Vec<_> = db.faces().collect();
         // FaceInfo.families 是 Vec<(String, Language)> — (font_family, language)
-        let inter_faces: Vec<_> = faces
+        let noto_cjk_faces: Vec<_> = faces
             .iter()
             .filter(|face| {
                 face.families
                     .iter()
-                    .any(|(name, _lang)| name.contains("Inter"))
+                    .any(|(name, _lang)| name.contains("Noto Sans CJK"))
             })
             .collect();
         assert!(
-            inter_faces.len() >= 2,
-            "should have at least 2 Inter faces (Regular + Bold), got {}",
-            inter_faces.len()
+            !noto_cjk_faces.is_empty(),
+            "should have at least 1 Noto Sans CJK SC face, got {}",
+            noto_cjk_faces.len()
         );
     }
 }

@@ -2,13 +2,13 @@
 //!
 //! 与 cosmic-text TextEngine 并行存在：
 //! - TextEngine（cosmic-text）：CJK 回退、系统字体支持（未来使用）
-//! - SkrifaShaper（本模块）：拉丁文字塑形，产出 vello 兼容的 glyph ID
+//! - SkrifaShaper（本模块）：拉丁+CJK 文字塑形，产出 vello 兼容的 glyph ID
 
 use skrifa::{GlyphId, MetadataProvider};
 
 /// skrifa 文本塑形器。
 ///
-/// 从嵌入的 Inter 字体创建，提供拉丁文字的基本塑形能力。
+/// 从嵌入的 Noto CJK 字体创建，提供拉丁+CJK 文字塑形能力。
 pub struct SkrifaShaper {
     font_ref: skrifa::FontRef<'static>, // 从 include_bytes! 创建，'static 生命周期
 }
@@ -18,9 +18,9 @@ impl SkrifaShaper {
     #[must_use]
     pub fn new() -> Self {
         let font_bytes: &'static [u8] =
-            include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+            include_bytes!("../../assets/fonts/NotoSansCJKsc-Regular.otf");
         // FontRef::new 返回 Result，'static 字节总是有效
-        let font_ref = skrifa::FontRef::new(font_bytes).expect("Inter 字体加载失败");
+        let font_ref = skrifa::FontRef::new(font_bytes).expect("Noto CJK 字体加载失败");
         Self { font_ref }
     }
 

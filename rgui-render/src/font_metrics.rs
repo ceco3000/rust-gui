@@ -11,7 +11,7 @@
 //!
 //! # 当前支持
 //!
-//! 当前使用硬编码的 Inter Regular 字体度量（与嵌入字体匹配）。
+//! 当前使用实测的 Noto Sans CJK SC Regular 字体度量（与嵌入字体匹配）。
 //! 未来可通过解析实际字体文件或添加其他字体族扩展。
 
 use std::sync::OnceLock;
@@ -20,7 +20,7 @@ use rgui_core::context::{FontMetrics, FontMetricsCache};
 
 /// 全局字体度量缓存。
 ///
-/// 首次访问时自动以 Inter Regular 字体度量初始化。
+/// 首次访问时自动以 Noto Sans CJK SC Regular 字体度量初始化。
 /// 使用 `OnceLock` 确保线程安全的一次性初始化。
 static FONT_METRICS_CACHE: OnceLock<FontMetricsCache> = OnceLock::new();
 
@@ -32,11 +32,11 @@ static FONT_METRICS_CACHE: OnceLock<FontMetricsCache> = OnceLock::new();
 pub fn init_font_metrics() {
     FONT_METRICS_CACHE.get_or_init(|| {
         FontMetricsCache::new(FontMetrics::new(
-            0.96875,  // ascent:  2728/2816 Inter Regular
-            -0.22727, // descent: -640/2816
-            0.0,      // line_gap: 0/2816
-            0.54545,  // x_height: 1536/2816
-            0.72727,  // cap_height: 2048/2816
+            1.160,  // ascent:  1160/1000 Noto Sans CJK SC Regular
+            -0.288, // descent: -288/1000
+            0.0,    // line_gap: 0/1000
+            0.543,  // x_height: 543/1000
+            0.733,  // cap_height: 733/1000
         ))
     });
 }
@@ -68,19 +68,19 @@ mod tests {
         init_font_metrics();
         let cache = font_metrics_cache();
         let m = cache.default_metrics;
-        assert!((m.ascent - 0.96875).abs() < 0.001);
+        assert!((m.ascent - 1.160).abs() < 0.001);
     }
 
     #[test]
-    fn init_sets_inter_regular_metrics() {
+    fn init_sets_noto_cjk_metrics() {
         // 使用原始 OnceLock 确保测试隔离
         let lock: OnceLock<FontMetricsCache> = OnceLock::new();
         lock.get_or_init(|| {
-            FontMetricsCache::new(FontMetrics::new(0.96875, -0.22727, 0.0, 0.54545, 0.72727))
+            FontMetricsCache::new(FontMetrics::new(1.160, -0.288, 0.0, 0.543, 0.733))
         });
         let cache = lock.get().unwrap();
         let m = cache.default_metrics;
-        assert!((m.ascent - 0.96875).abs() < 0.001);
+        assert!((m.ascent - 1.160).abs() < 0.001);
         assert!(m.descent < -0.2);
     }
 

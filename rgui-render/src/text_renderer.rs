@@ -82,7 +82,10 @@ impl TextRenderer {
         }
 
         let attrs = cosmic_text::Attrs::new();
-        let shaped: Vec<ShapedGlyph> = self.engine.borrow_mut().shape_text(text, font_size, attrs, None);
+        let shaped: Vec<ShapedGlyph> = self
+            .engine
+            .borrow_mut()
+            .shape_text(text, font_size, attrs, None);
 
         let total_width = shaped.last().map(|g| g.x + g.advance).unwrap_or(0.0);
 
@@ -152,7 +155,10 @@ impl TextRenderer {
             return 0.0;
         }
         let attrs = cosmic_text::Attrs::new();
-        let shaped = self.engine.borrow_mut().shape_text(text, font_size, attrs, None);
+        let shaped = self
+            .engine
+            .borrow_mut()
+            .shape_text(text, font_size, attrs, None);
         shaped.last().map(|g| g.x + g.advance).unwrap_or(0.0)
     }
 
@@ -173,7 +179,10 @@ impl TextRenderer {
             };
         }
         let attrs = cosmic_text::Attrs::new();
-        let shaped = self.engine.borrow_mut().shape_text(text, font_size, attrs, None);
+        let shaped = self
+            .engine
+            .borrow_mut()
+            .shape_text(text, font_size, attrs, None);
 
         let total_width = shaped.last().map(|g| g.x + g.advance).unwrap_or(0.0);
 
@@ -251,10 +260,10 @@ impl TextRenderer {
         }
 
         let attrs = cosmic_text::Attrs::new();
-        let shaped = self
-            .engine
-            .borrow_mut()
-            .shape_text(text, font_size, attrs, Some(bounds_width));
+        let shaped =
+            self.engine
+                .borrow_mut()
+                .shape_text(text, font_size, attrs, Some(bounds_width));
 
         if shaped.is_empty() {
             return (Vec::new(), empty_metrics);
@@ -374,18 +383,17 @@ impl TextRenderer {
         }
 
         let attrs = cosmic_text::Attrs::new();
-        let shaped = self
-            .engine
-            .borrow_mut()
-            .shape_text(text, font_size, attrs, Some(bounds_width));
+        let shaped =
+            self.engine
+                .borrow_mut()
+                .shape_text(text, font_size, attrs, Some(bounds_width));
 
         if shaped.is_empty() {
             return empty_metrics;
         }
 
         // 统计唯一行索引并计算最大行宽
-        let mut line_indices: std::collections::BTreeSet<u32> =
-            std::collections::BTreeSet::new();
+        let mut line_indices: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
         let mut max_width: f32 = 0.0;
         let mut current_line_width: f32 = 0.0;
         let mut current_line_idx: u32 = 0;
@@ -518,8 +526,7 @@ mod tests {
     #[test]
     fn short_text_produces_single_line() {
         let tr = make_renderer();
-        let (cmds, metrics) =
-            tr.render_text_wrapped("Short", 400.0, 0.0, 20.0, Color::BLACK, 14.0);
+        let (cmds, metrics) = tr.render_text_wrapped("Short", 400.0, 0.0, 20.0, Color::BLACK, 14.0);
 
         assert_eq!(cmds.len(), 1, "short text should produce 1 DrawCommand");
         let expected_lh = 14.0 * 1.2;
@@ -537,8 +544,7 @@ mod tests {
     fn long_word_without_spaces_breaks() {
         let tr = make_renderer();
         let text = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-        let (cmds, _metrics) =
-            tr.render_text_wrapped(text, 200.0, 0.0, 20.0, Color::BLACK, 14.0);
+        let (cmds, _metrics) = tr.render_text_wrapped(text, 200.0, 0.0, 20.0, Color::BLACK, 14.0);
 
         // 不应该 panic，且不应该只有一行（除非字体特别小）
         assert!(!cmds.is_empty(), "long word should produce some output");
@@ -583,8 +589,7 @@ mod tests {
     #[test]
     fn empty_text_returns_empty() {
         let tr = make_renderer();
-        let (cmds, metrics) =
-            tr.render_text_wrapped("", 200.0, 0.0, 0.0, Color::BLACK, 14.0);
+        let (cmds, metrics) = tr.render_text_wrapped("", 200.0, 0.0, 0.0, Color::BLACK, 14.0);
 
         assert!(cmds.is_empty(), "empty text should produce no commands");
         assert_eq!(metrics.width, 0.0);
@@ -597,8 +602,7 @@ mod tests {
     #[test]
     fn whitespace_only_text_returns_empty() {
         let tr = make_renderer();
-        let (cmds, metrics) =
-            tr.render_text_wrapped("     ", 200.0, 0.0, 0.0, Color::BLACK, 14.0);
+        let (cmds, metrics) = tr.render_text_wrapped("     ", 200.0, 0.0, 0.0, Color::BLACK, 14.0);
 
         // 空格可能产生宽度为 0 的字形，不应 panic
         // 返回结果可以有 0 个或少量 commands
@@ -620,13 +624,11 @@ mod tests {
         let tr = make_renderer();
 
         // bounds_width = 0
-        let (cmds, _) =
-            tr.render_text_wrapped("Hello", 0.0, 0.0, 0.0, Color::BLACK, 14.0);
+        let (cmds, _) = tr.render_text_wrapped("Hello", 0.0, 0.0, 0.0, Color::BLACK, 14.0);
         assert!(cmds.is_empty(), "bounds_width=0 should return empty");
 
         // bounds_width = 1.0
-        let (cmds, _) =
-            tr.render_text_wrapped("Hello", 1.0, 0.0, 0.0, Color::BLACK, 14.0);
+        let (cmds, _) = tr.render_text_wrapped("Hello", 1.0, 0.0, 0.0, Color::BLACK, 14.0);
         assert!(cmds.is_empty(), "bounds_width=1.0 should return empty");
     }
 
@@ -636,14 +638,12 @@ mod tests {
         let tr = make_renderer();
 
         // font_size = 0
-        let (cmds, metrics) =
-            tr.render_text_wrapped("Hello", 200.0, 0.0, 0.0, Color::BLACK, 0.0);
+        let (cmds, metrics) = tr.render_text_wrapped("Hello", 200.0, 0.0, 0.0, Color::BLACK, 0.0);
         assert!(cmds.is_empty(), "font_size=0 should return empty");
         assert_eq!(metrics.wrapped_height, 0.0);
 
         // font_size = 1.0 — 应正常塑形
-        let (cmds, metrics) =
-            tr.render_text_wrapped("Hello", 200.0, 0.0, 0.0, Color::BLACK, 1.0);
+        let (cmds, metrics) = tr.render_text_wrapped("Hello", 200.0, 0.0, 0.0, Color::BLACK, 1.0);
         // font_size=1 应能正常渲染（不 panic）
         assert!(metrics.wrapped_height > 0.0 || cmds.is_empty());
     }
@@ -652,8 +652,7 @@ mod tests {
     #[test]
     fn max_width_none_preserves_old_behavior() {
         let tr = make_renderer();
-        let (cmds, metrics) =
-            tr.render_text("Hello, World!", 0.0, 20.0, Color::BLACK, 14.0);
+        let (cmds, metrics) = tr.render_text("Hello, World!", 0.0, 20.0, Color::BLACK, 14.0);
 
         assert_eq!(cmds.len(), 1, "non-wrapped render should produce 1 command");
         assert!(metrics.width > 0.0);
@@ -669,8 +668,7 @@ mod tests {
     #[test]
     fn bounds_width_zero_degraded() {
         let tr = make_renderer();
-        let (cmds, metrics) =
-            tr.render_text_wrapped("Hello", 0.0, 0.0, 0.0, Color::BLACK, 14.0);
+        let (cmds, metrics) = tr.render_text_wrapped("Hello", 0.0, 0.0, 0.0, Color::BLACK, 14.0);
         assert!(cmds.is_empty());
         assert_eq!(metrics.wrapped_height, 0.0);
     }

@@ -117,7 +117,7 @@ impl VelloBackend {
             height,
             atlas_cache: None,
             font_data: {
-                let font_bytes = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
+                let font_bytes = include_bytes!("../../assets/fonts/NotoSansCJKsc-Regular.otf");
                 Some(FontData::new(
                     Blob::new(std::sync::Arc::new(font_bytes.to_vec())),
                     0,
@@ -836,12 +836,12 @@ fn to_kurbo_affine(xform: &Transform) -> vello::kurbo::Affine {
     // Transform: [a, b, tx, c, d, ty]
     // kurbo:     [a, c,  e, b, d,  f]
     vello::kurbo::Affine::new([
-        m[0] as f64,  // a
-        m[3] as f64,  // b
-        m[1] as f64,  // c
-        m[4] as f64,  // d
-        m[2] as f64,  // e (tx)
-        m[5] as f64,  // f (ty)
+        m[0] as f64, // a
+        m[3] as f64, // b
+        m[1] as f64, // c
+        m[4] as f64, // d
+        m[2] as f64, // e (tx)
+        m[5] as f64, // f (ty)
     ])
 }
 
