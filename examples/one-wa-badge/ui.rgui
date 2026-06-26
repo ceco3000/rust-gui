@@ -1,0 +1,15 @@
+<!-- WaBadge 演示 — 4 种 appearance 变体 -->
+<Column gap="8">
+  <Row gap="12">
+    <WaBadge label="New" variant="brand" appearance="accent" pill="false" />
+    <WaBadge label="42" variant="neutral" appearance="filled" pill="false" />
+    <WaBadge label="Beta" variant="warning" appearance="outlined" pill="false" />
+    <WaBadge label="VIP" variant="danger" appearance="filled-outlined" pill="false" />
+  </Row>
+  <Row gap="12">
+    <WaBadge label="Pill" variant="success" appearance="accent" pill="true" />
+    <WaBadge label="Sale" variant="brand" appearance="filled" pill="true" />
+    <WaBadge label="Hot" variant="danger" appearance="outlined" pill="true" />
+    <WaBadge label="OK" variant="neutral" appearance="filled-outlined" pill="true" />
+  </Row>
+</Column>

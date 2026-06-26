@@ -5,9 +5,11 @@
 
 use rgui_core::context::PaintOp;
 use rgui_core::geometry::Rect;
-use rgui_core::traits::AppMessage;
+use rgui_core::traits::{AppMessage, WidgetSpec};
 use rgui_render::PaintFn;
 
+use rgui_components::wa_badge::{WaBadge, WaBadgeState};
+use rgui_core::view::PropValue;
 use rgui_core::widget_state::WidgetStateStore;
 
 /// 内部实现：PaintFn 工厂（共享 match 体，避免代码重复）。
@@ -19,6 +21,61 @@ fn paint_fn_impl<M: AppMessage>(_store: Option<WidgetStateStore>) -> PaintFn<M> 
                 // ── 布局容器（自身不绘制）──
                 "Container" | "Row" | "Column" | "Padding" | "Center" | "Expanded" | "SizedBox"
                 | "Card" | "Stack" | "ScrollView" | "ListView" => Vec::new(),
+
+                // ── Tier 1 WidgetSpec 组件 ──
+                "WaBadge" => {
+                    let label = view
+                        .props
+                        .get("label")
+                        .and_then(|v| match v {
+                            PropValue::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let variant = view
+                        .props
+                        .get("variant")
+                        .and_then(|v| match v {
+                            PropValue::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| String::from("brand"));
+                    let appearance = view
+                        .props
+                        .get("appearance")
+                        .and_then(|v| match v {
+                            PropValue::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| String::from("accent"));
+                    let pill = view
+                        .props
+                        .get("pill")
+                        .and_then(|v| match v {
+                            PropValue::Bool(b) => Some(*b),
+                            _ => None,
+                        })
+                        .unwrap_or(false);
+                    let attention = view
+                        .props
+                        .get("attention")
+                        .and_then(|v| match v {
+                            PropValue::Str(s) => Some(s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| String::from("none"));
+
+                    let state = WaBadgeState {
+                        label,
+                        variant,
+                        appearance,
+                        pill,
+                        attention,
+                    };
+                    let mut ctx = rgui_core::context::PaintContext::new(_bounds);
+                    WaBadge.paint(&state, _bounds, &mut ctx);
+                    ctx.into_operations()
+                },
 
                 // ── 未翻译 / 未知 ──
                 unknown => {

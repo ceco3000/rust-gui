@@ -28,6 +28,7 @@ members = [
 
     # 示例
     "examples/one-accordion",
+    "examples/one-wa-badge",
 ]
 
 [workspace.package]

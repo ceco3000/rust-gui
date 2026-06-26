@@ -2374,6 +2374,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "one-wa-badge"
+version = "0.1.0"
+dependencies = [
+ "rgui",
+ "rgui-core",
+ "rgui-devtools",
+ "rgui-layout",
+ "rgui-render",
+ "rgui-script",
+ "serde",
+]
+
+[[package]]
 name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

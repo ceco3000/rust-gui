@@ -16,6 +16,7 @@ const KNOWN_WIDGET_TYPES: &[&str] = &[
     // WA 翻译组件
     "WaAccordion",
     "WaAccordionItem",
+    "WaBadge",
     // Tier 2 自定义组件（.rgui + .rhai）
     "Accordion",
     "AccordionItem",

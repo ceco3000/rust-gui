@@ -16,6 +16,7 @@ pub use app::run_simple_app;
 pub use app::{App, AppConfig};
 pub use logging::init_logging;
 pub use rgui_a11y::*;
+pub use rgui_components::*;
 pub use rgui_core::*;
 pub use rgui_layout::*;
 pub use rgui_macros::{AppMessage, WidgetSpec, html};
