@@ -173,7 +173,7 @@ rgui (facade) ─ 重新导出全部公共 API
 ### 文字渲染
 
 - 当前仅支持拉丁文字（Inter 嵌入字体）。CJK 为 P2（D12 M15，Vello 0.9 `draw_glyphs()` 单字体限制）。
-- 垂直居中：`baseline_y = bounds.y + (bounds.h + ascent) / 2`。Vello 坐标系 Y 轴向上。
+- 垂直居中：单行文本 `baseline_y = bounds.y + (bounds.h - (ascent + descent)) / 2 + ascent`（=`h/2 + (ascent - descent)/2`）；多行文本 `baseline_y = bounds.y + (bounds.h - wrapped_height) / 2 + ascent`。Vello 坐标系 Y 轴向上。
 
 ### Git 工作流
 

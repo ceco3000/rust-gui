@@ -84,16 +84,31 @@ fn paint_op_to_draw_command_inner(
                     }
 
                     // 水平居中
-                    let baseline_x = bounds.origin.x as f32
-                        + ((bounds_width - metrics.width) / 2.0).max(0.0);
-                    // 垂直：按 wrapped_height 居中（多行文本块整体居中）
-                    let baseline_y = bounds.origin.y as f32
-                        + (bounds_height - metrics.wrapped_height) / 2.0
-                        + metrics.ascent;
+                    let baseline_x =
+                        bounds.origin.x as f32 + ((bounds_width - metrics.width) / 2.0).max(0.0);
+                    // 垂直：检测单行/多行，分别计算基线
+                    // line_height = font_size * 1.2，单行文本 wrapped_height ≈ line_height
+                    let line_height = font_size * 1.2;
+                    let baseline_y = if (metrics.wrapped_height - line_height).abs() < 1.0 {
+                        // 单行：精确基线居中（以 ascent + descent 为文本实际高度）
+                        bounds.origin.y as f32
+                            + (bounds_height - (metrics.ascent + metrics.descent)) / 2.0
+                            + metrics.ascent
+                    } else {
+                        // 多行：按 wrapped_height 居中（多行文本块整体居中）
+                        bounds.origin.y as f32
+                            + (bounds_height - metrics.wrapped_height) / 2.0
+                            + metrics.ascent
+                    };
 
                     // 重新渲染——这次带着正确的基线偏移
                     let (mut final_cmds, _) = tr.render_text_wrapped(
-                        text, bounds_width, baseline_x, baseline_y, color, font_size,
+                        text,
+                        bounds_width,
+                        baseline_x,
+                        baseline_y,
+                        color,
+                        font_size,
                     );
 
                     // 空文本二次校验
@@ -109,8 +124,7 @@ fn paint_op_to_draw_command_inner(
                     result
                 } else {
                     // bounds 宽度 = 0：走旧单行路径（向后兼容）
-                    let (mut commands, metrics) =
-                        tr.render_text(text, 0.0, 0.0, color, font_size);
+                    let (mut commands, metrics) = tr.render_text(text, 0.0, 0.0, color, font_size);
                     if commands.is_empty() {
                         return vec![DrawCommand::FillRect {
                             rect: Rect::ZERO,
@@ -122,8 +136,8 @@ fn paint_op_to_draw_command_inner(
                     let baseline_x = bounds.origin.x as f32
                         + ((bounds.size.width as f32 - metrics.width) / 2.0).max(0.0);
                     // 垂直：按 ascent 居中
-                    let baseline_y = bounds.origin.y as f32
-                        + (bounds.size.height as f32 + metrics.ascent) / 2.0;
+                    let baseline_y =
+                        bounds.origin.y as f32 + (bounds.size.height as f32 + metrics.ascent) / 2.0;
                     let cmd = commands.remove(0);
                     if let DrawCommand::DrawGlyphs {
                         texture_id,
@@ -884,14 +898,14 @@ fn extract_taffy_style(
     }
 
     // 第三步：内容驱动尺寸——根据文字内容计算宽度和高度
-    if matches!(widget_type, "__none__") {
+    if matches!(widget_type, "__none__" | "WaButton" | "WaBadge") {
         let has_explicit_width = props.get("width").is_some();
         let has_explicit_height = props.get("height").is_some();
 
         if !has_explicit_width || !has_explicit_height {
             if let Some(text) = get_str("label").or(get_str("text")) {
-                // Inter Regular: ascent=0.969, descent=-0.227 → em_height=1.196
-                let em_height: f32 = 1.196;
+                // Noto Sans CJK SC Regular: ascent=1.160, descent=-0.288 → em_height=1.448
+                let em_height: f32 = 1.448;
 
                 // WaButton 字体大小由 paint() 统一控制: h × 0.44
                 // WaTab 同样使用 h × 0.44
@@ -918,6 +932,8 @@ fn extract_taffy_style(
                         8.0
                     } else if widget_type == "WaTab" {
                         17.0
+                    } else if widget_type == "WaBadge" {
+                        12.0
                     } else {
                         4.0
                     };
@@ -938,6 +954,8 @@ fn extract_taffy_style(
                             24.0
                         } else if widget_type == "WaTab" {
                             20.0
+                        } else if widget_type == "WaBadge" {
+                            20.0
                         } else {
                             8.0
                         };
@@ -949,6 +967,8 @@ fn extract_taffy_style(
                         } else if widget_type == "WaBreadcrumbItem" {
                             24.0
                         } else if widget_type == "WaTab" {
+                            20.0
+                        } else if widget_type == "WaBadge" {
                             20.0
                         } else {
                             8.0
@@ -981,13 +1001,10 @@ fn extract_taffy_style(
         let rhai = rhai_path.as_ref();
         if rhai.contains("accordionitem") {
             // 读取 heading_level（默认 h3）
-            let heading_level =
-                props
-                    .get("heading_level")
-                    .and_then(|v| match v {
-                        rgui_core::view::PropValue::Str(s) => Some(s.as_ref()),
-                        _ => None,
-                    });
+            let heading_level = props.get("heading_level").and_then(|v| match v {
+                rgui_core::view::PropValue::Str(s) => Some(s.as_ref()),
+                _ => None,
+            });
             let header_h = accordion_header_height(heading_level);
 
             // 读取 expanded prop（默认 false = 折叠）
@@ -1002,8 +1019,12 @@ fn extract_taffy_style(
             // 读取 content 字符串
             let content_str = props.get("content").and_then(|v| match v {
                 rgui_core::view::PropValue::Str(s) => {
-                    if s.is_empty() { None } else { Some(s.as_ref()) }
-                }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.as_ref())
+                    }
+                },
                 _ => None,
             });
 
@@ -1076,7 +1097,7 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
         width: Dimension::Percent(1.0),
         height: Dimension::Auto,
     };
-    let _wa_button_min_size = taffy::geometry::Size {
+    let wa_button_min_size = taffy::geometry::Size {
         width: Dimension::Length(80.0),
         height: Dimension::Length(36.0),
     };
@@ -1122,6 +1143,14 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
             flex_grow: 1.0,
             ..Style::default()
         },
+        "WaBadge" => Style {
+            display: Display::Flex,
+            min_size: taffy::geometry::Size {
+                width: Dimension::Length(20.0),
+                height: Dimension::Length(20.0),
+            },
+            ..Style::default()
+        },
         "ScrollView" => Style {
             display: Display::Flex,
             size: full_size,
@@ -1145,6 +1174,11 @@ fn default_layout_for_type(widget_type: &str) -> taffy::Style {
                 width: Dimension::Length(40.0),
                 height: Dimension::Length(20.0),
             },
+            ..Style::default()
+        },
+        // ── 叶子组件（需要最小尺寸确保在 flex 容器中可见）──
+        "WaButton" => Style {
+            min_size: wa_button_min_size,
             ..Style::default()
         },
         // 通用回退
@@ -1220,8 +1254,11 @@ mod tests {
             font_size: 14.0,
         };
         let cmds = paint_op_to_draw_command(&op);
-        assert_eq!(cmds.len(), 1,
-            "无 TextRenderer 时空文本应返回透明 FillRect 占位（保持不变式）");
+        assert_eq!(
+            cmds.len(),
+            1,
+            "无 TextRenderer 时空文本应返回透明 FillRect 占位（保持不变式）"
+        );
         assert!(matches!(cmds[0], DrawCommand::FillRect { .. }));
     }
 
@@ -2226,13 +2263,19 @@ mod tests {
             )),
         );
         if let Some(hl) = heading_level {
-            props.insert("heading_level", rgui_core::view::PropValue::Str(std::sync::Arc::from(hl)));
+            props.insert(
+                "heading_level",
+                rgui_core::view::PropValue::Str(std::sync::Arc::from(hl)),
+            );
         }
         if let Some(exp) = expanded {
             props.insert("expanded", rgui_core::view::PropValue::Bool(exp));
         }
         if let Some(c) = content {
-            props.insert("content", rgui_core::view::PropValue::Str(std::sync::Arc::from(c)));
+            props.insert(
+                "content",
+                rgui_core::view::PropValue::Str(std::sync::Arc::from(c)),
+            );
         }
         props
     }
@@ -2333,12 +2376,217 @@ mod tests {
         );
     }
 
-    // --- Task 3: 动态高度估算测试 ---
+    // --- Task 2: baseline_y 公式精度测试 (SubTask 2.1–2.4) ---
 
-    /// 辅助：创建 TextRenderer 用于动态高度估算测试
+    /// 辅助：创建 TextRenderer 用于所有需要 TextRenderer 的测试
     fn make_text_renderer() -> TextRenderer {
         TextRenderer::new(crate::texture::TextureId(999))
     }
+
+    /// 从 DrawCommand 列表中提取首个 DrawGlyphs 命令中第一个 glyph 的 offset_y。
+    /// 对于单行文本（首行 line_idx=0），offset_y ≈ baseline_y（g.y 通常为 0）。
+    fn extract_first_baseline_y(cmds: &[DrawCommand]) -> Option<f32> {
+        for cmd in cmds {
+            if let DrawCommand::DrawGlyphs { glyphs, .. } = cmd {
+                if let Some(first) = glyphs.first() {
+                    return Some(first.offset_y);
+                }
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn test_baseline_y_single_line_formula_precision() {
+        // SubTask 2.1 / R4 Scenario 1: 验证单行文本 baseline_y 精度，同时验证
+        // 多行文本不满足单行公式（区分正确性）。
+        let tr = make_text_renderer();
+        let font_size = 12.0;
+
+        // ----- 单行文本验证 -----
+        let bounds_single = Rect::new(0.0, 0.0, 80.0, 30.0);
+        let (_, metrics_single) =
+            tr.render_text_wrapped("New", 80.0, 0.0, 0.0, Color::BLACK, font_size);
+
+        let op_single = PaintOp::DrawText {
+            text: "New".into(),
+            bounds: bounds_single,
+            color: Color::BLACK,
+            font_size,
+        };
+        let cmds_single = paint_op_to_draw_command_with_text(&op_single, &tr);
+        let baseline_y = extract_first_baseline_y(&cmds_single).expect("应包含 DrawGlyphs");
+
+        // 单行公式：baseline_y = bounds.y + bounds.h/2 + (ascent - descent)/2
+        let expected_single = bounds_single.origin.y as f32
+            + bounds_single.size.height as f32 / 2.0
+            + (metrics_single.ascent - metrics_single.descent) / 2.0;
+
+        assert!(
+            (baseline_y - expected_single).abs() < 0.5,
+            "单行 baseline_y: 实际={baseline_y}, 期望={expected_single}, 差值={}",
+            (baseline_y - expected_single).abs()
+        );
+
+        // ----- 多行文本验证：不满足单行公式 -----
+        // bounds width=20 强制 "Hello World" 在 font_size=12 时换行
+        let bounds_multi = Rect::new(0.0, 0.0, 20.0, 60.0);
+        let (_, metrics_multi) =
+            tr.render_text_wrapped("Hello World", 20.0, 0.0, 0.0, Color::BLACK, font_size);
+        let line_height = font_size * 1.2;
+        let num_lines = (metrics_multi.wrapped_height / line_height).round() as usize;
+        assert!(num_lines > 1, "bounds width=20 应强制换行为多行，实际行数={num_lines}");
+
+        let op_multi = PaintOp::DrawText {
+            text: "Hello World".into(),
+            bounds: bounds_multi,
+            color: Color::BLACK,
+            font_size,
+        };
+        let cmds_multi = paint_op_to_draw_command_with_text(&op_multi, &tr);
+        let baseline_y_multi = extract_first_baseline_y(&cmds_multi).expect("应包含 DrawGlyphs");
+
+        // 单行公式对本应多行的文本计算出来的"预期值"
+        let single_formula_applied_to_multi = bounds_multi.origin.y as f32
+            + bounds_multi.size.height as f32 / 2.0
+            + (metrics_multi.ascent - metrics_multi.descent) / 2.0;
+
+        // 多行文本不应匹配单行公式（差值应明显 > 0.5）
+        let diff = (baseline_y_multi - single_formula_applied_to_multi).abs();
+        assert!(
+            diff > 0.5,
+            "多行文本不应满足单行公式: 实际 baseline_y={baseline_y_multi}, 单行公式预期={single_formula_applied_to_multi}, diff={diff}"
+        );
+    }
+
+    #[test]
+    fn test_baseline_y_multi_line_block_centering() {
+        // SubTask 2.2 / R4 Scenario 3: 验证多行文本使用 wrapped_height 保持块级居中，
+        // 视觉中心与 bounds 中心偏差 < 1.0px。
+        let tr = make_text_renderer();
+        let font_size = 12.0;
+        let bounds = Rect::new(0.0, 0.0, 20.0, 60.0);
+        let text = "Hello World";
+
+        let (_, metrics) =
+            tr.render_text_wrapped(text, 20.0, 0.0, 0.0, Color::BLACK, font_size);
+        let line_height = font_size * 1.2;
+        let num_lines = (metrics.wrapped_height / line_height).round() as usize;
+        assert!(num_lines > 1, "应强制换行为多行，实际行数={num_lines}");
+
+        let op = PaintOp::DrawText {
+            text: text.into(),
+            bounds,
+            color: Color::BLACK,
+            font_size,
+        };
+        let cmds = paint_op_to_draw_command_with_text(&op, &tr);
+        let first_baseline = extract_first_baseline_y(&cmds).expect("应包含 DrawGlyphs");
+
+        // 多行公式：baseline_y = bounds.y + (h - wrapped_height)/2 + ascent
+        let expected_first_baseline = bounds.origin.y as f32
+            + (bounds.size.height as f32 - metrics.wrapped_height) / 2.0
+            + metrics.ascent;
+        assert!(
+            (first_baseline - expected_first_baseline).abs() < 0.5,
+            "多行首行 baseline_y: 实际={first_baseline}, 期望={expected_first_baseline}"
+        );
+
+        // 计算文本块视觉中心
+        // spec R4 Scenario 3: 使用 line_height 而非 ascent+descent 计算 last_line_height
+        // 块级居中基于 line grid 分配：每行占用 line_height 垂直空间
+        // 块顶 = first_baseline - ascent，块底 = last_baseline + (line_height - ascent)
+        let last_baseline = expected_first_baseline + (num_lines - 1) as f32 * line_height;
+        let block_top = expected_first_baseline - metrics.ascent;
+        // 末行底部：基线 + (line_height - ascent) = 行分配底部
+        let block_bottom = last_baseline + (line_height - metrics.ascent);
+        let block_center = (block_top + block_bottom) / 2.0;
+        let bounds_center = bounds.origin.y as f32 + bounds.size.height as f32 / 2.0;
+        let deviation = (block_center - bounds_center).abs();
+
+        assert!(
+            deviation < 1.0,
+            "多行文本块视觉中心偏差={deviation}px, 应 < 1.0px (block_center={block_center}, bounds_center={bounds_center})"
+        );
+    }
+
+    #[test]
+    fn test_baseline_y_old_vs_new_formula_diff() {
+        // SubTask 2.3 / R4 Scenario 2: 验证新旧 baseline_y 公式差值。
+        let tr = make_text_renderer();
+        let font_size = 12.0;
+        let (_, metrics) =
+            tr.render_text_wrapped("New", 80.0, 0.0, 0.0, Color::BLACK, font_size);
+
+        let bounds = Rect::new(0.0, 0.0, 80.0, 30.0);
+        let h = bounds.size.height as f32;
+
+        // 旧公式（修复前多行路径使用 wrapped_height 居中）：
+        //   baseline_y_old = bounds.y + (h - wrapped_height)/2 + ascent
+        let old_baseline_y = bounds.origin.y as f32 + (h - metrics.wrapped_height) / 2.0 + metrics.ascent;
+
+        // 新公式（单行文本精确居中）：
+        //   baseline_y_new = bounds.y + h/2 + (ascent - descent)/2
+        let new_baseline_y = bounds.origin.y as f32 + h / 2.0 + (metrics.ascent - metrics.descent) / 2.0;
+
+        let diff = new_baseline_y - old_baseline_y;
+
+        // 差值应为正（新公式基线更接近 bounds 中心）
+        assert!(
+            diff >= 0.0,
+            "新公式 baseline_y ({new_baseline_y}) 应 >= 旧公式 ({old_baseline_y}), diff={diff}"
+        );
+
+        // 差值约 |(ascent + descent - line_height)/2|
+        let line_height = font_size * 1.2;
+        let expected_diff = ((metrics.ascent + metrics.descent - line_height) / 2.0).abs();
+
+        // wrapped_height ≈ line_height（单行），差值应在此附近（公差 0.5px）
+        assert!(
+            (diff - expected_diff).abs() < 0.5,
+            "差值 diff={diff}, 期望约 expected_diff={expected_diff}, discrepancy={}",
+            (diff - expected_diff).abs()
+        );
+    }
+
+    #[test]
+    fn test_baseline_y_non_zero_origin_bounds() {
+        // SubTask 2.4 / R1 Scenario 5: 验证 bounds.y ≠ 0 时 baseline_y 正确计算，
+        // bounds.y 贡献为正。
+        let tr = make_text_renderer();
+        let font_size = 12.0;
+        let bounds = Rect::new(50.0, 100.0, 80.0, 30.0);
+
+        let (_, metrics) =
+            tr.render_text_wrapped("New", 80.0, 0.0, 0.0, Color::BLACK, font_size);
+
+        let op = PaintOp::DrawText {
+            text: "New".into(),
+            bounds,
+            color: Color::BLACK,
+            font_size,
+        };
+        let cmds = paint_op_to_draw_command_with_text(&op, &tr);
+        let baseline_y = extract_first_baseline_y(&cmds).expect("应包含 DrawGlyphs");
+
+        // 期望公式：baseline_y = bounds.y + bounds.h/2 + (ascent - descent)/2
+        let expected = bounds.origin.y as f32
+            + bounds.size.height as f32 / 2.0
+            + (metrics.ascent - metrics.descent) / 2.0;
+
+        assert!(
+            (baseline_y - expected).abs() < 0.5,
+            "非零原点 baseline_y: 实际={baseline_y}, 期望={expected}, bounds.y=100 贡献应为正 100"
+        );
+
+        // bounds.y 贡献验证：baseline_y 应明显大于 bounds.y（加上 h/2 和 ascent 偏移）
+        assert!(
+            baseline_y > bounds.origin.y as f32 + 5.0,
+            "baseline_y ({baseline_y}) 应 > bounds.y (100) + 5.0"
+        );
+    }
+
+    // --- Task 3: 动态高度估算测试 ---
 
     #[test]
     fn test_accordion_item_dynamic_short_text_min_panel() {
@@ -2354,8 +2602,11 @@ mod tests {
             _ => panic!("expected Length"),
         };
         // header_h(44.0) + minimum_panel(40.0) <= h <= header_h(44.0) + short_panel(~41.0)
-        assert!(h >= 84.0 && h <= 90.0,
-            "短文字 min_height 应在 header_h+min_panel 附近，got {}", h);
+        assert!(
+            h >= 84.0 && h <= 90.0,
+            "短文字 min_height 应在 header_h+min_panel 附近，got {}",
+            h
+        );
     }
 
     #[test]
@@ -2371,15 +2622,22 @@ mod tests {
             _ => panic!("expected Length"),
         };
         // 长文字应 > header_h + 64.0 (旧硬编码)，因为需要更多行
-        assert!(h > 44.0 + 40.0,
-            "长文字 min_height 应 > header_h+min_panel，got {} (h3=44.0)", h);
+        assert!(
+            h > 44.0 + 40.0,
+            "长文字 min_height 应 > header_h+min_panel，got {} (h3=44.0)",
+            h
+        );
     }
 
     #[test]
     fn test_accordion_item_dynamic_collapsed_no_measure() {
         // Scenario: 折叠状态不执行测量 (Requirement 3)
         let tr = make_text_renderer();
-        let props = make_accordion_props(Some("3"), Some(false), Some("some long text that would wrap"));
+        let props = make_accordion_props(
+            Some("3"),
+            Some(false),
+            Some("some long text that would wrap"),
+        );
         let style = extract_taffy_style("Container", &props, Some(&tr));
         assert_eq!(
             style.min_size.height,
@@ -2443,8 +2701,11 @@ mod tests {
         };
         // content_width = 120 - 40 = 80, 窄宽度会换多行
         // 至少 > header_h + min_panel
-        assert!(h > 44.0 + 40.0,
-            "窄宽度下文字换行，min_height 应 > header_h+min_panel，got {}", h);
+        assert!(
+            h > 44.0 + 40.0,
+            "窄宽度下文字换行，min_height 应 > header_h+min_panel，got {}",
+            h
+        );
     }
 }
 
@@ -2455,21 +2716,21 @@ fn offset_draw_command(cmd: &mut DrawCommand, dx: f32, dy: f32) {
         DrawCommand::FillRect { rect, .. } => {
             rect.origin.x += dx as f64;
             rect.origin.y += dy as f64;
-        }
+        },
         DrawCommand::DrawGlyphs { glyphs, .. } => {
             for g in glyphs.iter_mut() {
                 g.offset_x += dx;
                 g.offset_y += dy;
             }
-        }
+        },
         DrawCommand::DrawImage { dst, .. } => {
             dst.origin.x += dx as f64;
             dst.origin.y += dy as f64;
-        }
+        },
         DrawCommand::PushClip { rect } => {
             rect.origin.x += dx as f64;
             rect.origin.y += dy as f64;
-        }
-        _ => {}
+        },
+        _ => {},
     }
 }
