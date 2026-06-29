@@ -3,6 +3,7 @@
 
 #![allow(ambiguous_glob_reexports)]
 
+pub mod accordion;
 pub mod app;
 pub mod error_boundary;
 pub mod interactive;

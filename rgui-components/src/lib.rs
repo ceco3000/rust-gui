@@ -5,7 +5,6 @@
 //! ## 组件清单
 //! - Accordion / AccordionItem: Tier 2 声明式容器（.rgui + .rhai）
 
-pub mod accordion_interactive;
 pub mod wa_badge;
 
 pub use wa_badge::{WaBadge, WaBadgeMessage, WaBadgeState};

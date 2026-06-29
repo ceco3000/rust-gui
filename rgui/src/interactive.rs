@@ -28,6 +28,9 @@ pub fn init_widget_instances<M: AppMessage>(
         &CoordinateTransformChain::default(),
         &store,
     );
+
+    // 组件层交互初始化（Accordion mode 协调、键盘导航、事件体系、@method API）
+    crate::accordion::init(app, view);
 }
 
 fn init_recursive<M: AppMessage>(
@@ -81,11 +84,14 @@ fn register_event_handlers<M: AppMessage>(
     let action = ontoggle_action.or(onclick_action);
 
     // Tier 2 组件识别：通过 _rhai_path 字符串匹配
+    // 兼容 WaAccordion 容器（"accordion.rhai"）和 WaAccordionItem 子项（"accordionitem"）
     let is_tier2 = view
         .props
         .get("_rhai_path")
         .and_then(|v| match v {
-            PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")),
+            PropValue::Str(s) => Some(
+                s.as_ref().contains("accordionitem") || s.as_ref().contains("accordion.rhai"),
+            ),
             _ => None,
         })
         .unwrap_or(false);

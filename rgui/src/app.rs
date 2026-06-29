@@ -430,7 +430,7 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     init_widget_instances(&mut app, &view, &initial_layout);
 
     // 组件层交互初始化（Accordion mode 协调等）
-    rgui_components::accordion_interactive::init(&mut app, &view, &initial_layout);
+    crate::accordion::init(&mut app, &view);
 
     // 5. 加载 Rhai 脚本
     if !rhai_paths.is_empty() {
@@ -449,6 +449,15 @@ pub fn run_simple_app<M: AppMessage + 'static>(
     *current_view.lock().unwrap() = Some(template.to_noop_view());
 
     app.set_view_scene_builder(move |frame, width, height, tr| {
+        {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static VB_CNT: AtomicU64 = AtomicU64::new(0);
+            if VB_CNT.fetch_add(1, Ordering::Relaxed) % 30 == 0 {
+                log::debug!(target: "rgui::core",
+                    "[ACCORDION-DEBUG] view_scene_builder: frame={frame} START"
+                );
+            }
+        }
         let mut v = template.clone();
         sync_store_to_props(&mut v, &store);
         let l = compute_view_layout(
@@ -649,12 +658,27 @@ fn sync_store_to_props_recursive<M: AppMessage>(
     use rgui_core::view::PropValue;
 
     if let Some(id) = view.id {
+        // 检查是否为 AccordionItem（仅对 AccordionItem 输出诊断日志）
+        let is_accordion = view.props.get("_rhai_path")
+            .and_then(|v| match v {
+                PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")),
+                _ => None,
+            })
+            .unwrap_or(false);
+
         // 同步 expanded 状态：仅在值变更时清除 paint_ops 缓存并写入新值
         if let Some(store_expanded) = store.read::<bool>(id) {
             let current_expanded = view.props.get("expanded").and_then(|v| match v {
                 PropValue::Bool(b) => Some(*b),
                 _ => None,
             });
+            if is_accordion {
+                if current_expanded != Some(store_expanded) {
+                    log::debug!(target: "rgui::core",
+                        "[ACCORDION-DEBUG] sync_props: WidgetId({id:?}) store_expanded={store_expanded}, prop_expanded={current_expanded:?} -> WRITING new value"
+                    );
+                }
+            }
             if current_expanded != Some(store_expanded) {
                 // expanded 值变更 → 保存旧 paint_ops 到临时键，再清除缓存
                 // C8: 保存旧值供脚本执行失败时降级恢复
@@ -663,6 +687,14 @@ fn sync_store_to_props_recursive<M: AppMessage>(
                 }
                 view.props
                     .insert("expanded", PropValue::Bool(store_expanded));
+            }
+        } else if is_accordion {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static MISS_FIRST: AtomicBool = AtomicBool::new(true);
+            if MISS_FIRST.swap(false, Ordering::Relaxed) {
+                log::debug!(target: "rgui::core",
+                    "[ACCORDION-DEBUG] sync_props: WidgetId({id:?}) store key MISSING"
+                );
             }
         }
     }
@@ -708,7 +740,7 @@ impl<M: AppMessage + Clone + 'static> InteractionAutomationHarness<M> {
         let mut app = App::new(config);
         crate::interactive::init_widget_instances(&mut app, &view, &initial_layout);
         // 组件层交互初始化（Accordion mode 协调等）
-        rgui_components::accordion_interactive::init(&mut app, &view, &initial_layout);
+        crate::accordion::init(&mut app, &view);
         if !rhai_paths.is_empty() {
             let rhai_refs: Vec<&std::path::Path> = rhai_paths.iter().map(|p| p.as_path()).collect();
             app.load_rhai_scripts(&rhai_refs)?;
@@ -1911,7 +1943,7 @@ impl AppHandler {
         let hit_id = hit_test.as_ref().map(|hit| hit.widget_id);
 
         log::debug!(target: "rgui::core",
-            "[rgui] click at ({:.1},{:.1}) → hit={:?}",
+            "[ACCORDION-DEBUG] click at ({:.1},{:.1}) → hit={:?}",
             position.x, position.y, hit_id
         );
 
@@ -1957,7 +1989,7 @@ impl AppHandler {
                 match handler(&action, &mut update_ctx) {
                     EventResult::Handled => {
                         log::debug!(target: "rgui::core",
-                            "[rgui] click: WidgetId({hit_id:?}) → Handled"
+                            "[ACCORDION-DEBUG] click: hit=WidgetId({hit_id:?}) handler FOUND, action=\"{action}\" -> Handled"
                         );
                         // 组件消费了事件，停止处理
                         // RS06 回归修复：WidgetSpec handler 可能改变了外部状态
@@ -2040,7 +2072,7 @@ impl AppHandler {
             }
         } else {
             log::debug!(target: "rgui::core",
-                "[rgui] click: no hit at ({:.1},{:.1})",
+                "[ACCORDION-DEBUG] click: hit test MISS at ({:.1},{:.1})",
                 position.x, position.y
             );
             // WTI03：命中测试未命中 → 检查弹层 → 发送 Close 事件
@@ -2614,12 +2646,12 @@ impl ApplicationHandler for AppHandler {
 
                     // RS06: 检查脏集合——无脏 widget 且已有上一帧场景时跳过重建
                     // RS06 回归修复：needs_redraw 为非 StateStore 交互（AtomicBool 等）强制重建
-                    let has_dirty = {
+                    let _has_dirty = {
                         let store = self.state_store.read().expect("StateStore RwLock poisoned");
                         !store.dirty_widgets().is_empty()
                     };
-                    let can_reuse =
-                        !has_dirty && !self.app.needs_redraw && self.prev_scene.is_some();
+                    // AC13: 始终重建场景。后续框架层实现增量渲染优化后可恢复复用逻辑。
+                    let can_reuse = false;
 
                     // 场景构建回调，带异常隔离（D1 §11.3）
                     let mut scene = if can_reuse {

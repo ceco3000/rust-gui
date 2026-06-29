@@ -1,14 +1,35 @@
-<!-- Accordion 演示 -- 3 个面板项，mode="single" 兄弟联动 -->
-<Accordion mode="single">
-  <AccordionItem label="Getting Started" expanded="true" heading_level="2"
-    content="Welcome to the Accordion component. Click on any header to expand or collapse the corresponding section.">
-  </AccordionItem>
+<!-- Accordion 演示 — 三种 mode：multiple / single / single-collapsible -->
+<Column gap="16">
+  <!-- mode="multiple"（默认）：独立切换，互不影响 -->
+  <Accordion mode="multiple">
+    <AccordionItem label="Multiple — Item 1" expanded="true"
+      content="Multiple mode: each panel toggles independently. All can be open simultaneously.">
+    </AccordionItem>
+    <AccordionItem label="Multiple — Item 2"
+      content="This panel opens/closes without affecting siblings.">
+    </AccordionItem>
+    <AccordionItem label="Multiple — Item 3"
+      content="Any combination of panels can be expanded at once.">
+    </AccordionItem>
+  </Accordion>
 
-  <AccordionItem label="Installation"
-    content="Install via your preferred package manager. The component requires rgui-core and rgui-devtools.">
-  </AccordionItem>
+  <!-- mode="single"：兄弟联动，至少一项保持展开 -->
+  <Accordion mode="single">
+    <AccordionItem label="Single — Item 1" expanded="true"
+      content="Single mode: opening another panel collapses this one. At least one stays open.">
+    </AccordionItem>
+    <AccordionItem label="Single — Item 2"
+      content="Click me — Item 1 will collapse. But clicking an already-open header does nothing.">
+    </AccordionItem>
+  </Accordion>
 
-  <AccordionItem label="API Reference"
-    content="Complete API documentation for Accordion, AccordionItem, and available properties.">
-  </AccordionItem>
-</Accordion>
+  <!-- mode="single-collapsible"：兄弟联动，允许全部折叠 -->
+  <Accordion mode="single-collapsible">
+    <AccordionItem label="Single-collapsible — Item 1" expanded="true"
+      content="Single-collapsible mode: like single, but clicking an open header collapses it too.">
+    </AccordionItem>
+    <AccordionItem label="Single-collapsible — Item 2"
+      content="All panels can be collapsed — the accordion can be fully closed.">
+    </AccordionItem>
+  </Accordion>
+</Column>

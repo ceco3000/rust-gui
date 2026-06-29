@@ -1643,7 +1643,7 @@ fn paint_card(bounds, props, children) {
 | **每帧渲染** | `paint()` → `PaintOp` → Vello | `.rhai` 加载时生成 `PaintOp` → 每帧 Vello 直消费 |
 | **热路径性能** | 编译期优化（内联、死代码消除） | 热路径相同；冷路径（脚本执行一次）略慢 |
 | **热重载** | ❌ `cargo build` + 重启 | ✅ 秒级生效 |
-| **适用场景** | 框架内置组件（WaAccordion 等） | 应用定制 UI、业务组件 |
+| **适用场景** | 框架内置组件（Button、TextField 等） | 应用定制 UI、业务组件；WaAccordion（Tier 2 + 框架层 public 接口） |
 
 #### 9.4.4 前置依赖（P0）
 

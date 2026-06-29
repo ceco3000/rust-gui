@@ -16,6 +16,14 @@ use crate::primitives::Transform;
 use crate::scene::{DrawCommand, SceneGraph, SceneGraphBuilder, SceneLayer};
 use crate::text_renderer::TextRenderer;
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::sync::LazyLock;
+
+/// walk_tree expanded 变化检测——仅值变化时输出日志
+static LAST_EXPANDED: LazyLock<Mutex<HashMap<WidgetId, Option<bool>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 // ============================================================================
 // PaintOp → DrawCommand 转换
 // ============================================================================
@@ -438,10 +446,38 @@ fn walk_view_tree<M: rgui_core::traits::AppMessage>(
     builder.build_layer(widget_id, z, bounds, commands, true);
 
     // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
-    let skip_children = view.widget_type == "WaAccordionItem"
+    // 通过 _rhai_path prop 识别（Tier 2 组件标签是 <Column>，widget_type 不是 "WaAccordionItem"）
+    let skip_children = is_accordion_item(view)
         && !view.props.get("expanded").map_or(false, |v| {
             matches!(v, rgui_core::view::PropValue::Bool(true))
         });
+
+    if is_accordion_item(view) {
+        let expanded_val = view.props.get("expanded")
+            .and_then(|v| match v {
+                rgui_core::view::PropValue::Bool(b) => Some(*b),
+                _ => None,
+            });
+        let changed = LAST_EXPANDED
+            .lock()
+            .map(|mut map| {
+                let prev = map.get(&widget_id).copied().flatten();
+                let is_new = !map.contains_key(&widget_id);
+                map.insert(widget_id, expanded_val);
+                is_new || prev != expanded_val
+            })
+            .unwrap_or(true);
+        if changed {
+            let expanded_dbg = view.props.get("expanded");
+            if expanded_dbg.map_or(true, |v| !matches!(v, rgui_core::view::PropValue::Bool(true))) {
+                log::debug!(target: "rgui::render",
+                    "[ACCORDION-DEBUG] walk_tree: WidgetId({widget_id:?}) ACCORDION_ITEM expanded={expanded_dbg:?} -> skip_children");
+            } else {
+                log::debug!(target: "rgui::render",
+                    "[ACCORDION-DEBUG] walk_tree: WidgetId({widget_id:?}) ACCORDION_ITEM expanded=true -> render children");
+            }
+        }
+    }
 
     if !skip_children {
         for child in &view.children {
@@ -621,7 +657,8 @@ fn walk_view_tree_incremental<M: rgui_core::traits::AppMessage>(
     );
 
     // 条件递归子节点：折叠的 WaAccordionItem 不渲染子节点内容
-    let skip_children = view.widget_type == "WaAccordionItem"
+    // 通过 _rhai_path prop 识别（Tier 2 组件标签是 <Column>，widget_type 不是 "WaAccordionItem"）
+    let skip_children = is_accordion_item(view)
         && !view.props.get("expanded").map_or(false, |v| {
             matches!(v, rgui_core::view::PropValue::Bool(true))
         });
@@ -791,6 +828,20 @@ fn has_str_prop(
         false,
         |v| matches!(v, rgui_core::view::PropValue::Str(s) if !s.is_empty()),
     )
+}
+
+/// 判断 WidgetView 节点是否为 AccordionItem（通过 `_rhai_path` prop 识别）。
+///
+/// Tier 2 组件的 widget_type 是基础标签（如 `Column`），不是 `"WaAccordionItem"`，
+/// 因此需通过 `_rhai_path` prop 来识别组件类型。
+fn is_accordion_item<M: rgui_core::traits::AppMessage>(view: &rgui_core::view::WidgetView<M>) -> bool {
+    view.props
+        .get("_rhai_path")
+        .and_then(|v| match v {
+            rgui_core::view::PropValue::Str(s) => Some(s.as_ref().contains("accordionitem")),
+            _ => None,
+        })
+        .unwrap_or(false)
 }
 
 /// 根据 `heading_level` 计算 AccordionItem 标题栏高度。

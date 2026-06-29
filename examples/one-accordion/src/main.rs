@@ -11,8 +11,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     rgui::run_simple_app::<rgui_core::message::NoopMsg>(
         rgui::AppConfig::default()
-            .title("Accordion Demo — Tier 2 (.rgui + .rhai)")
-            .window_size(500.0, 400.0)
+            .title("Accordion Demo — multiple / single / single-collapsible")
+            .window_size(520.0, 550.0)
             .rgui_path(&rgui_path),
     )
 }
