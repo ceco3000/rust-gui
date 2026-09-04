@@ -89,8 +89,8 @@
 | `pub use rgui_components::*` | rgui-components | **并入 `rgui-core::components`** | ✅ 改为 `rgui_core::*` 覆盖 |
 | `pub use rgui_layout::*` | rgui-layout | **并入 `rgui-core::layout`** | ✅ 改为 `rgui_core::*` 覆盖 |
 | `pub use rgui_state::*` | rgui-state | **并入 `rgui-core::state`** | ✅ 改为 `rgui_core::*` 覆盖 |
-| `pub use rgui_render::*` | rgui-render | 保留 | ✅ |
-| `pub use rgui_platform::*` | rgui-platform | 保留 | ✅ |
+| `pub use rgui_render::*` | rgui-render | 保留（**改定向**） | ✅ 代码用 `pub use rgui_render::{GlyphKey, PathTessellation}`（定向，防通配裸抛内部类型） |
+| `pub use rgui_platform::*` | rgui-platform | 保留（**改定向**） | ✅ 代码用 `pub use rgui_platform::{FocusManager, InputModality}`（定向） |
 | `pub use rgui_style::*` | rgui-style | **并入 `rgui-core::style`** | ✅ 改为 `rgui_core::*` 覆盖 |
 | `pub use rgui_a11y::*` | rgui-a11y | **删除独立 crate**（树并入 core） | ✅ 改为 `rgui_core::*`（含 a11y 树）；**删除 `rgui_a11y::*` 防悬空** |
 | `pub use rgui_macros::{AppMessage,WidgetSpec,html}` | rgui-macros | 保留 | ✅ |
@@ -124,14 +124,22 @@ pub trait WidgetSpec: Send + Sync + 'static {
         AccessibilityNode::none()
     }
 }
+/// 事件传播结果。无 derive（被裁决 A 接受）。可选优化：#[derive(Debug, Clone)]
+/// 便于打印/路径复用；不加 PartialEq（`Continue(M)` 泛型无法全 Eq）。
+/// 已委派 dev 回查，如需断言语义则补 `#[derive(Debug, Clone)]`。
 pub enum EventResult<M> { Handled, Prevented, Continue(M) }   // 事件传播结果
 
 // ===== 数据/值类型 =====
-pub struct WidgetId(u64);
-pub struct Color { r: f32, g: f32, b: f32, a: f32 }   // sRGB 存储
-pub enum PropValue { Bool(bool), Int(i64), Float(f64), Str(String), Color(Color), WidgetId(WidgetId) }
+// 对齐代码实现（D3-D10 验收通过，方向 A 定稿保留代码形态）：
+pub struct WidgetId(u64);   // + NodeHandle/WindowId（见 id.rs，适配多视图）
+pub struct NodeHandle(u64);
+pub struct WindowId(u64);
+pub enum Key { Str(String), Num(u64) }   // 稳定键：字符串/数值（对齐代码，非单 Key(Arc<str>)）
+pub struct Color { r: u8, g: u8, b: u8, a: u8 }   // 对齐代码：8bit 通道，sRGB，可 derive Eq
+impl Color { pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self; pub const fn rgb(r: u8, g: u8, b: u8) -> Self; }
+pub enum PropValue { Bool(bool), Int(i64), Float(f64), Str(String), Color(Color) }
+// 说明：无 WidgetId 变体（对齐代码）——视图引用 widget 用 Key/NodeHandle/MessageBinding，更类型安全。
 pub struct WidgetView<M: AppMessage> { /* 节点 + props + 回调，唯一视图表示 */ }
-pub struct Key(pub Arc<str>);
 pub struct Size { width: f32, height: f32 }
 pub struct Point { x: f32, y: f32 }
 pub struct Rect { origin: Point, size: Size }
@@ -166,7 +174,10 @@ pub struct LayoutResult { size: Size, position: Point }
 // ===== 样式（并入 core，.rgss 文本解析）=====
 pub mod style;
 pub struct StyleSheet { /* 解析后的样式 */ }
-pub fn parse_rgss(input: &str) -> Result<StyleSheet, StyleError>;
+// 对齐代码：parse_rgss 返回 StyleSheet（D3 占位 stub `StyleSheet::default()`；
+// 实际 cssparser 解析在实现阶段补全，届时若需错误处理可升级返回 Result——新增签名改蓝图代价低）
+pub fn parse_rgss(input: &str) -> StyleSheet;
+pub struct StyleRule { /* selector 占位 */ }
 
 // ===== 逻辑组件（Tier 1 WidgetSpec）=====
 pub mod components;
@@ -222,9 +233,10 @@ pub enum InputModality { Mouse, Keyboard }
 ### B.5 `rgui` (facade, 可选)
 
 ```rust
+// 对齐代码：定向重导出（防悬空 use / 防公共 API 污染），非通配
 pub use rgui_core::*;
-pub use rgui_render::*;
-pub use rgui_platform::*;
+pub use rgui_platform::{FocusManager, InputModality};   // 定向：只暴露真公共项
+pub use rgui_render::{GlyphKey, PathTessellation};       // 定向：只暴露真公共项
 pub use rgui_macros::{WidgetSpec, AppMessage, PersistState, html};
 pub struct App;              // 极薄启动协调
 #[cfg(feature = "window")]    // App::run 仅 window feature 门控
@@ -242,32 +254,37 @@ pub fn run<W: WidgetSpec, F: FnMut(&WindowEvent) -> Option<W::Message> + 'static
 
 ```
 rgui-core/src/
-├── lib.rs          (顶层 pub mod + 重导出)
-├── id.rs           WidgetId
+├── lib.rs          (顶层 pub mod + 重导出，见 §B.1)
+├── id.rs           WidgetId + NodeHandle + WindowId
 ├── geometry.rs     Size/Point/Rect/BoxConstraints
-├── color.rs        Color
+├── color.rs        Color (u8 通道)
 ├── traits.rs       AppMessage/PersistState/WidgetSpec/EventResult
 ├── context.rs      View/Update/Measure/Paint/AccessContext
-├── view.rs         WidgetView/PropValue/Key
-├── messages.rs     消息与事件
+├── view.rs         WidgetView/PropValue/Key/Callback/MessageBinding/MessageHandler
+├── message.rs      消息与事件 (NoopMsg)
 ├── locale.rs       Locale
+├── coordinator.rs  视图协调 (Coordinator)
+├── registry.rs     注册表 (Registry)
+├── widget_state.rs 组件状态 (WidgetState)
 ├── state/
-│   ├── mod.rs      StateStore/InstanceState/Subscription/SubscriptionLifetime
+│   ├── mod.rs      StateStore/InstanceState/Subscription/SubscriptionLifetime/StoreBinding
 │   ├── diff.rs     Patch/diff/apply_patch
 │   └── snapshot.rs Snapshot/Snapshotter/SchemaMigration
 ├── layout/
-│   ├── mod.rs      LayoutEngine/LayoutNode/LayoutResult
+│   ├── mod.rs      LayoutEngine/LayoutNode/LayoutResult/LayoutStyle
 │   └── mapping.rs  to_taffy_style (封装 Taffy，不暴露 Taffy 类型到公共 API)
 ├── style/
-│   ├── mod.rs      StyleSheet/parse_rgss
+│   ├── mod.rs      StyleSheet/StyleRule/parse_rgss
 │   └── theme.rs    (可选，最小必要)
 ├── components/
 │   ├── mod.rs
 │   ├── accordion.rs
 │   └── wa_badge.rs
-└── a11y/
-    ├── mod.rs      AccessibilityNode/Action/Role
-    └── (无 AccessKit 后端)
+├── a11y/
+│   ├── mod.rs      AccessibilityNode/Action/Role/State
+│   └── (无 AccessKit 后端)
+└── a11y_tree/
+    └── mod.rs      AccessibilityTree (由 rgui-a11y/tree.rs 迁入)
 ```
 
 **内部依赖方向**：`traits/context/view` 是底层（被组件/状态依赖）；`layout/style` 依赖底层；`components` 依赖 traits/layout/style；`state` 依赖 traits/view 但不依赖 layout/render。全部内部依赖也非环。
@@ -314,9 +331,9 @@ rgui (facade) ──→ rgui-core / rgui-render / rgui-platform / rgui-macros
 
 | Crate | feature | 说明 |
 |---|---|---|
-| `rgui-core` | `default = []`；可选 `std`（预留 no_std，阶段 0 不做） | 零大型可选依赖 |
-| `rgui-render` | `default = ["vello-backend"]`；`vello-backend`（wgpu/vello/cosmic-text/fontdb/skrifa） | **仅此一条渲染路径**。删 `skia-backend`/`offscreen`/`skia-safe` |
-| `rgui-platform` | `default = ["winit"]`（winit 默认启用，非可选）；`winit` feature | 保留；winit 为 platform 核心依赖，上层/qa 默认构建即可编译 |
+| `rgui-core` | `default = ["layout"]`（对齐代码）；可选 `std`（预留 no_std，阶段 0 不做） | 零大型可选依赖；layout 默认启用（taffy 纯 Rust） |
+| `rgui-render` | `default = []`（对齐代码，克制不默认拉起重型 GPU 编译）；`vello-backend`（wgpu/vello/cosmic-text/fontdb/skrifa） | **仅此一条渲染路径**。删 `skia-backend`/`offscreen`/`skia-safe`；vello 需显式开启 |
+| `rgui-platform` | `default = ["winit"]`（对齐代码，winit 核心依赖默认启用）；`winit` feature | 保留；上层/qa 默认构建即可编译 |
 | `rgui-macros` | `default = []` | 无大型运行依赖 |
 | `rgui` (facade) | `default = []`；`window` = [`rgui-render/vello-backend`, `rgui-platform/winit`]（`App::run` 门控）；可选 `test-harness`（含自动化桩） | **删 `devtools`/`script`/`a11y` feature**；测试桩 `#[cfg(feature="test-harness")]` |
 | workspace 根 | 删 `skia-safe`、`rgui-state`/`rgui-layout`/`rgui-components`/`rgui-script`/`rgui-devtools`/`rgui-a11y` 依赖条目 | 清理 |
@@ -413,5 +430,21 @@ resolver = "2"
 
 ---
 
+## 更新记录（按裁决 A：改蓝图对齐代码）
+
+> 本次按总监裁决「方向 A（改蓝图向代码）」，将本蓝图与 D3-D10 验收通过的代码对齐，共更新 8 处：
+> 1. `Color` 改用 `u8`（4 通道，可 derive Eq；sRGB 存储）——实现优于设计稿，不 revert
+> 2. `PropValue` 删除 `WidgetId` 变体（视图引用用 `Key`/`NodeHandle`/`MessageBinding`）
+> 3. `parse_rgss` 改为 `-> StyleSheet`（D3 占位；如需错误处理实现阶段升级 Result）
+> 4. default feature 对齐代码：`core=["layout"]`、`render=[]`、`platform=["winit"]`
+> 5. core 模块补齐 20 项（含 `coordinator`/`registry`/`widget_state`/`message`/`a11y_tree`）
+> 6. facade 改**定向重导出**：`rgui_platform::{FocusManager, InputModality}`、`rgui_render::{GlyphKey, PathTessellation}`（防悬空 use / 防公共 API 污染）
+> 7. `EventResult` 标注：无 derive 被裁决 A 接受；建议 dev 回查补 `#[derive(Debug, Clone)]`（不加 PartialEq）
+> 8. 其它微调同步：`Key` 改枚举 `{Str, Num}`、`WidgetId` 含 `NodeHandle/WindowId`、`Color::rgba/rgb` 构造器
+
+> 判为「实现优于设计稿」的 3 处（原则性说明）：Color 用 u8（紧凑+可 Eq）、facade 定向重导出（防悬空+防污染）、render `default=[]`（克制不默认拉起重型 GPU 编译）。
+
+---
+
 ## 合规确认
-本设计为接口契约级文档，不含 Rust 实现代码。设计全程只读，仅新增 tools/ 本文件；未改动任何现有 Rust 源文件 / Cargo.toml / .git / remote。
+本设计为接口契约级文档，不含 Rust 实现代码。设计全程只读，仅更新 tools/ 本文件（按裁决 A 与代码对齐）；未改动任何现有 Rust 源文件 / Cargo.toml / .git / remote。

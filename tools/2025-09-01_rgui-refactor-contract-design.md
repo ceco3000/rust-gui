@@ -1,5 +1,7 @@
 # rgui 简洁化重构 · 接口契约级细化设计（定稿）
 
+> ⚠️ **【历史已失效 · 已被推倒重来取代】** 本文档针对「渐进重构 old 12-crate → 6-crate」方案。**用户已决策「推倒重来（greenfield）」**，最终架构以 `tools/2025-09-01_rgui-greenfield-architecture.md` 为**唯一权威**（5-crate 收敛：core/render/platform/macros/facade）。本文保留作历史存档，**不作为实现依据**。
+>
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
 > 设计方：devco-architect（方案设计师）
 > 依据：`tools/2025-09-01_rgui-complexity-audit.md`（§三/§四 决策）、`tasks.md`（M0–M7）
