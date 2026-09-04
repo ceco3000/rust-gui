@@ -63,15 +63,18 @@ impl VelloBackend {
     }
 
     /// 把 `SceneGraph` 渲染到给定纹理视图（共享核心；离屏/窗口 surface 复用）。
+    ///
+    /// `scale`：逻辑→物理像素缩放（D17 渲染尺寸统一；离屏传 1.0，surface 传窗口 scale_factor）。
     pub fn render_to_view(
         &mut self,
         graph: &SceneGraph,
         view: &wgpu::TextureView,
         width: u32,
         height: u32,
+        scale: f64,
     ) -> Result<(), String> {
         let mut scene = Scene::new();
-        self.encode(&mut scene, graph);
+        self.encode(&mut scene, graph, scale);
         self.renderer
             .render_to_texture(
                 &self.device,
@@ -159,7 +162,7 @@ impl VelloBackend {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        self.render_to_view(graph, &view, width, height)?;
+        self.render_to_view(graph, &view, width, height, 1.0)?;
 
         // 读回 buffer：COPY_DST | MAP_READ，bytes_per_row 对齐 256
         let bytes_per_row = width * 4;
@@ -229,6 +232,7 @@ impl VelloBackend {
         graph: &SceneGraph,
         width: u32,
         height: u32,
+        scale: f64,
     ) -> Result<(), String> {
         if width == 0 || height == 0 {
             return Ok(());
@@ -251,7 +255,7 @@ impl VelloBackend {
         // 离屏中间纹理（STORAGE_BINDING + TEXTURE_BINDING + COPY_SRC）
         let offscreen = self.create_offscreen_texture(width, height);
         let off_view = offscreen.create_view(&wgpu::TextureViewDescriptor::default());
-        self.render_to_view(graph, &off_view, width, height)?;
+        self.render_to_view(graph, &off_view, width, height, scale)?;
 
         // 获取帧 + blit 呈现
         let surface_texture = match surface.get_current_texture() {
@@ -274,7 +278,9 @@ impl VelloBackend {
     }
 
     /// 把 `SceneGraph` 的绘制指令编码为 vello `Scene`。文本用真实字形（cosmic-text）。
-    fn encode(&mut self, scene: &mut Scene, graph: &SceneGraph) {
+    /// `scale`：逻辑→物理像素缩放（D17 渲染尺寸统一）。
+    fn encode(&mut self, scene: &mut Scene, graph: &SceneGraph, scale: f64) {
+        let tf = kurbo::Affine::scale(scale);
         for cmd in graph.cmds() {
             match cmd {
                 DrawCmd::FillRect {
@@ -291,7 +297,7 @@ impl VelloBackend {
                         f64::from(*y + *height),
                     );
                     let brush = Brush::Solid(to_peniko_color(*color));
-                    scene.fill(Fill::NonZero, kurbo::Affine::IDENTITY, brush, None, &rect);
+                    scene.fill(Fill::NonZero, tf, brush, None, &rect);
                 }
                 DrawCmd::DrawText {
                     x,
@@ -299,8 +305,9 @@ impl VelloBackend {
                     text,
                     size,
                     color,
+                    width,
                 } => {
-                    self.draw_text(scene, *x, *y, text, *size, *color);
+                    self.draw_text(scene, *x, *y, text, *size, *color, *width, tf);
                 }
                 DrawCmd::StrokeRect {
                     x,
@@ -319,27 +326,40 @@ impl VelloBackend {
                     );
                     let stroke = kurbo::Stroke::new(f64::from(*stroke_width));
                     let brush = Brush::Solid(to_peniko_color(*color));
-                    scene.stroke(&stroke, kurbo::Affine::IDENTITY, brush, None, &rect);
+                    scene.stroke(&stroke, tf, brush, None, &rect);
                 }
             }
         }
     }
 
-    /// 用真实字形绘制文本（cosmic-text 整形 → vello draw_glyphs）。无字形则矩形兜底。
-    fn draw_text(&mut self, scene: &mut Scene, x: f32, y: f32, text: &str, size: f32, color: Color) {
+    /// 用真实字形绘制文本（cosmic-text 整形 → vello draw_glyphs）。`width`>0 时按宽度换行。无字形则矩形兜底。
+    /// `tf`：逻辑→物理缩放变换。
+    fn draw_text(
+        &mut self,
+        scene: &mut Scene,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: Color,
+        width: f32,
+        tf: kurbo::Affine,
+    ) {
         let brush = Brush::Solid(to_peniko_color(color));
-        let runs = self.text.shape_line(text, size);
+        let runs = self.text.shape_line(text, size, if width > 0.0 { Some(width) } else { None });
         if runs.is_empty() {
             // 兜底：无字体/空文本时画一个近似块（不至于完全空）。
-            let width = text.chars().count() as f32 * size * 0.6;
-            let rect = kurbo::Rect::new(f64::from(x), f64::from(y), f64::from(x + width), f64::from(y + size));
-            scene.fill(Fill::NonZero, kurbo::Affine::IDENTITY, brush, None, &rect);
+            let rect_width = text.chars().count() as f32 * size * 0.6;
+            let rect = kurbo::Rect::new(f64::from(x), f64::from(y), f64::from(x + rect_width), f64::from(y + size));
+            scene.fill(Fill::NonZero, tf, brush, None, &rect);
             return;
         }
         for run in &runs {
+            // glyph 坐标为相对 run 原点（无 x/y），先 translate 到 (x,y) 再整体 scale 放大
+            let run_tf = tf * kurbo::Affine::translate((f64::from(x), f64::from(y)));
             scene
                 .draw_glyphs(&run.font_data)
-                .transform(kurbo::Affine::translate((f64::from(x), f64::from(y))))
+                .transform(run_tf)
                 .font_size(size)
                 .brush(brush.clone())
                 .draw(Fill::NonZero, run.glyphs.iter().copied());

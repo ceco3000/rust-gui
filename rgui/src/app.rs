@@ -161,10 +161,12 @@ mod backend {
             let (Some(backend), Some(surface)) = (&mut self.backend, &self.surface) else {
                 return;
             };
-            let size = window.inner_size();
+            let size = window.inner_size(); // 物理像素
+            let scale = window.scale_factor(); // Retina 高分屏 2x 等
             let view_tree = self.coordinator.current_view(&ViewContext::default());
             let graph = SceneGraph::from_view(&view_tree);
-            if let Err(e) = backend.render_surface(surface, &graph, size.width, size.height) {
+            // D17：渲染尺寸统一——surface 用物理尺寸，SceneGraph 逻辑坐标经 scale 放大到物理
+            if let Err(e) = backend.render_surface(surface, &graph, size.width, size.height, scale) {
                 eprintln!("render error: {e}");
             }
         }

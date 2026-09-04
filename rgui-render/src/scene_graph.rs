@@ -27,7 +27,7 @@ pub enum DrawCmd {
         /// 颜色。
         color: Color,
     },
-    /// 绘制文本（D5 最小占位：text/字号/颜色；真实字形在 text.rs 补全）。
+    /// 绘制文本（D5 占位：text/字号/颜色；D17 加 width 供换行）。
     DrawText {
         /// x 坐标。
         x: f32,
@@ -39,6 +39,8 @@ pub enum DrawCmd {
         size: f32,
         /// 颜色。
         color: Color,
+        /// 文本区域可用宽度（逻辑；>0 换行，0/负 = 单行不截断）。
+        width: f32,
     },
     /// 描边矩形（D16：获焦边框高亮；stroke_width 为描边宽度）。
     StrokeRect {
@@ -128,6 +130,8 @@ impl SceneGraph {
                     size: size.height,
                     // 亮白文本，保证在与多数背景（含蓝/深色）对比下可辨
                     color: Color::rgb(255, 255, 255),
+                    // 文本区域宽（D17 供 shapeLine 换行；>0 换行）
+                    width: size.width,
                 });
             }
             _ => {}

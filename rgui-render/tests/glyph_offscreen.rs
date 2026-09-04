@@ -17,6 +17,7 @@ fn draw_text_produces_real_glyph_pixels() {
         text: "rgui-123".to_string(),
         size: 48.0,
         color: Color::rgb(255, 255, 255),
+        width: 0.0,
     }]);
     let w = 220u32;
     let h = 90u32;
@@ -53,6 +54,7 @@ fn empty_text_renders_nothing() {
         text: "".to_string(),
         size: 48.0,
         color: Color::rgb(255, 255, 255),
+        width: 0.0,
     }]);
     let pixels = backend
         .render_offscreen(&scene, 120, 60)
@@ -79,6 +81,7 @@ fn button_and_text_render_both_fill_and_glyphs() {
             text: "Click me (clicked 0)".to_string(),
             size: 56.0,
             color: Color::rgb(255, 255, 255),
+            width: 0.0,
         },
     ]);
     let w = 480u32;

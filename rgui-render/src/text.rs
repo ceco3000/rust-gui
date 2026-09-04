@@ -35,25 +35,32 @@ mod wide {
             Self { font_system }
         }
 
-        /// 整形一行文本，按字体分组产出 vello glyph runs。
+        /// 整形文本，按字体分组产出 vello glyph runs。
         ///
         /// - `size`：字体大小（像素）。
+        /// - `max_width`：逻辑可用宽度（`Some` 时按宽度换行；`None` 单行不截断）。
         /// - 返回空 Vec 表示无可见 glyph（空文本/无字体）。
-        pub fn shape_line(&mut self, text: &str, size: f32) -> Vec<ShapedRun> {
+        pub fn shape_line(&mut self, text: &str, size: f32, max_width: Option<f32>) -> Vec<ShapedRun> {
             if text.is_empty() {
                 return Vec::new();
             }
             let metrics = Metrics::new(size, size * 1.2);
             let mut text_buf = Buffer::new(&mut self.font_system, metrics);
             text_buf.set_text(&mut self.font_system, text, Attrs::new(), Shaping::Advanced);
+            // D17：设置可用宽度使 cosmic-text 按宽度换行（多行），避免长文本溢出组件/窗口边界
+            if let Some(w) = max_width {
+                if w > 0.0 {
+                    text_buf.set_size(&mut self.font_system, Some(w), None);
+                }
+            }
             text_buf.shape_until_scroll(&mut self.font_system, false);
 
             let mut runs: Vec<ShapedRun> = Vec::new();
+            let mut by_font: Vec<(cosmic_text::fontdb::ID, Vec<Glyph>)> = Vec::new();
             for line in text_buf.layout_runs() {
                 // vello 的 glyph 原点在基线：用 line 的基线 y（line_y）作为 run 内 y 基准，
-                // 这样文字随基线对齐（不会有 y=0 时整行被裁剪到视口外的问题）。
+                // 这样文字随基线对齐（多行时 line_y 随行递增，实现换行垂直排布）。
                 let baseline = line.line_y;
-                let mut by_font: Vec<(cosmic_text::fontdb::ID, Vec<Glyph>)> = Vec::new();
                 for g in line.glyphs {
                     let gx = g.x + g.font_size * g.x_offset;
                     let gy = baseline - g.font_size * g.y_offset;
@@ -63,12 +70,12 @@ mod wide {
                         None => by_font.push((g.font_id, vec![Glyph { id: gid, x: gx, y: gy }])),
                     }
                 }
-                for (font_id, glyphs) in by_font {
-                    let Some(font_data) = self.font_data_for(font_id) else {
-                        continue;
-                    };
-                    runs.push(ShapedRun { font_data, glyphs });
-                }
+            }
+            for (font_id, glyphs) in by_font {
+                let Some(font_data) = self.font_data_for(font_id) else {
+                    continue;
+                };
+                runs.push(ShapedRun { font_data, glyphs });
             }
             runs
         }
@@ -97,7 +104,7 @@ mod wide {
         pub fn new() -> Self {
             Self
         }
-        pub fn shape_line(&mut self, _text: &str, _size: f32) -> Vec<ShapedRun> {
+        pub fn shape_line(&mut self, _text: &str, _size: f32, _max_width: Option<f32>) -> Vec<ShapedRun> {
             Vec::new()
         }
     }
@@ -112,7 +119,7 @@ mod tests {
     #[test]
     fn shapes_ascii_text_into_glyphs_and_valid_font() {
         let mut shaper = TextShaper::new();
-        let runs = shaper.shape_line("Click me (clicked 0)", 24.0);
+        let runs = shaper.shape_line("Click me (clicked 0)", 24.0, None);
         assert!(!runs.is_empty(), "应产出至少一个字形 run");
         let total: usize = runs.iter().map(|r| r.glyphs.len()).sum();
         assert!(total > 0, "应产出非空 glyph 序列");
@@ -122,5 +129,33 @@ mod tests {
             assert!(run.font_data.data.len() > 0, "字体数据应非空");
             assert_eq!(run.font_data.index, if run.font_data.index == 0 { 0 } else { run.font_data.index });
         }
+    }
+
+    #[test]
+    fn long_text_wraps_when_width_limited() {
+        let mut shaper = TextShaper::new();
+        // 长文本 + 窄宽度 → 结果应多行（glyph y 范围 > 单行高度），而非单行溢出
+        let long = "The quick brown fox jumps over the lazy dog. ".repeat(3);
+        let single = shaper.shape_line(&long, 24.0, None);
+        let wrapped = shaper.shape_line(&long, 24.0, Some(120.0));
+
+        let y_range = |runs: &[ShapedRun]| -> (f32, f32) {
+            let mut min_y = f32::MAX;
+            let mut max_y = f32::MIN;
+            for run in runs {
+                for g in &run.glyphs {
+                    min_y = min_y.min(g.y);
+                    max_y = max_y.max(g.y);
+                }
+            }
+            (min_y, max_y)
+        };
+
+        let (_, s_max) = y_range(&single);
+        let (_, w_max) = y_range(&wrapped);
+        assert!(
+            (w_max - s_max) > 20.0,
+            "换行后应多行（glyph 最大 y 显著增大），single_max={s_max} wrapped_max={w_max}"
+        );
     }
 }
