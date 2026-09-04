@@ -1,6 +1,0 @@
-<!-- Accordion — 垂直排列的交互式标题面板容器。
-     翻译自 WA <wa-accordion>。视觉由 accordion.rhai 渲染。
-     子节点必须是 AccordionItem。 -->
-<Column class="accordion" flex-direction="column">
-  <slot />
-</Column>

@@ -1,7 +1,0 @@
-[package]
-name = "verify-av2-skia"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-skia-safe = { version = "0.75", features = ["textlayout"] }
