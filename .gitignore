@@ -1,0 +1,15 @@
+# 构建产物
+/target
+
+# 编辑器/系统
+.DS_Store
+
+# 日志
+*.log
+logs/
+
+# 本地工具/编辑器配置（非项目代码）
+.hermes/
+.trae/
+.uploads/
+.claude/

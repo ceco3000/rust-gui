@@ -1,0 +1,17 @@
+[package]
+name = "rgui-macros"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "rgui 过程宏：WidgetSpec/AppMessage/PersistState derive + html!（独立 proc-macro crate）"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+# 宏展开依赖 syn/quote 在实现阶段引入；D3 阶段 0 不引入，proc-macro 仅承载占位入口。
+
+[lints]
+workspace = true

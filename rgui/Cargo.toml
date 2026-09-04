@@ -1,0 +1,27 @@
+[package]
+name = "rgui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "rgui 顶层门面（facade）：核心类型重导出 + 启动/事件循环/渲染协调/交互协调"
+
+[dependencies]
+rgui-core.workspace = true
+rgui-render.workspace = true
+rgui-platform.workspace = true
+rgui-macros.workspace = true
+
+[features]
+default = []
+# 窗口 + 事件循环 + surface 渲染（D9）：winit/wgpu 经 rgui-platform/winit + rgui-render/vello-backend
+# 传递引入；facade 源码不再直接引用 winit::/wgpu::（经 platform/render 公共 API）。
+window = [
+    "rgui-render/vello-backend",
+    "rgui-platform/winit",
+]
+# test-harness = []  # InteractionAutomationHarness 测试桩 cfg 门控，D4+ 开启
+
+[lints]
+workspace = true

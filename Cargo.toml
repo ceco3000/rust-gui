@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+
+# === D3 从零 scaffold：5-crate workspace（rgui-style 已并入 rgui-core::style）===
+members = [
+    "rgui-core",
+    "rgui-render",
+    "rgui-platform",
+    "rgui-macros",
+    "rgui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+authors = ["The rgui Project Developers"]
+license = "MIT OR Apache-2.0"
+
+# === 内部 crate 依赖（DAG 无环：render/platform/macros 依赖 core；facade 依赖全部；core 绝不依赖 render/platform）===
+[workspace.dependencies]
+rgui-core = { path = "rgui-core", version = "0.1.0" }
+rgui-render = { path = "rgui-render", version = "0.1.0" }
+rgui-platform = { path = "rgui-platform", version = "0.1.0" }
+rgui-macros = { path = "rgui-macros", version = "0.1.0" }
+
+# 说明：D3 阶段 0 只建立可编译骨架 + 契约占位，不实现业务逻辑。
+# 重型外部依赖（wgpu/vello/cosmic-text/fontdb/skrifa/winit/cssparser/erased-serde 等）
+# 按契约 §1.5 feature 划分，在 D4+ 实现对应后端时经 feature 门控引入，D3 不引入以确保骨架可离线快速编译。
+
+# === lint 克制：仅 unsafe_code = deny；clippy 保持 default；todo/expect/unwrap 不设 deny ===
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# 保持 clippy 默认级别；不启用 pedantic/nursery/all。

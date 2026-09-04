@@ -1,0 +1,27 @@
+[package]
+name = "rgui-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "rgui 平台层：窗口/输入/IME/焦点（winit 隔离）"
+
+[dependencies]
+rgui-core.workspace = true
+
+# winit 重型平台依赖经 winit feature 引入（D7：窗口 + 事件循环）
+winit = { version = "0.30", optional = true }
+raw-window-handle = { version = "0.6", optional = true }
+
+[features]
+default = []
+# winit 窗口/事件循环（D7）
+winit = [
+    "dep:winit",
+    "dep:raw-window-handle",
+    "rgui-core/layout",
+]
+
+[lints]
+workspace = true

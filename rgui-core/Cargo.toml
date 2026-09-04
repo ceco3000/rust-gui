@@ -1,0 +1,21 @@
+[package]
+name = "rgui-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "rgui 逻辑核心：WidgetSpec/AppMessage/状态/布局/组件/无障碍树（零平台/零 GPU/零 cssparser）"
+
+[dependencies]
+# 纯 Rust 核心。D4 引入 taffy（布局，纯 Rust，无平台/GPU）经 feature 门控。
+# 布局函数保持纯 Rust 可测（mapping 层封装 Taffy，不把 Taffy 类型泄漏到公共 API）。
+taffy = { version = "0.7", optional = true }
+
+[features]
+default = ["layout"]
+# 布局引擎（Taffy 纯 Rust）；不启用时可离线仅编译核心数据结构。
+layout = ["dep:taffy"]
+
+[lints]
+workspace = true
