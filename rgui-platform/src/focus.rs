@@ -26,8 +26,13 @@ impl FocusManager {
         // 模态层级（modal layer）留后续；当前仅维护焦点。
     }
 
-    /// 注册可获焦组件（有序列表，供 Tab 循环）。
+    /// 注册可获焦组件（有序列表，供 Tab 循环）。若当前焦点被移除，清空焦点（D18 focused 残留边界）。
     pub fn set_focusable(&mut self, ids: Vec<WidgetId>) {
+        if let Some(f) = self.focused {
+            if !ids.contains(&f) {
+                self.focused = None;
+            }
+        }
         self.focusable = ids;
     }
 
@@ -137,5 +142,22 @@ mod tests {
     fn focus_next_on_empty_focusable_returns_none() {
         let mut fm = FocusManager::new();
         assert_eq!(fm.focus_next(), None);
+    }
+
+    #[test]
+    fn set_focusable_clears_removed_focus_and_keeps_existing() {
+        // focused=2 被移除 → 清空焦点
+        let mut fm = FocusManager::new();
+        fm.set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
+        assert!(fm.set_focus(WidgetId::new(2)));
+        fm.set_focusable(vec![WidgetId::new(1), WidgetId::new(3)]);
+        assert_eq!(fm.focus(), None, "被移除的焦点应清空（不残留）");
+
+        // focused=1 仍在新列表 → 保留
+        let mut fm2 = FocusManager::new();
+        fm2.set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
+        assert!(fm2.set_focus(WidgetId::new(1)));
+        fm2.set_focusable(vec![WidgetId::new(1), WidgetId::new(3)]);
+        assert_eq!(fm2.focus(), Some(WidgetId::new(1)), "仍存在的焦点应保留");
     }
 }

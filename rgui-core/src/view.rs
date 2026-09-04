@@ -35,6 +35,8 @@ pub struct WidgetView<M = ()> {
     pub size: Option<Size>,
     /// 描边边框（D16：获焦高亮外框；None = 无边框）。
     pub border: Option<Border>,
+    /// 组件复用 key（D18：key-based reconcile 匹配标识；None = 位置型）。
+    pub key: Option<u64>,
     _marker: PhantomData<M>,
 }
 
@@ -63,6 +65,7 @@ impl<M> WidgetView<M> {
             props: self.props,
             size: self.size,
             border: self.border,
+            key: self.key,
             _marker: PhantomData,
         }
     }
@@ -75,6 +78,7 @@ impl<M> Default for WidgetView<M> {
             props: PropValue::default(),
             size: None,
             border: None,
+            key: None,
             _marker: PhantomData,
         }
     }
@@ -203,6 +207,7 @@ mod tests {
             props: PropValue::Unit,
             size: None,
             border: None,
+            key: None,
             _marker: PhantomData,
         };
 

@@ -90,7 +90,7 @@ pub trait WidgetSpec: Send + Sync + 'static {
 
 | 类型 | 说明（见 D0 §5/§6） |
 |------|------|
-| `WidgetView<M=()>` | 视图树节点（children/props/size） |
+| `WidgetView<M=()>` | 视图树节点（children/props/size/border(D16)/key(D18)） |
 | `PropValue` | `Unit/Bool/Int/Float/Str/Color` 属性值 |
 | `Key` | `Str(String)/Num(u64)` 稳定键 |
 | `Color` | sRGB `u8×4` |
