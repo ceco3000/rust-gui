@@ -12,6 +12,44 @@ pub use winit::event_loop::{ActiveEventLoop, ControlFlow};
 pub use winit::keyboard::{KeyCode, PhysicalKey};
 pub use winit::window::WindowAttributes;
 
+use crate::input::{ImeEvent, InputEvent};
+use winit::event::Ime;
+
+/// winit 事件 → rgui `InputEvent`（D20 真实驱动转换：光标/按下/释放/文本，供上层文本/指针输入接入）。
+///
+/// 返回 `None` 表示该 winit 事件不映射为 rgui 输入事件（如窗口焦点/IME 提交等）。
+pub fn to_input_event(event: &WindowEvent) -> Option<InputEvent> {
+    match event {
+        WindowEvent::CursorMoved { position, .. } => Some(InputEvent::CursorMoved {
+            x: position.x as f32,
+            y: position.y as f32,
+        }),
+        WindowEvent::MouseInput {
+            state: ElementState::Pressed,
+            ..
+        } => Some(InputEvent::Pressed),
+        WindowEvent::MouseInput {
+            state: ElementState::Released,
+            ..
+        } => Some(InputEvent::Released),
+        WindowEvent::KeyboardInput { event: ke, .. } => {
+            ke.text.clone().map(|t| InputEvent::Text(t.to_string()))
+        }
+        _ => None,
+    }
+}
+
+/// winit IME 事件 → rgui `ImeEvent`（D20 Preedit/Commit 真实链路；组合输入事件流）。
+pub fn to_ime_event(event: &WindowEvent) -> Option<ImeEvent> {
+    match event {
+        WindowEvent::Ime(Ime::Enabled) => Some(ImeEvent::Enabled),
+        WindowEvent::Ime(Ime::Preedit(text, _)) => Some(ImeEvent::Preedit { text: text.clone() }),
+        WindowEvent::Ime(Ime::Commit(text)) => Some(ImeEvent::Commit { text: text.clone() }),
+        WindowEvent::Ime(Ime::Disabled) => Some(ImeEvent::Disabled),
+        _ => None,
+    }
+}
+
 /// winit 原生事件循环（`EventLoop<()>`）。
 pub type NativeEventLoop = winit::event_loop::EventLoop<()>;
 
@@ -129,5 +167,52 @@ impl<'a, A: App> winit::application::ApplicationHandler for Runner<'a, A> {
                 self.pending = false;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::input::{ImeEvent, InputEvent};
+
+    #[test]
+    fn ime_commit_maps_to_ime_event() {
+        let e = WindowEvent::Ime(Ime::Commit("é".to_string()));
+        assert_eq!(
+            to_ime_event(&e),
+            Some(ImeEvent::Commit {
+                text: "é".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn ime_preedit_maps_to_ime_event() {
+        let e = WindowEvent::Ime(Ime::Preedit("啊".to_string(), Some((0, 1))));
+        assert_eq!(
+            to_ime_event(&e),
+            Some(ImeEvent::Preedit {
+                text: "啊".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn ime_enabled_disabled_map_to_ime_event() {
+        assert_eq!(
+            to_ime_event(&WindowEvent::Ime(Ime::Enabled)),
+            Some(ImeEvent::Enabled)
+        );
+        assert_eq!(
+            to_ime_event(&WindowEvent::Ime(Ime::Disabled)),
+            Some(ImeEvent::Disabled)
+        );
+    }
+
+    #[test]
+    fn ime_event_does_not_map_to_input_event() {
+        // IME 提交事件不映射为 rgui `InputEvent`（走 ImeEvent 通道）
+        let e = WindowEvent::Ime(Ime::Commit("x".to_string()));
+        assert_eq!(to_input_event(&e), None);
     }
 }

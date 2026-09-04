@@ -25,3 +25,16 @@ pub enum InputEvent {
     /// 文本输入。
     Text(String),
 }
+
+/// IME 输入事件（D20：组合输入 Preedit → Commit 事件流）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ImeEvent {
+    /// IME 启用（开始组合输入）。
+    Enabled,
+    /// 组合中间状态（未提交文本）。
+    Preedit { text: String },
+    /// 组合输入提交（最终文本）。
+    Commit { text: String },
+    /// IME 禁用（组合结束）。
+    Disabled,
+}
