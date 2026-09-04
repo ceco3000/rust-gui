@@ -2,9 +2,201 @@
 
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
 > 主管线：devco-director（总监）
-> 阶段：**D10 完成 ✅ 且代码+文档已入库。文档同步铁律落地：核心 3 份（D0/D11/CLAUDE.md）+ greenfield 已与代码一致（reviewer 复审 PASS）。待 doc 补 D 系列（D1-D10）后推进 D11。**
+> 阶段：**D19 完成 ✅（样式系统 + 样式驱动，四层确认通过）。自主排期推进。下一阶段 D20=模态层级 + InputEvent/Ime。**
 
-> 已提交：fa742c3(核心3份+greenfield B3B5) / 2347a4d(D0回填) / 96adeb7(greenfield 8点对齐+refactor失效标注) / 9b4017b(dev feature修复：platform winit默认启用+app.rs门控)。代码与远程同步，剩余未提交仅 tasks.md + reviewer 核对报告（文档）。
+> D19 已提交：4fa48fa(dev 样式驱动+Border.pad+AppConfig.stylesheet) / 737c6e3(dev fmt+D5补标) / 89723cd(doc greenfield §B.1+D0 补 ViewContext.styles)。74 测试全绿(69→74)。流式判据 PASS（iter().find()/链式 rule）。D19 闭合 D16 描边 pad 参数化。D19 P2：parse_rgss 仍占位（.rgss 文本解析留 P1，程序化构建经 StyleSheet::rule，不引 cssparser）。
+
+---
+
+## D19 — 样式系统 + 样式驱动
+
+**阶段：D19 已启动（总监自主排期，用户授权完成全部开发）。**
+设计基准：greenfield §B.1（StyleSheet/StyleRule）+ docs/D4（样式系统）+ docs/D10（组件规范）。
+
+**目标**：把组件硬编码颜色/样式（D14 高亮色、组件配色）改为**样式驱动**——实现样式系统基础（StyleRule/StyleSheet，`core::style` 从占位到可用），组件从样式表取样式（颜色/描边/边框等），为后续 `.rgss` 解析/主题铺路。同时闭合 D16 的描边 pad 参数化（D19 可参数化）。
+
+**范围**：
+1. **样式系统基础**：`core::style` 从占位实现——`StyleRule{selector, properties}`（greenfield §B.1 已有类型）/`StyleSheet`，样式属性（color/背景/描边等）定义。
+2. **样式驱动组件**：Accordion/WaBadge 配色/描边/字体等从样式表读取（而非硬编码 if-else 色值）。组件 view 查样式表取样式。
+3. **默认样式/主题**：提供默认主题样式（当前硬编码色作为默认样式回退），组件在样式表命中时用样式、未命中用默认。
+4. **描边 pad 参数化**（D16 P2）：描边 pad 经样式/属性参数化（而非硬编码 2.0）。
+5. **`parse_rgss`**：greenfield §G 阶段0不含样式解析，D19 若投入可做基础解析；若过重，至少 StyleSheet 程序化构建（API 造样式），`.rgss` 文本解析留后续（如实标注）。
+6. **demo 验证**：window_demo/d18_list 组件配色经样式驱动（改样式表 → 组件配色变，截图确认）。
+
+【硬约束】流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（样式在 core::style 纯 Rust）；DAG 无环；单一 vello/winit；不引入 cssparser（greenfield 硬约束）。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D4 样式、D10 组件规范、D1 WidgetSpec、greenfield §B.1/§G 若有样式）。
+
+完成后：①样式系统基础（StyleRule/StyleSheet）是否实现②组件样式驱动（配色/描边从样式表）③描边 pad 参数化（D16 P2）④parse_rgss 状态（实现/如实标注留后续）⑤流式编码⑥cargo check/test 结果⑦commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D18 已提交：20006e1(dev keyed reconcile+动态增删 d18_list+focus 边界) / 1d6dc2d(doc greenfield §B.1+D0 补 WidgetView.key+MoveChild)。69 测试全绿(65→69)。流式判据 PASS（iter().map().collect()/position+any）。D18 闭合 D12 focused 残留边界 + D17 draw_text 高分屏复核。D18 P2：key 为 Option<u64> 手动分配无自动生成（无 key 子节点回退索引匹配），可考虑混合策略；diff_children_keyed 可优化减少两步 patch（效率微优化）。
+
+---
+
+## D18 — key-based reconcile + 动态增删组件
+
+**阶段：D18 已启动（总监自主排期，用户授权完成全部开发）。**
+设计基准：greenfield §B.1（WidgetRegistry/WidgetNode）+ docs/D2（状态 diff）+ docs/D10（组件规范）。
+
+**目标**：实现 key-based reconcile（组件列表复用/按 key 定位）+ 组件动态增删（容器可增删子组件）——让组件容器/列表能正确增量更新（不整体重建），为构建列表/容器组件铺路。同时闭合 D17 的 draw_text 仿射组合顺序高分屏复核。
+
+**范围**：
+1. **key-based reconcile**：组件节点按 key（而非仅位置）识别/复用——更新子组件列表时，按 key 匹配复用已存在组件（move/update），而非按索引重建。核心在 Coordinator/WidgetNode 的 reconcile 逻辑。
+2. **动态增删组件**：容器/列表支持运行时增删子组件（add/remove），并正确 reconcile（增加的补建、删除的移除、重排的复用）。demo（如一个可增删项列表）验证。
+3. **focused 残留边界**（D12 P2 闭合）：focusable 列表动态变化时 focused 不置 None（增删后焦点正确）。
+4. **draw_text 高分屏复核**（D17 P2）：`tf * translate` 组合顺序在多组件布局下实机验证。
+5. **demo 验证**：可增删组件列表 demo（如动态 Accordion/WaBadge 项），key-based reconcile + 增删正确。
+
+【硬约束】流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（reconcile 在 core 逻辑层）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D2 状态 diff、D1 WidgetSpec、D10 组件规范、D5 若事件/焦点、greenfield §B.1 若有）。
+
+完成后：①key-based reconcile 是否实现（按 key 复用非重建）②动态增删组件（add/remove 正确）③focused 残留边界（D12 P2）④draw_text 高分屏复核（D17 P2）⑤流式编码⑥cargo check/test 结果⑦commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D17 已提交：2cfea91(dev 文本换行+render scale) / 05aea35(doc D3/D10/greenfield §B.2 补)。65 测试全绿(64→65)。流式判据 PASS（iter().position/line_y）。D17 闭合 D15 的 P2（渲染物理/逻辑尺寸混用）。D17 P2：换行宽用组件 size.width（若有 padding 需扣除，demo 无 padding 故正确）；draw_text 仿射组合顺序需高分屏实机验证（D18 复核）。
+
+---
+
+## D17 — 布局/文本换行（多组件布局 + 文本溢出）
+
+**阶段：D17 已启动（总监自主排期，用户授权完成全部开发）。**
+设计基准：greenfield §B.1/§C.1（layout）+ docs/D3（渲染）+ docs/D10（组件规范）+ docs/D2（布局）。
+
+**目标**：解决文本溢出/换行 + 渲染层物理/逻辑尺寸统一——让组件文本（如 Accordion 展开态内容、WaBadge label）在窗口内正确布局（不截断、可换行），多组件同窗布局正确，且渲染 surface 尺寸与 SceneGraph 逻辑坐标匹配（Retina 无内容不匹配）。
+
+**范围**：
+1. **文本换行**：多行/长文本换行处理（cosmic-text 行布局，字形按行渲染，不溢出窗口/组件边界）。Accordion 展开态内容区文本、WaBadge label 文本溢出处理。
+2. **渲染尺寸统一**：D15 P2——渲染 surface 用 inner_size（物理）vs SceneGraph 逻辑坐标，Retina 下内容尺寸不匹配。统一物理→逻辑（surface 尺寸也经 scale_factor 换算，SceneGraph 用逻辑坐标）。
+3. **多组件布局**：同窗多组件布局正确（Accordion 左 + WaBadge 右，各自区域不重叠、边界正确）。
+4. **demo 验证**：window_demo 多组件+文本布局正确（截图确认无截断、换行、边界合理）。
+
+【硬约束】流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（布局在 core::layout，文本整形在 render 但渲染层）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D2 布局、D3 渲染、D10 组件规范、D5 若文本/输入、greenfield §C.1 若有）。
+
+完成后：①文本换行是否实现（多行/长文本不溢出）②渲染尺寸统一（物理→逻辑，Retina 无内容不匹配）③多组件布局正确④流式编码⑤cargo check/test 结果⑥commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D16 已提交：b3ab6eb(dev StrokeRect+WidgetView.border) / 9c357d0(doc D3/D10/greenfield §B.2/D0 补描边)。64 测试全绿(63→64)。流式判据 PASS（iter().any()/if-let）。D16 闭合 D14 描边未实现项。D16 P2：描边 pad 硬编码 2.0（D19 可参数化）；获焦描边 = D14 背景变亮 + D16 描边叠加（视觉稍丰富，可选只留描边，功能无碍）。
+
+---
+
+## D16 — StrokeRect 描边边框（真焦点边框样式）
+
+**阶段：D16 已启动（总监自主排期，用户授权完成全部开发）。**
+设计基准：greenfield §B.2（render 图元）+ docs/D5（焦点/未实现项）+ docs/D10（组件规范）。
+
+**目标**：实现描边矩形 draw 图元（StrokeRect），让获焦组件绘制**真描边边框高亮**（而非仅背景变亮，D14 的方向是背景高亮，D16 补描边边框样式），更接近真实 GUI 焦点边框。
+
+**范围**：
+1. **StrokeRect 图元**：render SceneGraph 加描边矩形 draw 指令（StrokeRect{rect,color,width}）——vello 绘制描边矩形（有 stroke API）。from_view 识别（WidgetView 若有 border prop/焦点描边 → StrokeRect）。
+2. **core 组件边框**：WidgetSpec 组件声明边框（或获焦时产 Border 传 DrawCmd::StrokeRect），Accordion/WaBadge 获焦时描边边框高亮。
+3. **demo 验证**：Tab/Shift+Tab 切换时获焦组件描边边框高亮（截图；离屏/单测验证 StrokeRect draw 指令），比背景变亮更清晰的焦点边框。
+4. 保持 D15 逻辑坐标（scale_factor）；组件配色可用样式驱动（D19 再接入样式）。
+
+【硬约束】流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（描边是组件 view 的 draw 指令，render 渲染）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D5 焦点、D3 渲染 SceneGraph 图元、D10 组件规范、greenfield §B.2 若有 StrokeRect）。
+
+完成后：①StrokeRect 图元是否实现（SceneGraph + vello 绘制）②获焦描边边框高亮（组件 + demo）③流式编码④cargo check/test 结果⑤commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D15 已提交：36badd8(dev scale_factor) / 0cb8590(doc greenfield §B.3 补 scale_factor)。63 测试全绿(60→63)。流式判据 PASS。D15 闭合 D12 scale_factor P2。D15 P2（→D17）：渲染 surface 尺寸用 inner_size(物理) vs SceneGraph 逻辑坐标，Retina 下内容尺寸不匹配，D17 布局/渲染统一；to_logical 用全局 platform_scale 而非逐窗口 window_scale（多窗口/多显示器 scale 可能不同），多窗口时逐窗口换算，记后续改进。
+
+---
+
+> 阶段：**D20 完成 ✅（模态层级 + InputEvent/Ime 真实驱动，四层确认 + 收尾清理）。D3→D20 全部阶段完成，rgui 主体开发交付。用户授权"完成全部开发"范围内已全部完成。**
+
+> D20 已提交：c32d4ec(dev 模态+InputEvent/ImeEvent) / eb1792f(doc greenfield §B.3) / 688343f(dev 清理 ime.rs 重复 ImeEvent)。81 测试全绿(74→81)。流式判据 PASS。D20 落地 D5 未实现项（模态焦点隔离 + 输入/IME 真实链路）。D20 P2：文本编辑组件接入(IME/InputEvent)待 P1（D5 如实标注）、open_modal 单层（多级模态留后续）、to_input_event CursorMoved 存物理坐标（供上层按需换算）。
+
+---
+
+## D20 — 模态层级 + InputEvent/Ime 真实驱动
+
+**阶段：D20 已启动（总监自主排期，剩余开发最后一块，用户授权完成全部开发）。**
+设计基准：greenfield §B.3（platform 输入/焦点/IME）+ docs/D5（事件/焦点/未实现项）。
+
+**目标**：把 D5 标注的"未实现项"落地——`InputEvent/ImeEvent` 真实驱动（从占位类型到真实事件处理）、模态层级（FocusManager modal layer，模态浮层焦点隔离）。让输入（键盘/IME）与模态交互真实可用。
+
+**范围**：
+1. **InputEvent 真实驱动**：`InputEvent`（占位类型）补充，平台层真实事件→InputEvent（键盘/鼠标/滚动等），事件处理走真实链路（非仅占位）。
+2. **ImeEvent 真实驱动**：ImeEvent（Preedit/Commit 占位）补充，IME 输入真实处理（汉字输入/组合输入的 Preedit→Commit 事件流，cosmic-text/文本编辑接入）。
+3. **模态层级**：FocusManager modal layer——模态浮层（modal）打开时焦点隔离在模态内（模态外组件不获焦点），关闭恢复；对话框/模态浮层焦点管理。
+4. **demo 验证**：模态浮层 demo（打开模态→焦点隔离在模态内→关闭恢复）；文本编辑输入 demo（IME 输入显示，若可行）。
+
+【硬约束】流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（输入/IME 在 platform/事件层，core 收逻辑事件）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D5 事件/焦点/IME、D1 WidgetSpec、greenfield §B.3 若有）。
+
+完成后：①InputEvent 是否真实驱动（占位→真实）②ImeEvent 是否真实驱动（Preedit/Commit）③模态层级（FocusManager modal，焦点隔离）④流式编码⑤cargo check/test 结果⑥commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> 说明：若 IME/输入事件因 macOS 辅助功能权限（AXIsProcessTrusted=false）无法真实验证实时按键，则如实标注"逻辑链路由单测保证，实时注入待授权"，不虚构。模态层级为重点，IME 可做基础链路。
+
+---
+
+## 📌 剩余开发路线（总监自主排期，用户授权"完成全部开发"）
+
+> 用户明确：不用再问优先做哪个，由总监决定，完成全部开发。以下为总监按依赖排序的主线（不再逐阶段提问，仅遇需用户拍板的架构决策时才上报）。
+
+| 阶段 | 内容 | 依据（来源标注） |
+|---|---|---|
+| **D15** | scale_factor/DPI 换算（hit-test/焦点/坐标在高分屏/多显示器正确） | reviewer D11 多次点名 P2、D5 未实现项、D14 P2 |
+| **D16** | StrokeRect 描边边框（真焦点边框样式） | 用户在意的方向，D14 留后续、D5 未实现项 |
+| **D17** | 布局/文本换行（多组件布局 + 文本溢出处理） | D10 P2-3（展开态文本截断）、D14 后布局 |
+| **D18** | key-based reconcile + 动态增删组件（组件复用/容器能力） | D3/D11 后续项、reviewer 提过 |
+| **D19** | D4 样式系统 + 样式驱动（颜色硬编码→样式） | D14 P2（高亮硬编码）、greenfield §G 阶段0不含样式= P1 |
+| **D20** | 模态层级 + InputEvent/Ime 真实驱动 | D5 标注未实现、D13 P2 |
+
+**边界**：跨平台验证（Linux/Windows）无测试机，标"待有条件再补"；实时键盘注入需 macOS 辅助功能权限（AXIsProcessTrusted=falsed），标"待授权"。非"可完成开发"，如实标注。
+
+**自主执行原则**：每阶段走完整质量链（dev 交付 → 总监实测复核 → reviewer 审查(流式判据) → qa 验收(文档一致性) → doc 同步）→ 通过后自动进入下一阶段；定期向用户呈报阶段进度，不逐阶段索要决策。
+
+---
+
+## D14 — 获焦高亮增强视觉（边框/背景高亮）
+
+---
+
+## D14 — 获焦高亮增强视觉（边框/背景高亮）
+
+**阶段：D14 已放行（用户确认：获焦高亮增强视觉——边框高亮而非 ▶ 文字前缀）。**
+设计基准：greenfield §B.1（组件视图）+ docs/D5（焦点）+ docs/D10（组件规范）。
+
+**目标**：把焦点指示从 D13 的文字前缀 `▶` 升级为真正的视觉高亮——获焦组件绘制**焦点边框高亮/背景变化**（而非仅文字前缀），更接近真实 GUI 的焦点样式。
+
+**范围**：
+1. **获焦绘制样式**：Accordion/WaBadge 获焦时绘制**边框高亮**（如彩色边框/背景填充），未获焦无。这需要组件 view 产出**矩形边框 draw 指令**（FillRect/StrokeRect）而非仅文字前缀。
+2. **绘制能力**：确认 render/view 是否有绘制**边框/描边矩形**的能力（若仅 FillRect，可能需加描边指令或加粗边框——先查 scene_graph/vello 现有 draw 图元）。
+3. **demo 验证**：Tab/Shift+Tab 切换焦点时，获焦组件边框高亮变化（截图；离屏/单测验证高亮 draw 指令），比 D13 的 ▶ 前缀更直观。
+4. 保持 D13 的焦点透传机制（ViewContext.focused），仅升级绘制表现（边框/背景）。
+
+**硬约束**：流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（获焦高亮是组件 view 的 draw 指令，render 渲染）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D5 焦点视觉、D1 ViewContext、D10 组件规范、greenfield 若有）。
+
+完成后：①边框/背景高亮是否实现（获焦绘制样式）②焦点高亮变化验证（截图/测试，优于 ▶ 前缀）③流式编码④cargo check/test 结果⑤commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D13 已提交：8e59f85(dev ViewContext.focused+获焦高亮▶+demo) / 292770f(doc greenfield+D1补ViewContext.focused,UpdateContext占位对齐)。60 测试全绿(58→60)。流式判据 PASS（ViewContext.focused 纯值传递，无 dyn Iterator/冗余 collect）。获焦高亮未泄漏进渲染层（reviewer 确认）。**
+
+> D13 P2（D14 可参考）：获焦高亮增强视觉(边框而非▶前缀)、模态层级、scale_factor DPI、实时键盘注入需辅助功能权限。
+
+---
+
+## D13 — 焦点视觉显示（获焦组件高亮）
+
+**阶段：D13 已放行（用户确认：焦点视觉显示——获焦组件高亮，视图层透传）。**
+设计基准：greenfield §B.1（WidgetSpec view/paint）+ docs/D5（事件/焦点）。
+
+**目标**：让用户看到当前焦点在哪个组件——获焦组件在视图层高亮（Accordion/WaBadge 获焦时绘制焦点指示，如边框高亮/背景变化），视图层透传焦点状态。
+
+**范围**：
+1. **视图层焦点透传**：`WidgetView`/`paint` 能感知当前组件是否获焦（focus 状态传入 view/paint，或 Widget 经某种方式读取 focus）。
+2. **获焦高亮绘制**：Accordion/WaBadge 获焦时绘制焦点指示（如高亮边框/背景），未获焦一般。
+3. **demo 验证**：Tab/Shift+Tab 切换焦点时，获焦组件视觉高亮变化（截图确认）。
+4. 保持不动 core 契约（若需 WidgetSpec 加 focus 上下文入口，遵循向后兼容——或经 paint/context 传 focus）。
+
+**硬约束**：流式编码优先；Tier 1 WidgetSpec；core 零 GPU/平台（焦点视觉在组件 view/paint，绘制由 render）；DAG 无环；单一 vello/winit。
+【每阶段提交】完成后 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列（D5/D1 组件 view + greenfield 若有焦点视觉）。
+
+完成后：①获焦高亮是否实现（视图层透传 + 绘制）②Tab 切换时焦点高亮变化（截图/测试）③流式编码④cargo check/test 结果⑤commit hash + 受影响文档清单。全程中文，TDD 先 RED 后 GREEN。
+
+> D12 已提交：705a83d(dev FocusManager+focusable+demo Tab) / 4f61906(doc greenfield+D0补focusable) / 39a8bde(dev demo补Shift+Tab)。58 测试全绿(52→58)。流式编码判据 PASS（move_focus iter().position()+rem_euclid，无 dyn Iterator/冗余 collect）。**
+
+> D12 P2（D13 待办）：focused 残留边界（focusable 列表变化时 focused 不置 None）、scale_factor DPI 换算、模态层级、Tab 实时注入需辅助功能权限。
+
+> D11 已提交：f252e16(dev hit-test+map_message+WaBadge点击+多组件demo) / 37f01bc(doc greenfield+D0补hit-test)。52 测试全绿(45→52)。流式编码判据 PASS（hit_test iter().find()/map_message into_iter().map().collect()，无 dyn Iterator/冗余 collect）。文档同步铁律+流式编码铁律+每阶段提交 首次完整运转验证通过。
 
 ---
 
@@ -39,6 +231,32 @@
 - [ ] `CLAUDE.md`（crate 列表/命令）与当前结构一致
 - [ ] `docs/D11` Cargo 结构一致
 - [ ] reviewer 已核对代码↔文档一致性
+
+---
+
+## 🔒 铁律：Rust 流式编码 + 每阶段提交（强制）
+
+**Rust 编码优先使用流式（iterator 组合子）写法。** 依据 Rust 零成本抽象——流式代码经编译器（LLVM 内联+优化）生成的机器码等价于手写循环，是编译器优化过的最优形式；手写代码不必然最优。
+
+> 用户明确：代码尽可能流式编写，编译器处理的一定是优化过的。检查也加入此要求。所有写 Rust 的代码相关角色（dev/reviewer）执行。**每阶段完成须直接提交代码 + 同步后的文档。**
+
+### 流式编码规则
+1. **优先用 iterator 链**（`iter().map().filter().fold()` 等组合子），替代显式 `for` 循环 + 中间变量 + `push`/`collect` 手写。
+2. **零成本边界**（避免踩坑，防教条）：
+   - 迭代器**保持具体类型**（`impl Iterator` / 泛型 `I: IntoIterator`），**不要装箱成 `dyn Iterator`**（装箱引入动态分发/堆分配，破坏零成本）。
+   - **避免不必要的中间 `collect`**（每 collect 一次 = 一次堆分配 + 一次中间 Vec；可用 `.collect::<Vec<_>>()` 仅当确需物化，或用 `Vec::from_iter`/`extend` 直接)。
+   - 纯链式能表达的，不要中途 break/手动 push 混写；但**确实复杂到流式伤可读时**（如复杂嵌套归并、带 break 的搜索），手写循环可读性更高，不强扭。
+3. **只读遍历用 `iter()`，可变用 `iter_mut()`，按值用 `into_iter()`**；优先 `find`/`any`/`all`/`position` 而非手写循环 break。
+4. **reviewer 检查新增「流式编码」判据**：生产代码出现"能用组合子却用显式循环 + push"的，或 `dyn Iterator` 装箱、冗余 `collect` 的，记为 P2 建议（不设 P0/P1，除非明显性能/可读倒退）。
+
+### 每阶段提交（与文档同步铁律配合）
+- **每个开发阶段完成 → 直接 `git add + commit` 该阶段代码 + 同步后的文档 + 更新 tasks.md 状态**，并 push。不积压，不"写完再说"。
+- 提交信息：`type(rgui): <阶段> <描述>`（conventional commits），含"受影响文档已同步"说明。
+
+### 检查点（验收必须包含）
+- [ ] 新 Rust 代码优先流式（iterator 组合子），无装箱 `dyn Iterator`、无冗余中间 `collect`
+- [ ] 该阶段**代码 + 同步文档 + tasks.md 状态**已 git commit + push
+- [ ] reviewer 已按流式编码判据检查
 
 ---
 
