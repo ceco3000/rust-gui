@@ -221,6 +221,11 @@ pub struct TextShaper;
 ```rust
 pub mod window; pub mod input; pub mod ime; pub mod focus;
 pub struct Window { /* winit Window 封装 */ }
+// D15 坐标层（物理→逻辑）：平台用 window.scale_factor() 更新；hit-test/布局用逻辑坐标，避高分屏/多显示器 DPI 偏移
+pub fn set_platform_scale(scale: f64);                      // 事件处理时更新（thread_local PLATFORM_SCALE）
+pub fn platform_scale() -> f64;                             // 默认 1.0
+pub fn to_logical(physical: (f64, f64), scale: f64) -> (f32, f32);  // 物理/scale，scale>0 否则用 1.0
+pub fn window_scale(window: &Window) -> f64;                // winit scale_factor
 pub struct EventLoop { /* winit 事件循环封装 */ }
 pub enum InputEvent { MouseMove, MouseDown, MouseUp, KeyDown, KeyUp, Char, Scroll }
 pub struct FocusManager { focused: Option<WidgetId>, focusable: Vec<WidgetId> }   // 焦点管理原生在此（D12 增强）
