@@ -158,7 +158,7 @@ pub struct Snapshotter { ... }
 pub struct StoreBinding { /* Arc<RwLock<StateStore>> 封装 */ }
 
 // ===== Context 体系 =====
-pub struct ViewContext { pub focused: bool }   // D13 视图层焦点透传（组件 view 读它绘制获焦高亮）；窗口尺寸/locale 字段现不存在（对齐代码）
+pub struct ViewContext { pub focused: bool, pub styles: &'static StyleSheet }   // D13 focused 焦点透传；D19 styles 样式驱动（view 经 styles.lookup(selector) 取样式，未命中回退默认）
 pub struct UpdateContext { /* 更新上下文（当前占位；焦点信息经 ViewContext.focused 传给视图，非本字段） */ }
 pub struct MeasureContext { /* 只读环境 */ }
 pub struct PaintContext { /* 绘制指令收集 */ }
@@ -172,11 +172,13 @@ pub struct LayoutResult { size: Size, position: Point }
 
 // ===== 样式（并入 core，.rgss 文本解析）=====
 pub mod style;
-pub struct StyleSheet { /* 解析后的样式 */ }
-// 对齐代码：parse_rgss 返回 StyleSheet（D3 占位 stub `StyleSheet::default()`；
-// 实际 cssparser 解析在实现阶段补全，届时若需错误处理可升级返回 Result——新增签名改蓝图代价低）
-pub fn parse_rgss(input: &str) -> StyleSheet;
-pub struct StyleRule { /* selector 占位 */ }
+pub struct StyleProperties { color/background/border_color/border_width/border_pad: Option<..> }   // None = 未指定，组件回退默认
+pub struct StyleRule { selector: String, properties: StyleProperties }
+pub struct StyleSheet { rules: Vec<StyleRule> }   // lookup(selector)->StyleProperties（命中首条）；rule(selector,properties) 程序化构建
+pub fn default_theme() -> StyleSheet;             // 默认主题（accordion/wa_badge 配色权威来源）
+pub fn default_style() -> &'static StyleSheet;    // OnceLock &'static（ViewContext.styles 默认）
+// D19：程序化样式驱动已实现（view 经 styles.lookup(selector) 取样式）；.rgss 文本解析留 P1（不引 cssparser）
+pub fn parse_rgss(input: &str) -> StyleSheet;      // D19 占位：返回 default_theme()
 
 // ===== 逻辑组件（Tier 1 WidgetSpec）=====
 pub mod components;
