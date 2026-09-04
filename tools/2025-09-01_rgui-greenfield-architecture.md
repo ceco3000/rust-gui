@@ -208,7 +208,7 @@ pub struct GlyphCacheEntry { /* atlas UV, 尺寸 */ }
 pub struct GlyphAtlas { /* GPU 纹理 */ }
 pub struct RasterizedGlyph { /* 位图 */ }
 pub struct PathTessellation;
-pub struct SceneGraph { /* 绘制指令列表：DrawCmd{FillRect, DrawText, StrokeRect(描边, D16)} */ }
+pub struct SceneGraph { /* 绘制指令列表：DrawCmd{FillRect, DrawText(width 换行, D17), StrokeRect(描边, D16)}；render_to_view/render_surface 传 scale(逻辑→物理 Affine::scale, D17，render_offscreen=1.0) */ }
 pub struct TextShaper;
 ```
 
