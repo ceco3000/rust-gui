@@ -98,3 +98,29 @@ fn accordion_and_badge_are_focusable() {
     assert!(Accordion.focusable(), "Accordion 应可获焦（Tab 导航）");
     assert!(WaBadge.focusable(), "WaBadge 应可获焦（Tab 导航）");
 }
+
+#[test]
+fn accordion_view_adds_focus_marker_when_focused() {
+    let state = Accordion::initial_state();
+    // 未获焦：无焦点标记
+    let ctx = &ViewContext::default();
+    let v_norm = Accordion.view(&state, ctx);
+    assert!(!contains_str(&v_norm, "▶"), "未获焦不应有焦点标记");
+    // 获焦：标题带焦点前缀
+    let mut ctx_f = ViewContext::default();
+    ctx_f.focused = true;
+    let v_foc = Accordion.view(&state, &ctx_f);
+    assert!(contains_str(&v_foc, "▶"), "获焦应显示焦点高亮标记");
+}
+
+#[test]
+fn badge_view_adds_focus_marker_when_focused() {
+    let state = WaBadge::initial_state();
+    let ctx = &ViewContext::default();
+    let v_norm = WaBadge.view(&state, ctx);
+    assert!(!contains_str_badge(&v_norm, "▶"), "未获焦不应有焦点标记");
+    let mut ctx_f = ViewContext::default();
+    ctx_f.focused = true;
+    let v_foc = WaBadge.view(&state, &ctx_f);
+    assert!(contains_str_badge(&v_foc, "▶"), "获焦应显示焦点高亮标记");
+}

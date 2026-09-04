@@ -7,6 +7,8 @@ use std::marker::PhantomData;
 /// 视图构建上下文。
 #[derive(Debug, Default)]
 pub struct ViewContext {
+    /// 当前组件是否获焦（D13 视图层焦点透传；组合根按子获焦状态设置，组件 view 读它绘制高亮）。
+    pub focused: bool,
     _p: PhantomData<()>,
 }
 

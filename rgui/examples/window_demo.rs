@@ -28,6 +28,8 @@ use rgui_platform::event_loop::{
 enum DemoMsg {
     Accordion(AccordionMsg),
     Badge(WaBadgeMsg),
+    /// 焦点切换到指定组件（Accordion=1 / WaBadge=2 / None=无焦点）。
+    Focus(Option<WidgetId>),
 }
 
 impl AppMessage for DemoMsg {
@@ -35,15 +37,18 @@ impl AppMessage for DemoMsg {
         match self {
             DemoMsg::Accordion(m) => m.message_name(),
             DemoMsg::Badge(m) => m.message_name(),
+            DemoMsg::Focus(_) => "demo.focus",
         }
     }
 }
 
-/// 组合根状态（持有两个子组件状态）。
+/// 组合根状态（持有两个子组件状态 + 获焦子 id）。
 #[derive(Debug, Clone)]
 struct DemoRootState {
     accordion: AccordionState,
     badge: WaBadgeState,
+    /// 当前获焦子组件 id（Accordion=1 / WaBadge=2 / None=无焦点）。
+    focused: Option<WidgetId>,
 }
 
 impl Default for DemoRootState {
@@ -51,6 +56,8 @@ impl Default for DemoRootState {
         Self {
             accordion: Accordion::initial_state(),
             badge: WaBadge::initial_state(),
+            // 初始焦点 = 第一个可获焦组件（Accordion），Tab 循环切换
+            focused: Some(WidgetId::new(1)),
         }
     }
 }
@@ -81,16 +88,20 @@ impl WidgetSpec for DemoRoot {
         "demo_root"
     }
 
-    fn view(&self, state: &Self::State, ctx: &rgui::context::ViewContext) -> WidgetView<Self::Message> {
+    fn view(&self, state: &Self::State, _ctx: &rgui::context::ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(rgui::geometry::Size::new(520.0, 220.0));
-        // 左：Accordion 视图（消息提升为组合根消息）
+        // 左：Accordion 视图（消息提升为组合根消息）；按获焦状态设 focused 视图上下文
+        let mut acc_ctx = rgui::context::ViewContext::default();
+        acc_ctx.focused = state.focused == Some(WidgetId::new(1));
         let acc = Accordion
-            .view(&state.accordion, ctx)
+            .view(&state.accordion, &acc_ctx)
             .map_message(&DemoMsg::Accordion);
         // 右：WaBadge 视图
+        let mut badge_ctx = rgui::context::ViewContext::default();
+        badge_ctx.focused = state.focused == Some(WidgetId::new(2));
         let badge = WaBadge
-            .view(&state.badge, ctx)
+            .view(&state.badge, &badge_ctx)
             .map_message(&DemoMsg::Badge);
         root.children.push(acc);
         root.children.push(badge);
@@ -101,6 +112,7 @@ impl WidgetSpec for DemoRoot {
         match msg {
             DemoMsg::Accordion(m) => Accordion.update(m, &mut state.accordion, ctx),
             DemoMsg::Badge(m) => WaBadge.update(m, &mut state.badge, ctx),
+            DemoMsg::Focus(fid) => state.focused = fid,
         }
     }
 
@@ -145,15 +157,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Tab) =>
             {
-                // Tab → focus_next；Shift+Tab → focus_prev（焦点循环反向前进）
+                // Tab → focus_next；Shift+Tab → focus_prev（焦点循环）；DemoRoot 高亮获焦组件
                 let s = *shift.borrow();
-                let nxt = if s {
+                let fid = if s {
                     focus.borrow_mut().focus_prev()
                 } else {
                     focus.borrow_mut().focus_next()
                 };
-                eprintln!("[focus] Tab(shift={s}) -> {:?}", nxt.map(|w| w.0));
-                None
+                eprintln!("[focus] Tab(shift={s}) -> {:?}", fid.map(|w| w.0));
+                Some(DemoMsg::Focus(fid))
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,

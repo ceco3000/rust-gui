@@ -81,18 +81,19 @@ impl WidgetSpec for Accordion {
         "accordion"
     }
 
-    fn view(&self, state: &Self::State, _ctx: &ViewContext) -> WidgetView<Self::Message> {
+    fn view(&self, state: &Self::State, ctx: &ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         let content_h = if state.expanded { 130.0 } else { 44.0 };
         root.size = Some(Size::new(340.0, content_h));
 
-        // 标题行（可点击，显示展开/收起状态标记）
+        // 标题行（可点击，显示展开/收起状态标记；获焦时加高亮前缀）
         let mut header = WidgetView::empty();
         header.props = PropValue::Color(Color::rgb(90, 130, 220));
         header.size = Some(Size::new(340.0, 36.0));
         let marker = if state.expanded { "-" } else { "+" };
+        let focus_marker = if ctx.focused { "▶ " } else { "" };
         let mut title = WidgetView::empty();
-        title.props = PropValue::Str(format!("{} [{}]", state.title, marker));
+        title.props = PropValue::Str(format!("{focus_marker}{} [{}]", state.title, marker));
         title.size = Some(Size::new(320.0, 28.0));
         header.children.push(title);
         root.children.push(header);
@@ -194,12 +195,13 @@ impl WidgetSpec for WaBadge {
         "wa_badge"
     }
 
-    fn view(&self, state: &Self::State, _ctx: &ViewContext) -> WidgetView<Self::Message> {
+    fn view(&self, state: &Self::State, ctx: &ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(Size::new(160.0, 40.0));
         root.props = PropValue::Color(Color::rgb(120, 160, 210));
+        let focus_marker = if ctx.focused { "▶ " } else { "" };
         let mut label = WidgetView::empty();
-        label.props = PropValue::Str(format!("{}: {}", state.label, state.count));
+        label.props = PropValue::Str(format!("{focus_marker}{}: {}", state.label, state.count));
         label.size = Some(Size::new(150.0, 26.0));
         root.children.push(label);
         root
