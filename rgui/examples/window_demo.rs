@@ -124,6 +124,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 缓存光标位置（逻辑坐标待命中用）
     let cursor = RefCell::new((0.0f32, 0.0f32));
+    // 跟踪 Shift 键状态（winit 把 modifiers 经 ModifiersChanged 单独传递，需自持）
+    let shift = RefCell::new(false);
     // 焦点管理：Accordion(1) + WaBadge(2) 可获焦，Tab 循环切换（获焦/失焦由 unit 测试确定性验证）
     let focus = RefCell::new(FocusManager::new());
     focus.borrow_mut().set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
@@ -135,13 +137,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 *cursor.borrow_mut() = (position.x as f32, position.y as f32);
                 None
             }
+            WindowEvent::ModifiersChanged(m) => {
+                *shift.borrow_mut() = m.state().shift_key();
+                None
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if event.state == ElementState::Pressed
                     && event.physical_key == PhysicalKey::Code(KeyCode::Tab) =>
             {
-                // Tab：焦点循环切换到下一个可获焦组件（Accordion → WaBadge → Accordion…）
-                let nxt = focus.borrow_mut().focus_next();
-                eprintln!("[focus] Tab -> {:?}", nxt.map(|w| w.0));
+                // Tab → focus_next；Shift+Tab → focus_prev（焦点循环反向前进）
+                let s = *shift.borrow();
+                let nxt = if s {
+                    focus.borrow_mut().focus_prev()
+                } else {
+                    focus.borrow_mut().focus_next()
+                };
+                eprintln!("[focus] Tab(shift={s}) -> {:?}", nxt.map(|w| w.0));
                 None
             }
             WindowEvent::MouseInput {
