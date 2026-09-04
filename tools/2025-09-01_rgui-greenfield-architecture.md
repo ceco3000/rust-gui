@@ -124,9 +124,7 @@ pub trait WidgetSpec: Send + Sync + 'static {
         AccessibilityNode::none()
     }
 }
-/// 事件传播结果。无 derive（被裁决 A 接受）。可选优化：#[derive(Debug, Clone)]
-/// 便于打印/路径复用；不加 PartialEq（`Continue(M)` 泛型无法全 Eq）。
-/// 已委派 dev 回查，如需断言语义则补 `#[derive(Debug, Clone)]`。
+/// 事件传播结果（对齐代码：derive Debug, Clone, PartialEq, Eq——与 D0/实现一致）。
 pub enum EventResult<M> { Handled, Prevented, Continue(M) }   // 事件传播结果
 
 // ===== 数据/值类型 =====
@@ -383,11 +381,11 @@ pedantic = { level = "warn",  # 不开启 pedantic 全量 warn（旧项目 pedan
 # workspace 根 Cargo.toml 片段
 [workspace.package]
 edition = "2021"      # 稳定，工具链兼容性好；不用 2024（部分依赖/宏需适配，克制）
-rust-version = "1.75" # MSRV 克制：选较保守版本，扩大可用用户群（旧 1.85 偏高）
+rust-version = "1.85" # 对齐代码实际（reviewer 核对已自洽；主流工具链均已支持 1.85）
 resolver = "2"
 ```
 
-**裁决**：edition 用 `2021`（2024 有 `unsafe` 语法与部分宏适配成本，阶段 0 克制不用）；MSRV 用 `1.75`（比旧 `1.85` 放宽，新架构依赖 taffy/winit/vello 需确认兼容，执行 D3 时以 `cargo check` 为准）。其实 `rgui-render` 依赖 vello/wgpu 拉高 MSRV，需在 D3 scaffold 时用 `rust-toolchain.toml` 实测，**本设计标注 MSRV 以 render 依赖上限为准**（若 vello 需 1.80+，则 MSRV 定为 1.80）。
+**裁决**：edition 用 `2021`（2024 有 `unsafe` 语法与部分宏适配成本，阶段 0 克制不用）；MSRV 用 `1.85`——**对齐代码实际**（`Cargo.toml` 实测 `rust-version = "1.85"`），与 D 系列一致。若后续 render 依赖（vello/wgpu）拉高 MSRV，在 D3 scaffold 时用 `rust-toolchain.toml` 实测并同步本文档。
 
 ### E.3 增量编译验收（硬约束 E：措辞改为"改数据/状态层"）
 
@@ -439,10 +437,12 @@ resolver = "2"
 > 4. default feature 对齐代码：`core=["layout"]`、`render=[]`、`platform=["winit"]`
 > 5. core 模块补齐 20 项（含 `coordinator`/`registry`/`widget_state`/`message`/`a11y_tree`）
 > 6. facade 改**定向重导出**：`rgui_platform::{FocusManager, InputModality}`、`rgui_render::{GlyphKey, PathTessellation}`（防悬空 use / 防公共 API 污染）
-> 7. `EventResult` 标注：无 derive 被裁决 A 接受；建议 dev 回查补 `#[derive(Debug, Clone)]`（不加 PartialEq）
+> 7. `EventResult` 改为对齐代码：`#[derive(Debug, Clone, PartialEq, Eq)]`（与 D0/实现一致）
 > 8. 其它微调同步：`Key` 改枚举 `{Str, Num}`、`WidgetId` 含 `NodeHandle/WindowId`、`Color::rgba/rgb` 构造器
 
 > 判为「实现优于设计稿」的 3 处（原则性说明）：Color 用 u8（紧凑+可 Eq）、facade 定向重导出（防悬空+防污染）、render `default=[]`（克制不默认拉起重型 GPU 编译）。
+
+> **P2 修正（2025-09-01，随 D 系列同步）**：① `EventResult` 改为对齐代码 `#[derive(Debug, Clone, PartialEq, Eq)]`（删"无 derive/建议补"表述；实测 rgui-core/src/traits.rs:75 含 PartialEq,Eq）；② MSRV 正文改为 `1.85`（对齐代码 `rust-version = "1.85"`，删除原 1.75 表述）。
 
 ---
 
