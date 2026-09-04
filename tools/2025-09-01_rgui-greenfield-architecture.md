@@ -138,7 +138,7 @@ pub struct Color { r: u8, g: u8, b: u8, a: u8 }   // 对齐代码：8bit 通道�
 impl Color { pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self; pub const fn rgb(r: u8, g: u8, b: u8) -> Self; }
 pub enum PropValue { Bool(bool), Int(i64), Float(f64), Str(String), Color(Color) }
 // 说明：无 WidgetId 变体（对齐代码）——视图引用 widget 用 Key/NodeHandle/MessageBinding，更类型安全。
-pub struct WidgetView<M: AppMessage> { /* 节点 + props + 回调，唯一视图表示 */ }
+pub struct WidgetView<M: AppMessage> { /* 节点 + props + 回调；key: Option<u64>（D18 key-based reconcile 匹配标识） */ }
 pub fn map_message<M2>(self, f: &impl Fn(M) -> M2) -> WidgetView<M2>;   // 递归提升子节点消息类型（D11 组合/容器复用）
 pub struct Size { width: f32, height: f32 }
 pub struct Point { x: f32, y: f32 }
@@ -151,8 +151,8 @@ pub struct StateStore { /* 每 Widget 一份 InstanceState；订阅表；dirty �
 pub struct InstanceState { /* 当前状态 + 派生视图缓存 + 订阅 */ }
 pub struct Subscription { subscriber: WidgetId, target: WidgetId }
 pub enum SubscriptionLifetime { Persistent, Transient }
-pub enum Patch { ... }                       // 差分补丁
-pub fn diff<M>(a: &WidgetView<M>, b: &WidgetView<M>) -> Vec<Patch>;
+pub enum Patch { SetProps, SetChildProps, ReplaceChild, InsertChild, RemoveChild, MoveChild{from,to} }   // MoveChild(D18 keyed reconcile 顺序复用)；其余 patch 见 D2
+pub fn diff<M>(a: &WidgetView<M>, b: &WidgetView<M>) -> Vec<Patch>;  // D18 key-based：children 全有 key 时按 key 匹配复用(move/update)，否则位置型
 pub struct Snapshot { ... }                  // 可序列化全量快照
 pub struct Snapshotter { ... }
 pub struct StoreBinding { /* Arc<RwLock<StateStore>> 封装 */ }
