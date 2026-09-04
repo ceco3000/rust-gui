@@ -5,7 +5,7 @@ use rgui_core::components::{
 };
 use rgui_core::context::{UpdateContext, ViewContext};
 use rgui_core::traits::WidgetSpec;
-use rgui_core::view::PropValue;
+use rgui_core::view::{Color, PropValue};
 
 fn contains_str(view: &rgui_core::view::WidgetView<AccordionMsg>, needle: &str) -> bool {
     let own_match = matches!(&view.props, PropValue::Str(s) if s.contains(needle));
@@ -14,6 +14,16 @@ fn contains_str(view: &rgui_core::view::WidgetView<AccordionMsg>, needle: &str) 
             .children
             .iter()
             .any(|c| contains_str(c, needle))
+}
+
+fn contains_color(view: &rgui_core::view::WidgetView<AccordionMsg>, color: Color) -> bool {
+    view.props == PropValue::Color(color)
+        || view.children.iter().any(|c| contains_color(c, color))
+}
+
+fn contains_color_badge(view: &rgui_core::view::WidgetView<WaBadgeMsg>, color: Color) -> bool {
+    view.props == PropValue::Color(color)
+        || view.children.iter().any(|c| contains_color_badge(c, color))
 }
 
 fn contains_str_badge(view: &rgui_core::view::WidgetView<WaBadgeMsg>, needle: &str) -> bool {
@@ -100,27 +110,25 @@ fn accordion_and_badge_are_focusable() {
 }
 
 #[test]
-fn accordion_view_adds_focus_marker_when_focused() {
+fn accordion_view_background_highlights_when_focused() {
     let state = Accordion::initial_state();
-    // 未获焦：无焦点标记
     let ctx = &ViewContext::default();
-    let v_norm = Accordion.view(&state, ctx);
-    assert!(!contains_str(&v_norm, "▶"), "未获焦不应有焦点标记");
-    // 获焦：标题带焦点前缀
+    // 未获焦：正常 header 色（深蓝），无高亮色
+    assert!(contains_color(&Accordion.view(&state, ctx), Color::rgb(90, 130, 220)));
+    assert!(!contains_color(&Accordion.view(&state, ctx), Color::rgb(140, 185, 255)));
+    // 获焦：header 背景变亮（高亮）
     let mut ctx_f = ViewContext::default();
     ctx_f.focused = true;
-    let v_foc = Accordion.view(&state, &ctx_f);
-    assert!(contains_str(&v_foc, "▶"), "获焦应显示焦点高亮标记");
+    assert!(contains_color(&Accordion.view(&state, &ctx_f), Color::rgb(140, 185, 255)));
 }
 
 #[test]
-fn badge_view_adds_focus_marker_when_focused() {
+fn badge_view_background_highlights_when_focused() {
     let state = WaBadge::initial_state();
     let ctx = &ViewContext::default();
-    let v_norm = WaBadge.view(&state, ctx);
-    assert!(!contains_str_badge(&v_norm, "▶"), "未获焦不应有焦点标记");
+    assert!(contains_color_badge(&WaBadge.view(&state, ctx), Color::rgb(120, 160, 210)));
+    assert!(!contains_color_badge(&WaBadge.view(&state, ctx), Color::rgb(170, 210, 255)));
     let mut ctx_f = ViewContext::default();
     ctx_f.focused = true;
-    let v_foc = WaBadge.view(&state, &ctx_f);
-    assert!(contains_str_badge(&v_foc, "▶"), "获焦应显示焦点高亮标记");
+    assert!(contains_color_badge(&WaBadge.view(&state, &ctx_f), Color::rgb(170, 210, 255)));
 }
