@@ -138,6 +138,7 @@ impl Color { pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self; pub const fn
 pub enum PropValue { Bool(bool), Int(i64), Float(f64), Str(String), Color(Color) }
 // 说明：无 WidgetId 变体（对齐代码）——视图引用 widget 用 Key/NodeHandle/MessageBinding，更类型安全。
 pub struct WidgetView<M: AppMessage> { /* 节点 + props + 回调，唯一视图表示 */ }
+pub fn map_message<M2>(self, f: &impl Fn(M) -> M2) -> WidgetView<M2>;   // 递归提升子节点消息类型（D11 组合/容器复用）
 pub struct Size { width: f32, height: f32 }
 pub struct Point { x: f32, y: f32 }
 pub struct Rect { origin: Point, size: Size }
@@ -187,6 +188,13 @@ pub mod a11y;
 pub struct AccessibilityNode { role: AccessibilityRole, label: String, children: Vec<WidgetId> }
 pub enum AccessibilityAction { Activate, Focus, ... }
 pub enum AccessibilityRole { Button, Container, ... }
+
+// ===== 命中检测（core 新增，D11 多组件事件路由）=====
+// 纯 Rust 几何：给定点击坐标命中第一个包含该点的已布局区域，返回其 id（上层据此路由到组件消息）。
+pub mod hit_test;
+pub struct HitRegion { pub rect: Rect, pub id: u32 }
+impl HitRegion { pub const fn new(rect: Rect, id: u32) -> Self; pub fn contains(&self, x: f32, y: f32) -> bool; }
+pub fn hit_test(x: f32, y: f32, regions: &[HitRegion]) -> Option<u32>;   // 流式 iter().find()
 ```
 
 > **M1 教训制度化**：`StateStore`/`Patch`/`Snapshot` 的**所有字段类型全部来自 `rgui-core` 自身**（WidgetId/PropValue/Size），**绝不**含 `GlyphKey`/`PathTessellation`/`LayoutResult`。由 Cargo 依赖防火墙强保证。
@@ -281,8 +289,9 @@ rgui-core/src/
 ├── a11y/
 │   ├── mod.rs      AccessibilityNode/Action/Role/State
 │   └── (无 AccessKit 后端)
-└── a11y_tree/
-    └── mod.rs      AccessibilityTree (由 rgui-a11y/tree.rs 迁入)
+├── a11y_tree/
+│   └── mod.rs      AccessibilityTree (由 rgui-a11y/tree.rs 迁入)
+└── hit_test.rs     HitRegion/hit_test (D11 多组件事件路由，纯几何)
 ```
 
 **内部依赖方向**：`traits/context/view` 是底层（被组件/状态依赖）；`layout/style` 依赖底层；`components` 依赖 traits/layout/style；`state` 依赖 traits/view 但不依赖 layout/render。全部内部依赖也非环。
