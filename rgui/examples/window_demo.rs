@@ -162,6 +162,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 缓存光标位置（逻辑坐标待命中用）
     let cursor = RefCell::new((0.0f32, 0.0f32));
+    // badge 点击计数（运行时动作日志用，与 DemoRootState 的 badge.count 同起点 0）
+    let badge_count = RefCell::new(0u32);
     // 跟踪 Shift 键状态（winit 把 modifiers 经 ModifiersChanged 单独传递，需自持）
     let shift = RefCell::new(false);
     // 焦点管理：Accordion(1) + WaBadge(2) 可获焦，Tab 循环切换（获焦/失焦由 unit 测试确定性验证）
@@ -205,10 +207,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } => {
                 let (x, y) = *cursor.borrow();
+                // D21 联调：鼠标事件到达确认（逻辑坐标，与 hit-test 一致）——定位"坐标没点中 vs winit 未处理鼠标"
+                eprintln!("[mouse-event] left-press at logical=({}, {})", x, y);
                 match hit_test(x, y, &regions) {
-                    Some(1) => Some(DemoMsg::Accordion(AccordionMsg::Toggle)),
-                    Some(2) => Some(DemoMsg::Badge(WaBadgeMsg::Click)),
-                    _ => None,
+                    Some(1) => {
+                        eprintln!("[hit] id=1 -> AccordionMsg::Toggle");
+                        eprintln!("[action] toggle(id=1)");
+                        Some(DemoMsg::Accordion(AccordionMsg::Toggle))
+                    }
+                    Some(2) => {
+                        let n = {
+                            let mut c = badge_count.borrow_mut();
+                            *c += 1;
+                            *c
+                        };
+                        eprintln!("[hit] id=2 -> WaBadgeMsg::Click");
+                        eprintln!("[action] badge_click(id=2,count={n})");
+                        Some(DemoMsg::Badge(WaBadgeMsg::Click))
+                    }
+                    _ => {
+                        eprintln!("[hit] id=none (missed hit-region)");
+                        None
+                    }
                 }
             }
             _ => None,
