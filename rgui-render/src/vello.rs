@@ -302,6 +302,25 @@ impl VelloBackend {
                 } => {
                     self.draw_text(scene, *x, *y, text, *size, *color);
                 }
+                DrawCmd::StrokeRect {
+                    x,
+                    y,
+                    width,
+                    height,
+                    color,
+                    stroke_width,
+                } => {
+                    // D16：描边矩形（vello `stroke`）——获焦边框高亮
+                    let rect = kurbo::Rect::new(
+                        f64::from(*x),
+                        f64::from(*y),
+                        f64::from(*x + *width),
+                        f64::from(*y + *height),
+                    );
+                    let stroke = kurbo::Stroke::new(f64::from(*stroke_width));
+                    let brush = Brush::Solid(to_peniko_color(*color));
+                    scene.stroke(&stroke, kurbo::Affine::IDENTITY, brush, None, &rect);
+                }
             }
         }
     }

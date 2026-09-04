@@ -40,6 +40,21 @@ pub enum DrawCmd {
         /// 颜色。
         color: Color,
     },
+    /// 描边矩形（D16：获焦边框高亮；stroke_width 为描边宽度）。
+    StrokeRect {
+        /// x 坐标。
+        x: f32,
+        /// y 坐标。
+        y: f32,
+        /// 宽度。
+        width: f32,
+        /// 高度。
+        height: f32,
+        /// 描边颜色。
+        color: Color,
+        /// 描边宽度。
+        stroke_width: f32,
+    },
 }
 
 /// 场景图（绘制指令列表）。
@@ -116,6 +131,20 @@ impl SceneGraph {
                 });
             }
             _ => {}
+        }
+
+        // 描边边框（D16：获焦高亮外框）——在组件区域外扩 2px 绘制，边缘不被内容覆盖
+        if let Some(b) = &view.border {
+            let pad = 2.0;
+            let size = view.size.unwrap_or(slot.size);
+            self.cmds.push(DrawCmd::StrokeRect {
+                x: slot.position.x as f32 - pad,
+                y: slot.position.y as f32 - pad,
+                width: size.width + 2.0 * pad,
+                height: size.height + 2.0 * pad,
+                color: b.color,
+                stroke_width: b.width,
+            });
         }
 
         // 递归子节点（把父节点 slot.position 累加到子节点相对位置，P2-1 修复）

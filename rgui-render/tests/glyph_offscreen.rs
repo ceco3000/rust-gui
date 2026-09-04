@@ -3,7 +3,7 @@
 #![cfg(feature = "vello-backend")]
 
 use rgui_core::geometry::Size;
-use rgui_core::view::{Color, PropValue, WidgetView};
+use rgui_core::view::{Border, Color, PropValue, WidgetView};
 use rgui_render::scene_graph::{DrawCmd, SceneGraph};
 use rgui_render::vello::VelloBackend;
 
@@ -124,6 +124,7 @@ fn from_view_button_renders_and_shows_text() {
         match cmd {
             DrawCmd::FillRect { .. } => has_fill = true,
             DrawCmd::DrawText { .. } => has_text = true,
+            _ => {}
         }
     }
     assert!(has_fill, "from_view 应产出 FillRect（按钮）");
@@ -148,4 +149,36 @@ fn from_view_button_renders_and_shows_text() {
         })
         .count();
     assert!(white_count > 30, "from_view 应渲染出白色文字字形，got {white_count}");
+}
+
+#[test]
+fn border_view_produces_stroke_rect_and_pixels() {
+    // D16：带 border 的 view → from_view 产 StrokeRect → vello 描边边框像素
+    let mut backend = VelloBackend::new().expect("backend");
+
+    let mut v: WidgetView<()> = WidgetView::empty();
+    v.size = Some(Size::new(200.0, 100.0));
+    v.border = Some(Border::new(Color::rgb(255, 230, 80), 3.0)); // 亮黄描边
+    let scene = SceneGraph::from_view(&v);
+
+    // 1. from_view 应产出 StrokeRect draw 指令
+    let has_stroke = scene
+        .cmds()
+        .iter()
+        .any(|c| matches!(c, DrawCmd::StrokeRect { .. }));
+    assert!(has_stroke, "from_view 应产出 StrokeRect（描边）");
+
+    // 2. 离屏渲染出描边像素（黄色边缘）
+    let w = 240u32;
+    let h = 140u32;
+    let pixels = backend
+        .render_offscreen(&scene, w, h)
+        .expect("renders");
+    let yellow = (0..pixels.len() / 4)
+        .filter(|p| {
+            let i = p * 4;
+            pixels[i] > 200 && pixels[i + 1] > 180 && pixels[i + 2] < 130
+        })
+        .count();
+    assert!(yellow > 10, "应渲染描边边框像素（黄色），got {yellow}");
 }

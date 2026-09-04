@@ -85,15 +85,16 @@ impl WidgetSpec for Accordion {
         let mut root = WidgetView::empty();
         let content_h = if state.expanded { 130.0 } else { 44.0 };
         root.size = Some(Size::new(340.0, content_h));
-
-        // 标题行（可点击，显示展开/收起状态标记；获焦时 header 背景变亮 = Acoordion 焦点高亮）
-        let header_color = if ctx.focused {
-            Color::rgb(140, 185, 255)
+        // 获焦描边边框（D16：亮黄外框，DrawText 前缀已在 D14 移除）
+        root.border = if ctx.focused {
+            Some(crate::view::Border::new(Color::rgb(255, 230, 80), 3.0))
         } else {
-            Color::rgb(90, 130, 220)
+            None
         };
+
+        // 标题行（可点击，显示展开/收起状态标记）
         let mut header = WidgetView::empty();
-        header.props = PropValue::Color(header_color);
+        header.props = PropValue::Color(Color::rgb(90, 130, 220));
         header.size = Some(Size::new(340.0, 36.0));
         let marker = if state.expanded { "-" } else { "+" };
         let mut title = WidgetView::empty();
@@ -202,11 +203,13 @@ impl WidgetSpec for WaBadge {
     fn view(&self, state: &Self::State, ctx: &ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(Size::new(160.0, 40.0));
-        root.props = PropValue::Color(if ctx.focused {
-            Color::rgb(170, 210, 255)
+        root.props = PropValue::Color(Color::rgb(120, 160, 210));
+        // 获焦描边边框（D16：亮黄外框）
+        root.border = if ctx.focused {
+            Some(crate::view::Border::new(Color::rgb(255, 230, 80), 3.0))
         } else {
-            Color::rgb(120, 160, 210)
-        });
+            None
+        };
         let mut label = WidgetView::empty();
         label.props = PropValue::Str(format!("{}: {}", state.label, state.count));
         label.size = Some(Size::new(150.0, 26.0));

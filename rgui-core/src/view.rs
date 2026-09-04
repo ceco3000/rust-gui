@@ -6,6 +6,22 @@ use std::marker::PhantomData;
 
 use crate::geometry::Size;
 
+/// 边框绘制样式（D16：获焦描边边框）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Border {
+    /// 边框颜色。
+    pub color: Color,
+    /// 边框宽度（像素）。
+    pub width: f32,
+}
+
+impl Border {
+    /// 构造边框。
+    pub const fn new(color: Color, width: f32) -> Self {
+        Self { color, width }
+    }
+}
+
 /// 声明式视图树节点（泛型消息）。
 ///
 /// 手动实现 `Default`（不要求 `M: Default`，因 `PhantomData<M>` 不占数据）。
@@ -17,6 +33,8 @@ pub struct WidgetView<M = ()> {
     pub props: PropValue,
     /// 布局建议尺寸（供 LayoutEngine 计算真实 bounds；None = 由布局系统决定）。
     pub size: Option<Size>,
+    /// 描边边框（D16：获焦高亮外框；None = 无边框）。
+    pub border: Option<Border>,
     _marker: PhantomData<M>,
 }
 
@@ -34,7 +52,7 @@ impl<M> WidgetView<M> {
 
     /// 把视图树的消息类型从 `M` 提升为 `M2`（组合根/容器复用子组件视图）。
     ///
-    /// 递归映射子节点消息；props/size 不变。流式：`into_iter().map().collect()`。
+    /// 递归映射子节点消息；props/size/border 不变。流式：`into_iter().map().collect()`。
     pub fn map_message<M2>(self, f: &impl Fn(M) -> M2) -> WidgetView<M2> {
         WidgetView {
             children: self
@@ -44,6 +62,7 @@ impl<M> WidgetView<M> {
                 .collect(),
             props: self.props,
             size: self.size,
+            border: self.border,
             _marker: PhantomData,
         }
     }
@@ -55,6 +74,7 @@ impl<M> Default for WidgetView<M> {
             children: Vec::new(),
             props: PropValue::default(),
             size: None,
+            border: None,
             _marker: PhantomData,
         }
     }
@@ -182,6 +202,7 @@ mod tests {
             children: vec![child],
             props: PropValue::Unit,
             size: None,
+            border: None,
             _marker: PhantomData,
         };
 
