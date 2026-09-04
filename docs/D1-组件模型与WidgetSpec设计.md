@@ -94,7 +94,7 @@ pub trait WidgetSpec: Send + Sync + 'static {
 | `PropValue` | `Unit/Bool/Int/Float/Str/Color` 属性值 |
 | `Key` | `Str(String)/Num(u64)` 稳定键 |
 | `Color` | sRGB `u8×4` |
-| `ViewContext` / `UpdateContext` / `MeasureContext` / `PaintContext` / `AccessContext` | 生命周期上下文 |
+| `ViewContext`（D13：`pub focused: bool` 视图层焦点透传）/ `UpdateContext` / `MeasureContext` / `PaintContext` / `AccessContext` | 生命周期上下文 |
 
 ---
 

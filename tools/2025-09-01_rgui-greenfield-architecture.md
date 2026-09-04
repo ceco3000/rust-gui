@@ -158,9 +158,8 @@ pub struct Snapshotter { ... }
 pub struct StoreBinding { /* Arc<RwLock<StateStore>> 封装 */ }
 
 // ===== Context 体系 =====
-pub struct ViewContext { window_size: Size, locale: Locale }
-pub struct UpdateContext { focus: Option<WidgetId>, hover: Option<WidgetId>,
-                           cursor_window_position: Option<Point>, cursor_local_position: Option<Point> }
+pub struct ViewContext { pub focused: bool }   // D13 视图层焦点透传（组件 view 读它绘制获焦高亮）；窗口尺寸/locale 字段现不存在（对齐代码）
+pub struct UpdateContext { /* 更新上下文（当前占位；焦点信息经 ViewContext.focused 传给视图，非本字段） */ }
 pub struct MeasureContext { /* 只读环境 */ }
 pub struct PaintContext { /* 绘制指令收集 */ }
 pub struct AccessContext { /* 无障碍上下文 */ }
