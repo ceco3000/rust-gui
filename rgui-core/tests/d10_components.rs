@@ -81,3 +81,14 @@ fn badge_view_shows_label_count() {
         v.props
     );
 }
+
+#[test]
+fn badge_click_increments_count() {
+    let badge = WaBadge;
+    let mut state = WaBadge::initial_state();
+    assert_eq!(state.count, 0);
+    badge.update(WaBadgeMsg::Click, &mut state, &mut UpdateContext::default());
+    assert_eq!(state.count, 1, "点击 WaBadge 应 count+1");
+    badge.update(WaBadgeMsg::Click, &mut state, &mut UpdateContext::default());
+    assert_eq!(state.count, 2, "再次点击应 count+1");
+}

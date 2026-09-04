@@ -31,6 +31,22 @@ impl<M> WidgetView<M> {
         self.size = Some(size);
         self
     }
+
+    /// 把视图树的消息类型从 `M` 提升为 `M2`（组合根/容器复用子组件视图）。
+    ///
+    /// 递归映射子节点消息；props/size 不变。流式：`into_iter().map().collect()`。
+    pub fn map_message<M2>(self, f: &impl Fn(M) -> M2) -> WidgetView<M2> {
+        WidgetView {
+            children: self
+                .children
+                .into_iter()
+                .map(|c| c.map_message(f))
+                .collect(),
+            props: self.props,
+            size: self.size,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<M> Default for WidgetView<M> {
@@ -154,6 +170,29 @@ impl<M> Default for MessageHandler<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn map_message_promotes_child_message_type_recursively() {
+        // 子视图消息类型 u32 → 提升为 String
+        let mut child: WidgetView<u32> = WidgetView::empty();
+        child.props = PropValue::Int(7);
+        child.size = Some(crate::geometry::Size::new(10.0, 20.0));
+
+        let root: WidgetView<u32> = WidgetView {
+            children: vec![child],
+            props: PropValue::Unit,
+            size: None,
+            _marker: PhantomData,
+        };
+
+        let mapped: WidgetView<String> = root.map_message(&|m| format!("id={m}"));
+
+        assert_eq!(mapped.props, PropValue::Unit);
+        assert_eq!(mapped.size, None);
+        assert_eq!(mapped.children.len(), 1);
+        assert_eq!(mapped.children[0].props, PropValue::Int(7));
+        assert_eq!(mapped.children[0].size, Some(crate::geometry::Size::new(10.0, 20.0)));
+    }
 
     #[test]
     fn color_rgb_default_alpha() {

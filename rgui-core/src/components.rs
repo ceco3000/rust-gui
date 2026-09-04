@@ -123,13 +123,18 @@ impl WidgetSpec for Accordion {
 
 // ===== WaBadge =====
 
-/// WaBadge 消息（无交互，占位）。
+/// WaBadge 消息（点击计数）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WaBadgeMsg {}
+pub enum WaBadgeMsg {
+    /// 点击徽章，计数 +1。
+    Click,
+}
 
 impl AppMessage for WaBadgeMsg {
     fn message_name(&self) -> &'static str {
-        match *self {}
+        match self {
+            WaBadgeMsg::Click => "wa_badge.click",
+        }
     }
 }
 
@@ -196,7 +201,11 @@ impl WidgetSpec for WaBadge {
         root
     }
 
-    fn update(&self, _msg: Self::Message, _state: &mut Self::State, _ctx: &mut UpdateContext) {}
+    fn update(&self, msg: Self::Message, state: &mut Self::State, _ctx: &mut UpdateContext) {
+        match msg {
+            WaBadgeMsg::Click => state.count += 1,
+        }
+    }
 
     fn measure(&self, _state: &Self::State, _c: BoxConstraints, _ctx: &MeasureContext) -> Size {
         Size::new(160.0, 40.0)

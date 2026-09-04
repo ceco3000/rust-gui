@@ -1,44 +1,156 @@
-//! D10 窗口示例：真实可交互组件——Accordion 折叠/展开（经 facade `rgui::App::run`）。
+//! D11 窗口示例：多组件 hit-test 事件路由——Accordion + WaBadge 同窗，各自响应点击。
 //!
-//! 点击 Accordion 标题（或按 Space）切换展开/收起，展开时显示内容（badge 信息）。
+//! 点击坐标命中哪个组件的区域，就路由到该组件消息（Accordion 标题区 → Toggle；
+//! WaBadge 区 → Click 计数）。经 facade `rgui::App::run`。
 //! 运行：cargo run -p rgui --features window --example window_demo
 
 #![cfg(feature = "window")]
 
-use rgui_platform::event_loop::{ElementState, KeyCode, MouseButton, PhysicalKey, WindowEvent};
-use rgui::{Accordion, AccordionMsg, AccordionState, App, AppConfig};
+use std::any::Any;
+use std::cell::RefCell;
+
+use rgui::geometry::Rect;
+use rgui::hit_test::{hit_test, HitRegion};
+use rgui::traits::{AppMessage, PersistState, WidgetSpec};
+use rgui::view::WidgetView;
+use rgui::{
+    Accordion, AccordionMsg, AccordionState, App, AppConfig, WaBadge, WaBadgeMsg, WaBadgeState,
+};
+use rgui_platform::event_loop::{ElementState, MouseButton, WindowEvent};
+
+// ===== 组合根：Accordion + WaBadge 同窗 =====
+
+/// 组合根消息（路由到子组件）。
+#[derive(Debug, Clone)]
+enum DemoMsg {
+    Accordion(AccordionMsg),
+    Badge(WaBadgeMsg),
+}
+
+impl AppMessage for DemoMsg {
+    fn message_name(&self) -> &'static str {
+        match self {
+            DemoMsg::Accordion(m) => m.message_name(),
+            DemoMsg::Badge(m) => m.message_name(),
+        }
+    }
+}
+
+/// 组合根状态（持有两个子组件状态）。
+#[derive(Debug, Clone)]
+struct DemoRootState {
+    accordion: AccordionState,
+    badge: WaBadgeState,
+}
+
+impl Default for DemoRootState {
+    fn default() -> Self {
+        Self {
+            accordion: Accordion::initial_state(),
+            badge: WaBadge::initial_state(),
+        }
+    }
+}
+
+impl PersistState for DemoRootState {
+    fn schema_name() -> &'static str {
+        "demo_root_state"
+    }
+    fn schema_version() -> u32 {
+        0
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// 组合根组件：横排展示 Accordion（左）+ WaBadge（右），各自响应点击。
+struct DemoRoot;
+
+impl WidgetSpec for DemoRoot {
+    type State = DemoRootState;
+    type Message = DemoMsg;
+
+    fn name(&self) -> &'static str {
+        "demo_root"
+    }
+
+    fn view(&self, state: &Self::State, ctx: &rgui::context::ViewContext) -> WidgetView<Self::Message> {
+        let mut root = WidgetView::empty();
+        root.size = Some(rgui::geometry::Size::new(520.0, 220.0));
+        // 左：Accordion 视图（消息提升为组合根消息）
+        let acc = Accordion
+            .view(&state.accordion, ctx)
+            .map_message(&DemoMsg::Accordion);
+        // 右：WaBadge 视图
+        let badge = WaBadge
+            .view(&state.badge, ctx)
+            .map_message(&DemoMsg::Badge);
+        root.children.push(acc);
+        root.children.push(badge);
+        root
+    }
+
+    fn update(&self, msg: Self::Message, state: &mut Self::State, ctx: &mut rgui::context::UpdateContext) {
+        match msg {
+            DemoMsg::Accordion(m) => Accordion.update(m, &mut state.accordion, ctx),
+            DemoMsg::Badge(m) => WaBadge.update(m, &mut state.badge, ctx),
+        }
+    }
+
+    fn measure(&self, _state: &Self::State, _c: rgui::geometry::BoxConstraints, _ctx: &rgui::context::MeasureContext) -> rgui::geometry::Size {
+        rgui::geometry::Size::new(520.0, 220.0)
+    }
+
+    fn paint(&self, _state: &Self::State, _b: Rect, _ctx: &mut rgui::context::PaintContext) {}
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::new()
-        .with_title("rgui accordion demo")
-        .with_size(480, 320);
+        .with_title("rgui hit-test demo")
+        .with_size(520, 220);
 
-    // 事件 → Accordion 消息：左键点击标题区 → Toggle；按 Space → Toggle
-    let mapper = |event: &WindowEvent| -> Option<AccordionMsg> {
+    // hit 区域（逻辑坐标）：Accordion 标题区（左 0-340）+ WaBadge 区（右 340-520）
+    let regions = [
+        HitRegion::new(Rect::new(0.0, 0.0, 340.0, 44.0), 1), // Accordion 标题区
+        HitRegion::new(Rect::new(340.0, 0.0, 180.0, 40.0), 2), // WaBadge 区
+    ];
+
+    // 缓存光标位置（逻辑坐标待命中用）
+    let cursor = std::cell::RefCell::new((0.0f32, 0.0f32));
+
+    let mapper = move |event: &WindowEvent| -> Option<DemoMsg> {
         match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                // 简化：把 position 视作逻辑坐标（正式实现按 scale_factor 换算；demo 演示命中）
+                *cursor.borrow_mut() = (position.x as f32, position.y as f32);
+                None
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => Some(AccordionMsg::Toggle),
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed
-                    && event.physical_key == PhysicalKey::Code(KeyCode::Space) =>
-            {
-                Some(AccordionMsg::Toggle)
+            } => {
+                let (x, y) = *cursor.borrow();
+                match hit_test(x, y, &regions) {
+                    Some(1) => Some(DemoMsg::Accordion(AccordionMsg::Toggle)),
+                    Some(2) => Some(DemoMsg::Badge(WaBadgeMsg::Click)),
+                    _ => None,
+                }
             }
             _ => None,
         }
     };
 
-    // 初始状态：默认收起；`--expanded` 则初始即展开（qa 截"收起 vs 展开"对比，不依赖辅助功能权限）
-    let expanded = std::env::args().any(|a| a == "--expanded");
-    let state = AccordionState {
-        title: "Settings".to_string(),
-        subtitle: "WaBadge: 0 (click to expand details)".to_string(),
-        expanded,
-    };
+    // 初始状态：默认收起；`--expanded` 则 Accordion 初始展开（qa 截"收起 vs 展开"对比）
+    let mut state = DemoRootState::default();
+    if std::env::args().any(|a| a == "--expanded") {
+        state.accordion.expanded = true;
+    }
 
-    App::run(config, Accordion, state, mapper)?;
+    App::run(config, DemoRoot, state, mapper)?;
     Ok(())
 }

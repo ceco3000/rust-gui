@@ -23,6 +23,7 @@ pub mod components;
 pub mod context;
 pub mod coordinator;
 pub mod geometry;
+pub mod hit_test;
 pub mod id;
 pub mod layout;
 pub mod locale;
@@ -70,6 +71,9 @@ pub use layout::{LayoutEngine, LayoutNode, LayoutResult, LayoutStyle};
 
 // 组件子模块（由 rgui-components 迁入，统一 Tier 1 WidgetSpec）
 pub use components::*;
+
+// 命中检测子模块（D11：多组件事件路由基础，纯几何）
+pub use hit_test::*;
 
 // 无障碍树子模块（由 rgui-a11y/tree.rs 迁入）
 pub use a11y_tree::AccessibilityTree;
