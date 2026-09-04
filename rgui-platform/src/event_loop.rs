@@ -6,11 +6,9 @@
 
 // re-export winit 公共类型（上层用这些类型，无需 `winit::` 前缀）
 pub use winit::dpi;
-pub use winit::event_loop::{ActiveEventLoop, ControlFlow};
 pub use winit::error::EventLoopError;
-pub use winit::event::{
-    ElementState, MouseButton, MouseScrollDelta, WindowEvent,
-};
+pub use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+pub use winit::event_loop::{ActiveEventLoop, ControlFlow};
 pub use winit::keyboard::{KeyCode, PhysicalKey};
 pub use winit::window::WindowAttributes;
 

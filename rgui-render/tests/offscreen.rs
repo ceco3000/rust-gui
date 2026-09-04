@@ -7,8 +7,8 @@
 
 #![cfg(feature = "vello-backend")]
 
-use rgui_render::vello::{RenderBackend, VelloBackend};
 use rgui_render::scene_graph::SceneGraph;
+use rgui_render::vello::{RenderBackend, VelloBackend};
 
 #[test]
 fn offscreen_renders_red_rect_to_pixels() {

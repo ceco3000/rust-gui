@@ -19,7 +19,12 @@ fn view_with(props: PropValue, children: Vec<WidgetView<M>>) -> WidgetView<M> {
 
 fn pixel_at(pixels: &[u8], width: u32, x: u32, y: u32) -> (u8, u8, u8, u8) {
     let idx = ((y * width + x) * 4) as usize;
-    (pixels[idx], pixels[idx + 1], pixels[idx + 2], pixels[idx + 3])
+    (
+        pixels[idx],
+        pixels[idx + 1],
+        pixels[idx + 2],
+        pixels[idx + 3],
+    )
 }
 
 #[test]
@@ -62,8 +67,14 @@ fn e2e3_multi_node_layout_pixels() {
     let scene = SceneGraph::from_view(&view);
     let (w, h) = (200u32, 200u32);
     let pixels = backend.render_offscreen(&scene, w, h).expect("offscreen");
-    let red_at = pixels.chunks_exact(4).find(|px| px[0] > 180 && px[1] < 80).is_some();
-    let green_at = pixels.chunks_exact(4).find(|px| px[1] > 180 && px[0] < 80).is_some();
+    let red_at = pixels
+        .chunks_exact(4)
+        .find(|px| px[0] > 180 && px[1] < 80)
+        .is_some();
+    let green_at = pixels
+        .chunks_exact(4)
+        .find(|px| px[1] > 180 && px[0] < 80)
+        .is_some();
     assert!(red_at, "应渲染出红色子节点");
     assert!(green_at, "应渲染出绿色子节点");
 }

@@ -5,13 +5,13 @@
 //!
 //! 运行：cargo run -p rgui --example demo
 
+use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{MeasureContext, PaintContext, UpdateContext, ViewContext};
 use rgui_core::coordinator::Coordinator;
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::state::{diff, Snapshotter};
 use rgui_core::traits::{AppMessage, PersistState, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
-use rgui_core::a11y::AccessibilityNode;
 use std::any::Any;
 
 #[derive(Debug, Clone, Copy)]
@@ -59,16 +59,15 @@ impl WidgetSpec for Counter {
     fn update(&self, _msg: Self::Message, state: &mut Self::State, _ctx: &mut UpdateContext) {
         state.0 += 1;
     }
-    fn measure(
-        &self,
-        _state: &Self::State,
-        _c: BoxConstraints,
-        _ctx: &MeasureContext,
-    ) -> Size {
+    fn measure(&self, _state: &Self::State, _c: BoxConstraints, _ctx: &MeasureContext) -> Size {
         Size::new(100.0, 40.0)
     }
     fn paint(&self, _state: &Self::State, _bounds: Rect, _ctx: &mut PaintContext) {}
-    fn accessibility(&self, _s: &Self::State, _c: &rgui_core::context::AccessContext) -> AccessibilityNode {
+    fn accessibility(
+        &self,
+        _s: &Self::State,
+        _c: &rgui_core::context::AccessContext,
+    ) -> AccessibilityNode {
         AccessibilityNode::none()
     }
 }

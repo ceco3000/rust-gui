@@ -83,7 +83,11 @@ impl WidgetSpec for ListRoot {
         "d18_list_root"
     }
 
-    fn view(&self, state: &Self::State, _ctx: &rgui::context::ViewContext) -> WidgetView<Self::Message> {
+    fn view(
+        &self,
+        state: &Self::State,
+        _ctx: &rgui::context::ViewContext,
+    ) -> WidgetView<Self::Message> {
         // 每项一个子视图：key = item.key（reconcile 复用），显示 "item{key}: {count}"
         let items: Vec<WidgetView<Self::Message>> = state
             .items
@@ -105,7 +109,12 @@ impl WidgetSpec for ListRoot {
         root
     }
 
-    fn update(&self, msg: Self::Message, state: &mut Self::State, _ctx: &mut rgui::context::UpdateContext) {
+    fn update(
+        &self,
+        msg: Self::Message,
+        state: &mut Self::State,
+        _ctx: &mut rgui::context::UpdateContext,
+    ) {
         match msg {
             ListMsg::Add => {
                 let key = state.next_key;
@@ -129,11 +138,19 @@ impl WidgetSpec for ListRoot {
         Size::new(520.0, 200.0)
     }
 
-    fn paint(&self, _state: &Self::State, _b: rgui::geometry::Rect, _ctx: &mut rgui::context::PaintContext) {}
+    fn paint(
+        &self,
+        _state: &Self::State,
+        _b: rgui::geometry::Rect,
+        _ctx: &mut rgui::context::PaintContext,
+    ) {
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AppConfig::new().with_title("rgui d18 list").with_size(520, 220);
+    let config = AppConfig::new()
+        .with_title("rgui d18 list")
+        .with_size(520, 220);
 
     // 左键 Add、右键 Remove（动态增删；key-based reconcile 在 core diff 层保证复用）
     let mapper = move |event: &WindowEvent| -> Option<ListMsg> {

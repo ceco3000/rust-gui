@@ -11,9 +11,9 @@
 //!
 //! D3 占位（泛型空壳）已替换为本实现；`WidgetSpec` 签名保持 §B.1 不变。
 
+use crate::context::{UpdateContext, ViewContext};
 use crate::traits::WidgetSpec;
 use crate::view::WidgetView;
-use crate::context::{UpdateContext, ViewContext};
 use std::marker::PhantomData;
 
 /// 核心循环宿主（按具体 WidgetSpec 组件驱动）。

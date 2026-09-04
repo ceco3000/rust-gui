@@ -36,13 +36,21 @@ fn nested_widget_position_accumulates_parent_offset() {
     let target_child = node_with(
         PropValue::Color(Color::rgb(0, 255, 0)),
         Size::new(100.0, 40.0),
-        vec![node_with(PropValue::Color(Color::rgb(255, 0, 0)), Size::new(100.0, 20.0), vec![])],
+        vec![node_with(
+            PropValue::Color(Color::rgb(255, 0, 0)),
+            Size::new(100.0, 20.0),
+            vec![],
+        )],
     );
     let root = node_with(
         PropValue::Unit,
         Size::new(200.0, 200.0),
         vec![
-            node_with(PropValue::Color(Color::rgb(255, 255, 255)), Size::new(120.0, 80.0), vec![]),
+            node_with(
+                PropValue::Color(Color::rgb(255, 255, 255)),
+                Size::new(120.0, 80.0),
+                vec![],
+            ),
             target_child,
         ],
     );

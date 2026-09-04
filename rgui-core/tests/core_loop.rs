@@ -9,12 +9,12 @@
 //! - view() 把当前 count 编码进 WidgetView.props（PropValue::Int）
 //! - update(Increment) → count += 1
 
+use rgui_core::a11y::AccessibilityNode;
 use rgui_core::context::{MeasureContext, UpdateContext, ViewContext};
 use rgui_core::coordinator::Coordinator;
 use rgui_core::geometry::{BoxConstraints, Rect, Size};
 use rgui_core::traits::{AppMessage, PersistState, WidgetSpec};
 use rgui_core::view::{PropValue, WidgetView};
-use rgui_core::a11y::AccessibilityNode;
 use std::any::Any;
 
 // ---- 测试组件：Counter ----
@@ -81,10 +81,19 @@ impl WidgetSpec for Counter {
         Size::default()
     }
 
-    fn paint(&self, _state: &Self::State, _bounds: Rect, _ctx: &mut rgui_core::context::PaintContext) {
+    fn paint(
+        &self,
+        _state: &Self::State,
+        _bounds: Rect,
+        _ctx: &mut rgui_core::context::PaintContext,
+    ) {
     }
 
-    fn accessibility(&self, _s: &Self::State, _c: &rgui_core::context::AccessContext) -> AccessibilityNode {
+    fn accessibility(
+        &self,
+        _s: &Self::State,
+        _c: &rgui_core::context::AccessContext,
+    ) -> AccessibilityNode {
         AccessibilityNode::none()
     }
 }

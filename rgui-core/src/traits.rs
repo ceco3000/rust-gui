@@ -4,10 +4,10 @@
 //! 不实现业务逻辑。**契约严格对齐 §B.1**：measure 用 `BoxConstraints`+`MeasureContext`，
 //! `EventResult` 为 `{Handled, Prevented, Continue(M)}`，无文档未定义的派生 trait。
 
+use crate::a11y::AccessibilityNode;
 use crate::context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 use crate::geometry::{BoxConstraints, Rect, Size};
 use crate::view::WidgetView;
-use crate::a11y::AccessibilityNode;
 use std::any::Any;
 use std::fmt;
 
@@ -60,7 +60,12 @@ pub trait WidgetSpec: Send + Sync + 'static {
     fn update(&self, msg: Self::Message, state: &mut Self::State, ctx: &mut UpdateContext);
 
     /// 测量尺寸。
-    fn measure(&self, state: &Self::State, constraints: BoxConstraints, ctx: &MeasureContext) -> Size;
+    fn measure(
+        &self,
+        state: &Self::State,
+        constraints: BoxConstraints,
+        ctx: &MeasureContext,
+    ) -> Size;
 
     /// 绘制。
     fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext);

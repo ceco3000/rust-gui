@@ -28,7 +28,9 @@ fn color_view(c: Color) -> WidgetView<M> {
     view_with(PropValue::Color(c), vec![])
 }
 
-fn count_cmds(sg: &SceneGraph) -> usize { sg.cmds().len() }
+fn count_cmds(sg: &SceneGraph) -> usize {
+    sg.cmds().len()
+}
 
 // ============ Color → FillRect ============
 
@@ -51,10 +53,15 @@ fn fv2_str_maps_to_drawtext() {
     let cmds = sg.cmds();
     assert_eq!(cmds.len(), 1);
     match &cmds[0] {
-        DrawCmd::DrawText { text, size, color, .. } => {
+        DrawCmd::DrawText {
+            text, size, color, ..
+        } => {
             assert_eq!(text, "Hello");
             assert!(*size > 0.0, "DrawText size 应 > 0");
-            assert!(color.r > 100 || color.g > 100 || color.b > 100, "文本色应非背景可见(当前灰200)");
+            assert!(
+                color.r > 100 || color.g > 100 || color.b > 100,
+                "文本色应非背景可见(当前灰200)"
+            );
         }
         _ => panic!("Str prop 应映射为 DrawText"),
     }
@@ -70,7 +77,11 @@ fn fv3_unit_node_no_graphics() {
 
 #[test]
 fn fv4_int_float_bool_no_graphics() {
-    for props in [PropValue::Int(7), PropValue::Float(3.14), PropValue::Bool(true)] {
+    for props in [
+        PropValue::Int(7),
+        PropValue::Float(3.14),
+        PropValue::Bool(true),
+    ] {
         let sg = SceneGraph::from_view(&view_with(props.clone(), vec![]));
         assert_eq!(count_cmds(&sg), 0, "{props:?} 不应产生图元（无静默错误）");
     }
@@ -123,8 +134,14 @@ fn fv7_child_positions_use_layout_not_fixed() {
     );
     let sg = SceneGraph::from_view(&parent);
     let cmds = sg.cmds();
-    let y0 = match &cmds[0] { DrawCmd::FillRect { y, .. } => *y, _ => panic!() };
-    let y1 = match &cmds[1] { DrawCmd::FillRect { y, .. } => *y, _ => panic!() };
+    let y0 = match &cmds[0] {
+        DrawCmd::FillRect { y, .. } => *y,
+        _ => panic!(),
+    };
+    let y1 = match &cmds[1] {
+        DrawCmd::FillRect { y, .. } => *y,
+        _ => panic!(),
+    };
     assert!(y1 >= y0, "布局有序：子节点 y 应递增（y1={y1} >= y0={y0}）");
 }
 
@@ -139,9 +156,24 @@ fn fv8_child_bounds_within_container() {
     let cmds = sg.cmds();
     assert_eq!(cmds.len(), 2);
     // 子节点坐标应落在容器内（非负数、不超容器尺寸）
-    if let DrawCmd::FillRect { x, y, width, height, .. } = &cmds[1] {
+    if let DrawCmd::FillRect {
+        x,
+        y,
+        width,
+        height,
+        ..
+    } = &cmds[1]
+    {
         assert!(*x >= 0.0 && *y >= 0.0, "子节点坐标非负: x={x} y={y}");
-        assert!(*x + *width <= 200.0 + 0.001, "子不超容器宽: x+width={}", *x + *width);
-        assert!(*y + *height <= 200.0 + 0.001, "子不超容器高: y+height={}", *y + *height);
+        assert!(
+            *x + *width <= 200.0 + 0.001,
+            "子不超容器宽: x+width={}",
+            *x + *width
+        );
+        assert!(
+            *y + *height <= 200.0 + 0.001,
+            "子不超容器高: y+height={}",
+            *y + *height
+        );
     }
 }

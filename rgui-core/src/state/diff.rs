@@ -26,9 +26,15 @@ pub enum Patch<M> {
     /// 替换指定索引子节点的 props（仅子节点 props 变、结构不变时）。
     SetChildProps { index: usize, props: PropValue },
     /// 替换指定索引子节点为整棵目标子树（结构/内容差异时）。
-    ReplaceChild { index: usize, subtree: WidgetView<M> },
+    ReplaceChild {
+        index: usize,
+        subtree: WidgetView<M>,
+    },
     /// 在 index 处插入整棵目标子树。
-    InsertChild { index: usize, subtree: WidgetView<M> },
+    InsertChild {
+        index: usize,
+        subtree: WidgetView<M>,
+    },
     /// 删除指定索引的子节点（用于超出的尾部）。
     RemoveChild { index: usize },
     /// 把索引 `from` 的子节点移动到 `to`（D18：key-based reconcile 顺序复用）。
@@ -95,7 +101,11 @@ pub fn diff<M: Clone>(a: &WidgetView<M>, b: &WidgetView<M>) -> Vec<Patch<M>> {
 
 /// key-based children reconcile（D18）：按 key 匹配复用子节点，minimal move/update 而非索引重建。
 /// 通过 (key 匹配的) MoveChild + 内容 ReplaceChild + 新增 InsertChild + 缺失 RemoveChild 收敛。
-fn diff_children_keyed<M: Clone>(patches: &mut Vec<Patch<M>>, a: &[WidgetView<M>], b: &[WidgetView<M>]) {
+fn diff_children_keyed<M: Clone>(
+    patches: &mut Vec<Patch<M>>,
+    a: &[WidgetView<M>],
+    b: &[WidgetView<M>],
+) {
     // 模拟当前 a（与应用 patch 后一致），保证生成的 index 有效
     let mut list: Vec<WidgetView<M>> = a.to_vec();
 
@@ -119,7 +129,10 @@ fn diff_children_keyed<M: Clone>(patches: &mut Vec<Patch<M>>, a: &[WidgetView<M>
         match src {
             Some(i) if i == j => {
                 if !subtree_eq(&list[i], bj) {
-                    patches.push(Patch::ReplaceChild { index: j, subtree: bj.clone() });
+                    patches.push(Patch::ReplaceChild {
+                        index: j,
+                        subtree: bj.clone(),
+                    });
                 }
                 list[j] = bj.clone();
             }
@@ -128,12 +141,18 @@ fn diff_children_keyed<M: Clone>(patches: &mut Vec<Patch<M>>, a: &[WidgetView<M>
                 let c = list.remove(i);
                 list.insert(j, c);
                 if !subtree_eq(&list[j], bj) {
-                    patches.push(Patch::ReplaceChild { index: j, subtree: bj.clone() });
+                    patches.push(Patch::ReplaceChild {
+                        index: j,
+                        subtree: bj.clone(),
+                    });
                 }
                 list[j] = bj.clone();
             }
             None => {
-                patches.push(Patch::InsertChild { index: j, subtree: bj.clone() });
+                patches.push(Patch::InsertChild {
+                    index: j,
+                    subtree: bj.clone(),
+                });
                 list.insert(j, bj.clone());
             }
         }
@@ -232,12 +251,18 @@ mod tests {
         );
         let b = with_children(
             PropValue::Int(1),
-            vec![with_children(PropValue::Int(10), vec![leaf(PropValue::Int(999))])],
+            vec![with_children(
+                PropValue::Int(10),
+                vec![leaf(PropValue::Int(999))],
+            )],
         );
         let patches = diff(&a, &b);
         let mut result = a.clone();
         apply_patch(&mut result, &patches);
-        assert!(tree_eq(&result, &b), "deep child content change should converge");
+        assert!(
+            tree_eq(&result, &b),
+            "deep child content change should converge"
+        );
     }
 
     /// roundtrip：1→2 增加子节点（含整棵子树）。
@@ -298,8 +323,14 @@ mod tests {
     /// D18：key-based reorder——children 顺序交换（有 key），应复用（MoveChild）而非索引 replace；收敛。
     #[test]
     fn keyed_reorder_reuses_by_key() {
-        let a = with_children(PropValue::Unit, vec![kleaf(1, PropValue::Int(1)), kleaf(2, PropValue::Int(2))]);
-        let b = with_children(PropValue::Unit, vec![kleaf(2, PropValue::Int(22)), kleaf(1, PropValue::Int(1))]);
+        let a = with_children(
+            PropValue::Unit,
+            vec![kleaf(1, PropValue::Int(1)), kleaf(2, PropValue::Int(2))],
+        );
+        let b = with_children(
+            PropValue::Unit,
+            vec![kleaf(2, PropValue::Int(22)), kleaf(1, PropValue::Int(1))],
+        );
         let patches = diff(&a, &b);
         assert!(
             patches.iter().any(|p| matches!(p, Patch::MoveChild { .. })),
@@ -317,16 +348,27 @@ mod tests {
     fn keyed_remove_middle_keeps_neighbors() {
         let a = with_children(
             PropValue::Unit,
-            vec![kleaf(1, PropValue::Int(1)), kleaf(2, PropValue::Int(2)), kleaf(3, PropValue::Int(3))],
+            vec![
+                kleaf(1, PropValue::Int(1)),
+                kleaf(2, PropValue::Int(2)),
+                kleaf(3, PropValue::Int(3)),
+            ],
         );
-        let b = with_children(PropValue::Unit, vec![kleaf(1, PropValue::Int(1)), kleaf(3, PropValue::Int(3))]);
+        let b = with_children(
+            PropValue::Unit,
+            vec![kleaf(1, PropValue::Int(1)), kleaf(3, PropValue::Int(3))],
+        );
         let patches = diff(&a, &b);
         assert!(
-            patches.iter().any(|p| matches!(p, Patch::RemoveChild { index: 1 })),
+            patches
+                .iter()
+                .any(|p| matches!(p, Patch::RemoveChild { index: 1 })),
             "应删除中间 key2 子节点，而不误伤邻位"
         );
         assert!(
-            !patches.iter().any(|p| matches!(p, Patch::ReplaceChild { .. })),
+            !patches
+                .iter()
+                .any(|p| matches!(p, Patch::ReplaceChild { .. })),
             "邻位 key 应复用（无 replace）"
         );
         let mut result = a.clone();
@@ -340,16 +382,27 @@ mod tests {
     fn keyed_add_remove_and_reorder_roundtrip_converges() {
         let a = with_children(
             PropValue::Unit,
-            vec![kleaf(1, PropValue::Int(1)), kleaf(2, PropValue::Int(2)), kleaf(3, PropValue::Int(3))],
+            vec![
+                kleaf(1, PropValue::Int(1)),
+                kleaf(2, PropValue::Int(2)),
+                kleaf(3, PropValue::Int(3)),
+            ],
         );
         let b = with_children(
             PropValue::Unit,
-            vec![kleaf(4, PropValue::Int(40)), kleaf(2, PropValue::Int(22)), kleaf(1, PropValue::Int(1))],
+            vec![
+                kleaf(4, PropValue::Int(40)),
+                kleaf(2, PropValue::Int(22)),
+                kleaf(1, PropValue::Int(1)),
+            ],
         );
         let patches = diff(&a, &b);
         let mut result = a.clone();
         apply_patch(&mut result, &patches);
-        assert!(tree_eq(&result, &b), "keyed add/remove/reorder should converge");
+        assert!(
+            tree_eq(&result, &b),
+            "keyed add/remove/reorder should converge"
+        );
         assert_eq!(result.children[0].key, Some(4), "新增 key4 应在首");
         assert_eq!(result.children[0].props, PropValue::Int(40));
         assert_eq!(result.children[1].key, Some(2));

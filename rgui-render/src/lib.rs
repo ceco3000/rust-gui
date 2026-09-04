@@ -22,8 +22,8 @@ pub mod vello;
 // GPU 资源类型契约导出（实现阶段补全真实定义；D3 阶段 0 为占位签名）
 pub use glyph::{GlyphAtlas, GlyphCacheEntry, GlyphKey};
 pub use path_tessellation::PathTessellation;
-pub use text::TextShaper;
 pub use scene_graph::{DrawCmd, SceneGraph};
+pub use text::TextShaper;
 #[cfg(feature = "vello-backend")]
 pub use vello::{RenderBackend, VelloBackend};
 

@@ -45,17 +45,13 @@ pub use geometry::{BoxConstraints, Point, Rect, Size};
 pub use view::{Callback, Color, Key, MessageBinding, MessageHandler, PropValue, WidgetView};
 
 // 核心 trait
-pub use traits::{
-    AppMessage, EventResult, PersistState, WidgetSpec,
-};
+pub use traits::{AppMessage, EventResult, PersistState, WidgetSpec};
 
 // 内置消息类型
 pub use message::NoopMsg;
 
 // Context 类型
-pub use context::{
-    AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext,
-};
+pub use context::{AccessContext, MeasureContext, PaintContext, UpdateContext, ViewContext};
 
 // 无障碍基础类型
 pub use a11y::{AccessibilityAction, AccessibilityNode, AccessibilityRole, AccessibilityState};
@@ -84,14 +80,14 @@ pub use style::*;
 // 关键类型契约（顶层导出，保持 facade `use rgui_core::*` 兼容性）
 pub mod prelude {
     pub use crate::a11y::*;
-    pub use crate::geometry::*;
-    pub use crate::traits::*;
-    pub use crate::view::*;
+    pub use crate::a11y_tree::*;
+    pub use crate::components::*;
     pub use crate::context::*;
+    pub use crate::geometry::*;
     pub use crate::id::*;
+    pub use crate::layout::*;
     pub use crate::message::*;
     pub use crate::state::*;
-    pub use crate::layout::*;
-    pub use crate::components::*;
-    pub use crate::a11y_tree::*;
+    pub use crate::traits::*;
+    pub use crate::view::*;
 }

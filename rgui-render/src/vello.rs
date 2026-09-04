@@ -39,17 +39,19 @@ impl VelloBackend {
         }))
         .map_err(|e| format!("no adapter: {e}"))?;
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor::default(),
-        ))
-        .map_err(|e| format!("no device: {e}"))?;
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                .map_err(|e| format!("no device: {e}"))?;
 
-        let renderer = Renderer::new(&device, RendererOptions {
-            use_cpu: false,
-            antialiasing_support: AaSupport::all(),
-            num_init_threads: None,
-            pipeline_cache: None,
-        })
+        let renderer = Renderer::new(
+            &device,
+            RendererOptions {
+                use_cpu: false,
+                antialiasing_support: AaSupport::all(),
+                num_init_threads: None,
+                pipeline_cache: None,
+            },
+        )
         .map_err(|e| format!("vello renderer: {e}"))?;
 
         Ok(Self {
@@ -346,11 +348,18 @@ impl VelloBackend {
         tf: kurbo::Affine,
     ) {
         let brush = Brush::Solid(to_peniko_color(color));
-        let runs = self.text.shape_line(text, size, if width > 0.0 { Some(width) } else { None });
+        let runs = self
+            .text
+            .shape_line(text, size, if width > 0.0 { Some(width) } else { None });
         if runs.is_empty() {
             // 兜底：无字体/空文本时画一个近似块（不至于完全空）。
             let rect_width = text.chars().count() as f32 * size * 0.6;
-            let rect = kurbo::Rect::new(f64::from(x), f64::from(y), f64::from(x + rect_width), f64::from(y + size));
+            let rect = kurbo::Rect::new(
+                f64::from(x),
+                f64::from(y),
+                f64::from(x + rect_width),
+                f64::from(y + size),
+            );
             scene.fill(Fill::NonZero, tf, brush, None, &rect);
             return;
         }

@@ -56,9 +56,7 @@ fn empty_text_renders_nothing() {
         color: Color::rgb(255, 255, 255),
         width: 0.0,
     }]);
-    let pixels = backend
-        .render_offscreen(&scene, 120, 60)
-        .expect("renders");
+    let pixels = backend.render_offscreen(&scene, 120, 60).expect("renders");
     let is_white = |i: usize| pixels[i] > 200 && pixels[i + 1] > 200 && pixels[i + 2] > 200;
     let white_count = (0..pixels.len() / 4).filter(|p| is_white(p * 4)).count();
     assert!(white_count < 8, "空文本不应产生字形像素，got {white_count}");
@@ -86,9 +84,7 @@ fn button_and_text_render_both_fill_and_glyphs() {
     ]);
     let w = 480u32;
     let h = 240u32;
-    let pixels = backend
-        .render_offscreen(&scene, w, h)
-        .expect("renders");
+    let pixels = backend.render_offscreen(&scene, w, h).expect("renders");
 
     let blue_count = (0..pixels.len() / 4)
         .filter(|p| {
@@ -104,7 +100,10 @@ fn button_and_text_render_both_fill_and_glyphs() {
             pixels[i] > 190 && pixels[i + 1] > 190 && pixels[i + 2] > 190
         })
         .count();
-    assert!(white_count > 30, "按钮上应渲染出白色文字字形，got {white_count}");
+    assert!(
+        white_count > 30,
+        "按钮上应渲染出白色文字字形，got {white_count}"
+    );
 }
 
 #[test]
@@ -135,23 +134,27 @@ fn from_view_button_renders_and_shows_text() {
 
     let w = 480u32;
     let h = 240u32;
-    let pixels = backend
-        .render_offscreen(&scene, w, h)
-        .expect("renders");
+    let pixels = backend.render_offscreen(&scene, w, h).expect("renders");
     let blue_count = (0..pixels.len() / 4)
         .filter(|p| {
             let i = p * 4;
             pixels[i + 2] > 150 && pixels[i] < 120 && pixels[i + 1] < 150
         })
         .count();
-    assert!(blue_count > 500, "from_view 应渲染蓝色按钮，got {blue_count}");
+    assert!(
+        blue_count > 500,
+        "from_view 应渲染蓝色按钮，got {blue_count}"
+    );
     let white_count = (0..pixels.len() / 4)
         .filter(|p| {
             let i = p * 4;
             pixels[i] > 190 && pixels[i + 1] > 190 && pixels[i + 2] > 190
         })
         .count();
-    assert!(white_count > 30, "from_view 应渲染出白色文字字形，got {white_count}");
+    assert!(
+        white_count > 30,
+        "from_view 应渲染出白色文字字形，got {white_count}"
+    );
 }
 
 #[test]
@@ -174,9 +177,7 @@ fn border_view_produces_stroke_rect_and_pixels() {
     // 2. 离屏渲染出描边像素（黄色边缘）
     let w = 240u32;
     let h = 140u32;
-    let pixels = backend
-        .render_offscreen(&scene, w, h)
-        .expect("renders");
+    let pixels = backend.render_offscreen(&scene, w, h).expect("renders");
     let yellow = (0..pixels.len() / 4)
         .filter(|p| {
             let i = p * 4;

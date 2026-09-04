@@ -40,7 +40,12 @@ mod wide {
         /// - `size`：字体大小（像素）。
         /// - `max_width`：逻辑可用宽度（`Some` 时按宽度换行；`None` 单行不截断）。
         /// - 返回空 Vec 表示无可见 glyph（空文本/无字体）。
-        pub fn shape_line(&mut self, text: &str, size: f32, max_width: Option<f32>) -> Vec<ShapedRun> {
+        pub fn shape_line(
+            &mut self,
+            text: &str,
+            size: f32,
+            max_width: Option<f32>,
+        ) -> Vec<ShapedRun> {
             if text.is_empty() {
                 return Vec::new();
             }
@@ -66,8 +71,19 @@ mod wide {
                     let gy = baseline - g.font_size * g.y_offset;
                     let gid = g.glyph_id as u32;
                     match by_font.iter().position(|(id, _)| *id == g.font_id) {
-                        Some(i) => by_font[i].1.push(Glyph { id: gid, x: gx, y: gy }),
-                        None => by_font.push((g.font_id, vec![Glyph { id: gid, x: gx, y: gy }])),
+                        Some(i) => by_font[i].1.push(Glyph {
+                            id: gid,
+                            x: gx,
+                            y: gy,
+                        }),
+                        None => by_font.push((
+                            g.font_id,
+                            vec![Glyph {
+                                id: gid,
+                                x: gx,
+                                y: gy,
+                            }],
+                        )),
                     }
                 }
             }
@@ -82,10 +98,12 @@ mod wide {
 
         /// 从 fontdb 取指定字体的 blob + 集合 index，构造 peniko::FontData。
         fn font_data_for(&self, font_id: cosmic_text::fontdb::ID) -> Option<FontData> {
-            self.font_system.db().with_face_data(font_id, |data, index| {
-                let blob = Blob::new(Arc::new(Vec::<u8>::from(data)));
-                FontData::new(blob, index)
-            })
+            self.font_system
+                .db()
+                .with_face_data(font_id, |data, index| {
+                    let blob = Blob::new(Arc::new(Vec::<u8>::from(data)));
+                    FontData::new(blob, index)
+                })
         }
     }
 }
@@ -104,7 +122,12 @@ mod wide {
         pub fn new() -> Self {
             Self
         }
-        pub fn shape_line(&mut self, _text: &str, _size: f32, _max_width: Option<f32>) -> Vec<ShapedRun> {
+        pub fn shape_line(
+            &mut self,
+            _text: &str,
+            _size: f32,
+            _max_width: Option<f32>,
+        ) -> Vec<ShapedRun> {
             Vec::new()
         }
     }
@@ -127,7 +150,14 @@ mod tests {
             assert_ne!(run.glyphs.len(), 0, "每个 run 应有字形");
             // 字体 blob 含数据
             assert!(run.font_data.data.len() > 0, "字体数据应非空");
-            assert_eq!(run.font_data.index, if run.font_data.index == 0 { 0 } else { run.font_data.index });
+            assert_eq!(
+                run.font_data.index,
+                if run.font_data.index == 0 {
+                    0
+                } else {
+                    run.font_data.index
+                }
+            );
         }
     }
 

@@ -17,9 +17,7 @@ use rgui::{
     Accordion, AccordionMsg, AccordionState, App, AppConfig, FocusManager, WaBadge, WaBadgeMsg,
     WaBadgeState, WidgetId,
 };
-use rgui_platform::event_loop::{
-    ElementState, KeyCode, MouseButton, PhysicalKey, WindowEvent,
-};
+use rgui_platform::event_loop::{ElementState, KeyCode, MouseButton, PhysicalKey, WindowEvent};
 
 // ===== 组合根：Accordion + WaBadge 同窗 =====
 
@@ -88,7 +86,11 @@ impl WidgetSpec for DemoRoot {
         "demo_root"
     }
 
-    fn view(&self, state: &Self::State, _ctx: &rgui::context::ViewContext) -> WidgetView<Self::Message> {
+    fn view(
+        &self,
+        state: &Self::State,
+        _ctx: &rgui::context::ViewContext,
+    ) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(rgui::geometry::Size::new(520.0, 220.0));
         // 左：Accordion 视图（消息提升为组合根消息）；按获焦状态设 focused 视图上下文
@@ -108,7 +110,12 @@ impl WidgetSpec for DemoRoot {
         root
     }
 
-    fn update(&self, msg: Self::Message, state: &mut Self::State, ctx: &mut rgui::context::UpdateContext) {
+    fn update(
+        &self,
+        msg: Self::Message,
+        state: &mut Self::State,
+        ctx: &mut rgui::context::UpdateContext,
+    ) {
         match msg {
             DemoMsg::Accordion(m) => Accordion.update(m, &mut state.accordion, ctx),
             DemoMsg::Badge(m) => WaBadge.update(m, &mut state.badge, ctx),
@@ -116,7 +123,12 @@ impl WidgetSpec for DemoRoot {
         }
     }
 
-    fn measure(&self, _state: &Self::State, _c: rgui::geometry::BoxConstraints, _ctx: &rgui::context::MeasureContext) -> rgui::geometry::Size {
+    fn measure(
+        &self,
+        _state: &Self::State,
+        _c: rgui::geometry::BoxConstraints,
+        _ctx: &rgui::context::MeasureContext,
+    ) -> rgui::geometry::Size {
         rgui::geometry::Size::new(520.0, 220.0)
     }
 
@@ -140,7 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shift = RefCell::new(false);
     // 焦点管理：Accordion(1) + WaBadge(2) 可获焦，Tab 循环切换（获焦/失焦由 unit 测试确定性验证）
     let focus = RefCell::new(FocusManager::new());
-    focus.borrow_mut().set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
+    focus
+        .borrow_mut()
+        .set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
 
     let mapper = move |event: &WindowEvent| -> Option<DemoMsg> {
         match event {

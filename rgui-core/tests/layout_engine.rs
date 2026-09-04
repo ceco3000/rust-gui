@@ -5,8 +5,8 @@
 
 #![cfg(all(test, feature = "layout"))]
 
-use rgui_core::layout::{LayoutEngine, LayoutResult};
 use rgui_core::geometry::Size;
+use rgui_core::layout::{LayoutEngine, LayoutResult};
 
 #[test]
 fn compute_single_child_lays_out() {

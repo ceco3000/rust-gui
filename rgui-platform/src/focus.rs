@@ -127,14 +127,21 @@ mod tests {
     fn focus_next_with_no_focus_takes_first() {
         let mut fm = FocusManager::new();
         fm.set_focusable(ids());
-        assert_eq!(fm.focus_next(), Some(WidgetId::new(1)), "无焦点应获焦第一个");
+        assert_eq!(
+            fm.focus_next(),
+            Some(WidgetId::new(1)),
+            "无焦点应获焦第一个"
+        );
     }
 
     #[test]
     fn set_focus_rejects_non_focusable() {
         let mut fm = FocusManager::new();
         fm.set_focusable(ids());
-        assert!(!fm.set_focus(WidgetId::new(99)), "不可获焦组件的 set_focus 应失败");
+        assert!(
+            !fm.set_focus(WidgetId::new(99)),
+            "不可获焦组件的 set_focus 应失败"
+        );
         assert_eq!(fm.focus(), None);
     }
 

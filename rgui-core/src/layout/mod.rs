@@ -33,7 +33,12 @@ impl LayoutResult {
         Self {
             size,
             position,
-            rect: Rect::new(position.x as f32, position.y as f32, size.width, size.height),
+            rect: Rect::new(
+                position.x as f32,
+                position.y as f32,
+                size.width,
+                size.height,
+            ),
         }
     }
 }
@@ -114,11 +119,7 @@ impl LayoutEngine {
     /// 计算容器布局，并对每个子节点返回其布局结果（位置 + 尺寸）。
     /// D6：from_view 用它获得子节点真实 bounds（布局真正作用于渲染）。
     #[cfg(feature = "layout")]
-    pub fn compute_children(
-        &self,
-        container: Size,
-        children: &[Size],
-    ) -> Vec<LayoutResult> {
+    pub fn compute_children(&self, container: Size, children: &[Size]) -> Vec<LayoutResult> {
         use taffy::prelude::*;
         let mut taffy = TaffyTree::<()>::new();
 

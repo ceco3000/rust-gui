@@ -50,7 +50,8 @@ fn from_view_text_props_become_draw_text_cmd() {
 
     let cmds = graph.cmds();
     assert!(
-        cmds.iter().any(|c| matches!(c, DrawCmd::DrawText { text, .. } if text == "Hello")),
+        cmds.iter()
+            .any(|c| matches!(c, DrawCmd::DrawText { text, .. } if text == "Hello")),
         "from_view 应把 Str props 转为 DrawText（而非静默忽略）"
     );
 }
