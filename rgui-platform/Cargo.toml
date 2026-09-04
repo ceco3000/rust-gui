@@ -15,7 +15,8 @@ winit = { version = "0.30", optional = true }
 raw-window-handle = { version = "0.6", optional = true }
 
 [features]
-default = []
+# winit 默认启用（platform 核心依赖，非可选；上层/qa 默认构建即可编译）
+default = ["winit"]
 # winit 窗口/事件循环（D7）
 winit = [
     "dep:winit",
