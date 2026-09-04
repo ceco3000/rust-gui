@@ -197,7 +197,9 @@ pub struct TextShaper;
 
 **契约**：`rgui-render` 是唯一可能依赖 GPU/cosmic-text/fontdb 的 crate。`rgui-core` 通过"只存语义数据（Color/Size/PropValue）"与 render 彻底隔离。
 
-### B.3 `rgui-platform`（winit 隔离）
+### B.3 `rgui-platform`（winit 隔离，`winit` feature 默认启用）
+
+> **feature 修复（对齐代码实况）**：`winit` 是 platform 核心依赖，`default = ["winit"]`（非可选）；上层/qa 默认构建即可编译，无需显式开启。
 
 ```rust
 pub mod window; pub mod input; pub mod ime; pub mod focus;
@@ -225,7 +227,11 @@ pub use rgui_render::*;
 pub use rgui_platform::*;
 pub use rgui_macros::{WidgetSpec, AppMessage, PersistState, html};
 pub struct App;              // 极薄启动协调
-pub fn run(...) -> !;        // 组装 core/render/platform
+#[cfg(feature = "window")]    // App::run 仅 window feature 门控
+pub fn run<W: WidgetSpec, F: FnMut(&WindowEvent) -> Option<W::Message> + 'static>(
+    config: AppConfig, widget: W, state: W::State, mapper: F,
+) -> Result<(), Box<dyn std::error::Error>>;
+// 组装 core/render/platform：Coordinator + run_as_with_config + surface 渲染
 ```
 
 ---
@@ -310,9 +316,9 @@ rgui (facade) ──→ rgui-core / rgui-render / rgui-platform / rgui-macros
 |---|---|---|
 | `rgui-core` | `default = []`；可选 `std`（预留 no_std，阶段 0 不做） | 零大型可选依赖 |
 | `rgui-render` | `default = ["vello-backend"]`；`vello-backend`（wgpu/vello/cosmic-text/fontdb/skrifa） | **仅此一条渲染路径**。删 `skia-backend`/`offscreen`/`skia-safe` |
-| `rgui-platform` | `default = []`；按平台开启（winit 相关） | 保留 |
+| `rgui-platform` | `default = ["winit"]`（winit 默认启用，非可选）；`winit` feature | 保留；winit 为 platform 核心依赖，上层/qa 默认构建即可编译 |
 | `rgui-macros` | `default = []` | 无大型运行依赖 |
-| `rgui` (facade) | `default = []`；可选 `test-harness`（含自动化桩） | **删 `devtools`/`script`/`a11y` feature**；测试桩 `#[cfg(feature="test-harness")]` |
+| `rgui` (facade) | `default = []`；`window` = [`rgui-render/vello-backend`, `rgui-platform/winit`]（`App::run` 门控）；可选 `test-harness`（含自动化桩） | **删 `devtools`/`script`/`a11y` feature**；测试桩 `#[cfg(feature="test-harness")]` |
 | workspace 根 | 删 `skia-safe`、`rgui-state`/`rgui-layout`/`rgui-components`/`rgui-script`/`rgui-devtools`/`rgui-a11y` 依赖条目 | 清理 |
 
 ---
