@@ -2,7 +2,50 @@
 
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
 > 主管线：devco-director（总监）
-> 阶段：**D10 完成 ✅（dev+总监实测+qa 验收+reviewer 四层确认通过，含交互前后对比截图）。待确认进入 D11（hit-test 事件路由 / 跨平台验证 / 文本布局优化）**
+> 阶段：**D10 完成 ✅ 且代码+文档已入库。文档同步铁律落地：核心 3 份（D0/D11/CLAUDE.md）+ greenfield 已与代码一致（reviewer 复审 PASS）。待 doc 补 D 系列（D1-D10）后推进 D11。**
+
+> 已提交：fa742c3(核心3份+greenfield B3B5) / 2347a4d(D0回填) / 96adeb7(greenfield 8点对齐+refactor失效标注) / 9b4017b(dev feature修复：platform winit默认启用+app.rs门控)。代码与远程同步，剩余未提交仅 tasks.md + reviewer 核对报告（文档）。
+
+---
+
+## 🔒 铁律：文档同步（单次任务，强制，每次完成必须执行）
+
+**文档是开发根基（不可省略，不是冗余）。重构的目标是代码简洁，文档绝不随之精简。文档必须与代码完全一致（single source of truth）。每一次任务/里程碑完成后，必须同步更新相关文档，且必须被检查。绝不允许"代码改了、文档不同步"或"为降代码复杂度而省略文档"。**
+
+> 用户明确：文档是开发的根基，必须与代码一致。文档全集（D 系列 + 核心文档）不能省略；重构只简化代码，不简化文档。
+
+### 规则
+1. **每个任务/里程碑完成的验收标准，必须包含「文档同步」检查项**（不是可选项）。
+2. **「文档」定义**（本项目的权威文档体系，必须与代码一致）：
+   - `docs/D0-总体设计.md` —— 顶层设计权威（crate 拓扑/接口契约/模块边界）。**代码实现若与它偏离，必须先更新它或说明理由。**
+   - `docs/D11-Cargo结构与发布策略.md` —— 5-crate 结构 + feature + 发布。
+   - `docs/D1-D10 等 D 系列` —— 各子系统设计（D1 WidgetSpec/D2 状态/D3 渲染/D4 样式/D5 事件/D6 无障碍/D7 开发反馈/D8 任务分解/D9 测试策略/D10 组件规范）。**全套存在且与代码一致。**
+   - `tools/2025-09-01_rgui-greenfield-architecture.md` —— 架构唯一权威（greenfield 全集蓝图）。
+   - `CLAUDE.md` —— 项目入口说明（crate 列表/常用命令/约定）。
+   - `tasks.md` —— 任务分解 + 验收标准 + 阶段状态。
+   - 各阶段 `tools/*-risk-review.md` —— 审查记录。
+3. **分工**：dev 改代码后**必须在同一任务里指出哪些文档受影响**；doc 负责实际更新文档；reviewer/qa 验收时**必须核对「代码 ↔ 文档」一致性**，不一致则判不通过。
+
+### execute 流程（每次任务）
+- dev 完成编码 → 在交付报告里列「受影响文档清单」
+- doc 据清单同步更新文档（D0/D11/D 系列/CLAUDE.md/greenfield 等）
+- reviewer/qa 验收：**核对代码与文档一致**（crate 拓扑/API 签名/命令），不一致 → 拒绝放行
+- 总监：核对文档同步已执行 + 一致性检查通过，才放行进入下一阶段
+
+### 检查点（验收必须包含）
+- [ ] 代码与 `greenfield-architecture.md` / `docs/D0`（crate 拓扑/接口契约）一致
+- [ ] 受影响 D 系列文档已同步（D1-D10 全文案与代码一致）
+- [ ] `tasks.md` 阶段状态已更新
+- [ ] `CLAUDE.md`（crate 列表/命令）与当前结构一致
+- [ ] `docs/D11` Cargo 结构一致
+- [ ] reviewer 已核对代码↔文档一致性
+
+---
+
+## 存量文档同步（D3-D10 欠账）
+> 用户确认：按 greenfield 全集重建 D1-D10 + 核心 3 份（docs/D0 + docs/D11 + CLAUDE.md）。文档非冗余，必须与代码一致。
+- doc 先建核心 3 份（D0/D11/CLAUDE.md），再按 greenfield 全集补 D 系列
+- 完成后 reviewer 核对代码↔文档一致 → 总监验收
 
 ## 状态
 - 旧代码已删除并 push（commit `ae456fe`，历史经 tag `legacy-6631706` 完整保留）
