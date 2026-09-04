@@ -65,6 +65,11 @@ pub trait WidgetSpec: Send + Sync + 'static {
     /// 绘制。
     fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext);
 
+    /// 组件是否可获焦（D12：Tab 导航/焦点切换）。默认否；组件可覆盖为 `true`。
+    fn focusable(&self) -> bool {
+        false
+    }
+
     /// 无障碍信息（默认无）。
     fn accessibility(&self, _s: &Self::State, _c: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none()

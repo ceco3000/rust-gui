@@ -7,15 +7,19 @@
 #![cfg(feature = "window")]
 
 use std::any::Any;
+use std::cell::RefCell;
 
 use rgui::geometry::Rect;
 use rgui::hit_test::{hit_test, HitRegion};
 use rgui::traits::{AppMessage, PersistState, WidgetSpec};
 use rgui::view::WidgetView;
 use rgui::{
-    Accordion, AccordionMsg, AccordionState, App, AppConfig, WaBadge, WaBadgeMsg, WaBadgeState,
+    Accordion, AccordionMsg, AccordionState, App, AppConfig, FocusManager, WaBadge, WaBadgeMsg,
+    WaBadgeState, WidgetId,
 };
-use rgui_platform::event_loop::{ElementState, MouseButton, WindowEvent};
+use rgui_platform::event_loop::{
+    ElementState, KeyCode, MouseButton, PhysicalKey, WindowEvent,
+};
 
 // ===== 组合根：Accordion + WaBadge 同窗 =====
 
@@ -119,13 +123,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     // 缓存光标位置（逻辑坐标待命中用）
-    let cursor = std::cell::RefCell::new((0.0f32, 0.0f32));
+    let cursor = RefCell::new((0.0f32, 0.0f32));
+    // 焦点管理：Accordion(1) + WaBadge(2) 可获焦，Tab 循环切换（获焦/失焦由 unit 测试确定性验证）
+    let focus = RefCell::new(FocusManager::new());
+    focus.borrow_mut().set_focusable(vec![WidgetId::new(1), WidgetId::new(2)]);
 
     let mapper = move |event: &WindowEvent| -> Option<DemoMsg> {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 // 简化：把 position 视作逻辑坐标（正式实现按 scale_factor 换算；demo 演示命中）
                 *cursor.borrow_mut() = (position.x as f32, position.y as f32);
+                None
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if event.state == ElementState::Pressed
+                    && event.physical_key == PhysicalKey::Code(KeyCode::Tab) =>
+            {
+                // Tab：焦点循环切换到下一个可获焦组件（Accordion → WaBadge → Accordion…）
+                let nxt = focus.borrow_mut().focus_next();
+                eprintln!("[focus] Tab -> {:?}", nxt.map(|w| w.0));
                 None
             }
             WindowEvent::MouseInput {

@@ -119,6 +119,10 @@ impl WidgetSpec for Accordion {
     }
 
     fn paint(&self, _state: &Self::State, _b: Rect, _ctx: &mut PaintContext) {}
+
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 // ===== WaBadge =====
@@ -212,6 +216,10 @@ impl WidgetSpec for WaBadge {
     }
 
     fn paint(&self, _state: &Self::State, _b: Rect, _ctx: &mut PaintContext) {}
+
+    fn focusable(&self) -> bool {
+        true
+    }
 }
 
 // 保持 Color 导入有效（Accordion/WaBadge 视图用 Color 背景）。

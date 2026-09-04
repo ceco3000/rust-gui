@@ -92,3 +92,9 @@ fn badge_click_increments_count() {
     badge.update(WaBadgeMsg::Click, &mut state, &mut UpdateContext::default());
     assert_eq!(state.count, 2, "再次点击应 count+1");
 }
+
+#[test]
+fn accordion_and_badge_are_focusable() {
+    assert!(Accordion.focusable(), "Accordion 应可获焦（Tab 导航）");
+    assert!(WaBadge.focusable(), "WaBadge 应可获焦（Tab 导航）");
+}
