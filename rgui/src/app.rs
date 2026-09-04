@@ -132,6 +132,8 @@ mod backend {
         surface: Option<GpuSurface<'static>>,
         mapper: Box<dyn FnMut(&WindowEvent) -> Option<W::Message>>,
         stylesheet: &'static rgui_core::style::StyleSheet,
+        /// 最近一次窗口 frame 缓存（D21：win-frame 日志变化时重输出，避免刷屏）。
+        last_frame: Option<(i32, i32, u32, u32, f64)>,
     }
 
     impl<W: WidgetSpec + 'static> AppRunnerImpl<W> {
@@ -147,6 +149,7 @@ mod backend {
                 surface: None,
                 mapper: Box::new(mapper),
                 stylesheet,
+                last_frame: None,
             }
         }
     }
@@ -180,7 +183,18 @@ mod backend {
             };
             let size = window.inner_size(); // 物理像素
             let scale = window.scale_factor(); // Retina 高分屏 2x 等
-                                               // D19：组件 view 从样式表取样式（默认主题回退）
+                                               // D21：输出窗口 frame（屏幕位置 + 物理 size + scale_factor），变化时重输出
+            if let Ok(outer) = window.outer_position() {
+                let frame = (outer.x, outer.y, size.width, size.height, scale);
+                if self.last_frame != Some(frame) {
+                    eprintln!(
+                        "[win-frame] origin=({},{}) size=({},{}) scale={}",
+                        outer.x, outer.y, size.width, size.height, scale
+                    );
+                    self.last_frame = Some(frame);
+                }
+            }
+            // D19：组件 view 从样式表取样式（默认主题回退）
             let mut vc = ViewContext::default();
             vc.styles = self.stylesheet;
             let view_tree = self.coordinator.current_view(&vc);

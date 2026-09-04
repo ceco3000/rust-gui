@@ -146,6 +146,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         HitRegion::new(Rect::new(340.0, 0.0, 180.0, 40.0), 2), // WaBadge 区
     ];
 
+    // D21：输出每个可交互组件的命中区（逻辑坐标，与 hit_test 用的 regions 完全一致），
+    // 自动化脚本据此换算屏幕绝对坐标"点哪里"。
+    for r in &regions {
+        let name = match r.id {
+            1 => "accordion",
+            2 => "wabadge",
+            _ => "?",
+        };
+        eprintln!(
+            "[hit-region] id={} {} rect=({},{},{},{})",
+            r.id, name, r.rect.x, r.rect.y, r.rect.width, r.rect.height
+        );
+    }
+
     // 缓存光标位置（逻辑坐标待命中用）
     let cursor = RefCell::new((0.0f32, 0.0f32));
     // 跟踪 Shift 键状态（winit 把 modifiers 经 ModifiersChanged 单独传递，需自持）
