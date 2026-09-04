@@ -17,16 +17,19 @@ pub struct AppConfig {
     pub width: u32,
     /// 逻辑高度。
     pub height: u32,
+    /// 样式表（D19：组件样式驱动，默认 = 默认主题）。
+    pub stylesheet: &'static rgui_core::style::StyleSheet,
 }
 
 impl AppConfig {
-    /// 构造默认应用配置（非零窗口尺寸）。
+    /// 构造默认应用配置（非零窗口尺寸，默认样式表）。
     pub fn new() -> Self {
         Self {
             app_name: "rgui".to_string(),
             window_title: "rgui".to_string(),
             width: 300,
             height: 200,
+            stylesheet: rgui_core::style::default_style(),
         }
     }
 
@@ -40,6 +43,12 @@ impl AppConfig {
     pub fn with_size(mut self, width: u32, height: u32) -> Self {
         self.width = width;
         self.height = height;
+        self
+    }
+
+    /// 设置样式表（D19：覆盖组件配色/描边）。
+    pub fn with_stylesheet(mut self, stylesheet: &'static rgui_core::style::StyleSheet) -> Self {
+        self.stylesheet = stylesheet;
         self
     }
 }
@@ -73,12 +82,12 @@ mod backend {
     use rgui_core::context::{UpdateContext, ViewContext};
     use rgui_core::coordinator::Coordinator;
     use rgui_core::traits::WidgetSpec;
+    use rgui_platform::event_loop::{run_as_with_config, WindowEvent};
+    use rgui_platform::window::{Window, WindowConfig};
+    use rgui_platform::AppRunner;
     use rgui_render::scene_graph::SceneGraph;
     use rgui_render::vello::VelloBackend;
     use rgui_render::GpuSurface;
-    use rgui_platform::AppRunner;
-    use rgui_platform::event_loop::{run_as_with_config, WindowEvent};
-    use rgui_platform::window::{Window, WindowConfig};
 
     use super::{App, AppConfig};
 
@@ -108,7 +117,10 @@ mod backend {
                 width: config.width,
                 height: config.height,
             };
-            run_as_with_config(AppRunnerImpl::new(widget, state, mapper), wc)?;
+            run_as_with_config(
+                AppRunnerImpl::new(widget, state, mapper, config.stylesheet),
+                wc,
+            )?;
             Ok(())
         }
     }
@@ -119,6 +131,7 @@ mod backend {
         backend: Option<VelloBackend>,
         surface: Option<GpuSurface<'static>>,
         mapper: Box<dyn FnMut(&WindowEvent) -> Option<W::Message>>,
+        stylesheet: &'static rgui_core::style::StyleSheet,
     }
 
     impl<W: WidgetSpec + 'static> AppRunnerImpl<W> {
@@ -126,12 +139,14 @@ mod backend {
             widget: W,
             state: W::State,
             mapper: F,
+            stylesheet: &'static rgui_core::style::StyleSheet,
         ) -> Self {
             Self {
                 coordinator: Coordinator::new(widget, state),
                 backend: None,
                 surface: None,
                 mapper: Box::new(mapper),
+                stylesheet,
             }
         }
     }
@@ -139,7 +154,9 @@ mod backend {
     impl<W: WidgetSpec + 'static> AppRunner for AppRunnerImpl<W> {
         fn init(&mut self, window: Arc<Window>) {
             let backend = VelloBackend::new().expect("vello backend");
-            let surface = backend.create_surface(window.clone()).expect("create surface");
+            let surface = backend
+                .create_surface(window.clone())
+                .expect("create surface");
             window.request_redraw();
             self.backend = Some(backend);
             self.surface = Some(surface);
@@ -163,10 +180,14 @@ mod backend {
             };
             let size = window.inner_size(); // 物理像素
             let scale = window.scale_factor(); // Retina 高分屏 2x 等
-            let view_tree = self.coordinator.current_view(&ViewContext::default());
+                                               // D19：组件 view 从样式表取样式（默认主题回退）
+            let mut vc = ViewContext::default();
+            vc.styles = self.stylesheet;
+            let view_tree = self.coordinator.current_view(&vc);
             let graph = SceneGraph::from_view(&view_tree);
             // D17：渲染尺寸统一——surface 用物理尺寸，SceneGraph 逻辑坐标经 scale 放大到物理
-            if let Err(e) = backend.render_surface(surface, &graph, size.width, size.height, scale) {
+            if let Err(e) = backend.render_surface(surface, &graph, size.width, size.height, scale)
+            {
                 eprintln!("render error: {e}");
             }
         }

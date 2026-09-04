@@ -9,20 +9,12 @@ use rgui_core::view::PropValue;
 
 fn contains_str(view: &rgui_core::view::WidgetView<AccordionMsg>, needle: &str) -> bool {
     let own_match = matches!(&view.props, PropValue::Str(s) if s.contains(needle));
-    own_match
-        || view
-            .children
-            .iter()
-            .any(|c| contains_str(c, needle))
+    own_match || view.children.iter().any(|c| contains_str(c, needle))
 }
 
 fn contains_str_badge(view: &rgui_core::view::WidgetView<WaBadgeMsg>, needle: &str) -> bool {
     let own_match = matches!(&view.props, PropValue::Str(s) if s.contains(needle));
-    own_match
-        || view
-            .children
-            .iter()
-            .any(|c| contains_str_badge(c, needle))
+    own_match || view.children.iter().any(|c| contains_str_badge(c, needle))
 }
 
 #[test]
@@ -54,19 +46,13 @@ fn accordion_view_shows_content_when_expanded() {
     let mut collapsed = Accordion::initial_state();
     collapsed.expanded = false;
     let v_collapsed = accordion.view(&collapsed, ctx);
-    assert!(
-        !contains_str(&v_collapsed, "details"),
-        "收起时不应显示内容"
-    );
+    assert!(!contains_str(&v_collapsed, "details"), "收起时不应显示内容");
 
     // 展开：内容显示
     let mut expanded = Accordion::initial_state();
     expanded.expanded = true;
     let v_expanded = accordion.view(&expanded, ctx);
-    assert!(
-        contains_str(&v_expanded, "details"),
-        "展开时应显示内容"
-    );
+    assert!(contains_str(&v_expanded, "details"), "展开时应显示内容");
 }
 
 #[test]
@@ -103,7 +89,10 @@ fn accordion_and_badge_are_focusable() {
 fn accordion_view_gets_focus_border_when_focused() {
     let state = Accordion::initial_state();
     // 未获焦：无描边边框
-    assert!(Accordion.view(&state, &ViewContext::default()).border.is_none());
+    assert!(Accordion
+        .view(&state, &ViewContext::default())
+        .border
+        .is_none());
     // 获焦：根带有描边边框（D16）
     let mut ctx_f = ViewContext::default();
     ctx_f.focused = true;
@@ -113,8 +102,54 @@ fn accordion_view_gets_focus_border_when_focused() {
 #[test]
 fn badge_view_gets_focus_border_when_focused() {
     let state = WaBadge::initial_state();
-    assert!(WaBadge.view(&state, &ViewContext::default()).border.is_none());
+    assert!(WaBadge
+        .view(&state, &ViewContext::default())
+        .border
+        .is_none());
     let mut ctx_f = ViewContext::default();
     ctx_f.focused = true;
     assert!(WaBadge.view(&state, &ctx_f).border.is_some());
+}
+
+#[test]
+fn accordion_background_driven_by_style_sheet() {
+    use rgui_core::style::{StyleProperties, StyleSheet};
+    use rgui_core::view::Color;
+    // 自定义样式表：accordion 背景 = 红色（而非默认蓝）
+    let sheet = StyleSheet::new().rule(
+        "accordion",
+        StyleProperties::new().background(Color::rgb(200, 30, 60)),
+    );
+    let styles: &'static StyleSheet = Box::leak(Box::new(sheet));
+    let mut ctx = ViewContext::default();
+    ctx.styles = styles;
+    let view = Accordion.view(&Accordion::initial_state(), &ctx);
+    // header 是 root.children[0]，其 props 应为样式表背景色
+    assert_eq!(
+        view.children[0].props,
+        PropValue::Color(Color::rgb(200, 30, 60))
+    );
+}
+
+#[test]
+fn accordion_border_pad_driven_by_style_sheet() {
+    use rgui_core::style::{StyleProperties, StyleSheet};
+    use rgui_core::view::Color;
+    // 自定义样式表：accordion 描边 pad = 5.0（而非默认 2.0）
+    let sheet = StyleSheet::new().rule(
+        "accordion",
+        StyleProperties::new()
+            .border(Color::rgb(255, 230, 80), 3.0)
+            .border_pad(5.0),
+    );
+    let styles: &'static StyleSheet = Box::leak(Box::new(sheet));
+    let mut ctx = ViewContext::default();
+    ctx.styles = styles;
+    ctx.focused = true;
+    let border = Accordion.view(&Accordion::initial_state(), &ctx).border;
+    assert_eq!(
+        border.map(|b| b.pad),
+        Some(5.0),
+        "描边 pad 由样式表参数化（D16 P2）"
+    );
 }

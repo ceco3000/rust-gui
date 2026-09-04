@@ -85,16 +85,23 @@ impl WidgetSpec for Accordion {
         let mut root = WidgetView::empty();
         let content_h = if state.expanded { 130.0 } else { 44.0 };
         root.size = Some(Size::new(340.0, content_h));
-        // 获焦描边边框（D16：亮黄外框，DrawText 前缀已在 D14 移除）
+        // 样式驱动（D19）：查样式表（默认主题回退）→ 获焦描边边框（D16 亮黄外框，pad 参数化）
+        let style = ctx.styles.lookup("accordion");
         root.border = if ctx.focused {
-            Some(crate::view::Border::new(Color::rgb(255, 230, 80), 3.0))
+            Some(
+                crate::view::Border::new(
+                    style.effective_border_color(Color::rgb(255, 230, 80)),
+                    style.effective_border_width(3.0),
+                )
+                .with_pad(style.effective_border_pad(2.0)),
+            )
         } else {
             None
         };
 
         // 标题行（可点击，显示展开/收起状态标记）
         let mut header = WidgetView::empty();
-        header.props = PropValue::Color(Color::rgb(90, 130, 220));
+        header.props = PropValue::Color(style.effective_background(Color::rgb(90, 130, 220)));
         header.size = Some(Size::new(340.0, 36.0));
         let marker = if state.expanded { "-" } else { "+" };
         let mut title = WidgetView::empty();
@@ -203,10 +210,17 @@ impl WidgetSpec for WaBadge {
     fn view(&self, state: &Self::State, ctx: &ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(Size::new(160.0, 40.0));
-        root.props = PropValue::Color(Color::rgb(120, 160, 210));
-        // 获焦描边边框（D16：亮黄外框）
+        // 样式驱动（D19）：查样式表（默认主题回退）→ 背景 + 获焦描边（pad 参数化）
+        let style = ctx.styles.lookup("wa_badge");
+        root.props = PropValue::Color(style.effective_background(Color::rgb(120, 160, 210)));
         root.border = if ctx.focused {
-            Some(crate::view::Border::new(Color::rgb(255, 230, 80), 3.0))
+            Some(
+                crate::view::Border::new(
+                    style.effective_border_color(Color::rgb(255, 230, 80)),
+                    style.effective_border_width(3.0),
+                )
+                .with_pad(style.effective_border_pad(2.0)),
+            )
         } else {
             None
         };

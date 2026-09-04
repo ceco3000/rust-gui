@@ -5,11 +5,23 @@
 use std::marker::PhantomData;
 
 /// 视图构建上下文。
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ViewContext {
     /// 当前组件是否获焦（D13 视图层焦点透传；组合根按子获焦状态设置，组件 view 读它绘制高亮）。
     pub focused: bool,
+    /// 当前样式表（D19：组件 view 经 `styles.lookup(selector)` 取样式，未命中回退默认）。默认 = 默认主题。
+    pub styles: &'static crate::style::StyleSheet,
     _p: PhantomData<()>,
+}
+
+impl Default for ViewContext {
+    fn default() -> Self {
+        Self {
+            focused: false,
+            styles: crate::style::default_style(),
+            _p: PhantomData,
+        }
+    }
 }
 
 /// 更新上下文（处理消息、更新状态）。

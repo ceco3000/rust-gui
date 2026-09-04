@@ -13,12 +13,24 @@ pub struct Border {
     pub color: Color,
     /// 边框宽度（像素）。
     pub width: f32,
+    /// 描边外扩 pad（D16 P2 参数化：非硬编码 2.0）。
+    pub pad: f32,
 }
 
 impl Border {
-    /// 构造边框。
+    /// 构造边框（pad 默认 2.0）。
     pub const fn new(color: Color, width: f32) -> Self {
-        Self { color, width }
+        Self {
+            color,
+            width,
+            pad: 2.0,
+        }
+    }
+
+    /// 设置描边外扩 pad。
+    pub const fn with_pad(mut self, pad: f32) -> Self {
+        self.pad = pad;
+        self
     }
 }
 
@@ -217,7 +229,10 @@ mod tests {
         assert_eq!(mapped.size, None);
         assert_eq!(mapped.children.len(), 1);
         assert_eq!(mapped.children[0].props, PropValue::Int(7));
-        assert_eq!(mapped.children[0].size, Some(crate::geometry::Size::new(10.0, 20.0)));
+        assert_eq!(
+            mapped.children[0].size,
+            Some(crate::geometry::Size::new(10.0, 20.0))
+        );
     }
 
     #[test]

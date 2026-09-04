@@ -122,7 +122,9 @@ impl SceneGraph {
                 });
             }
             PropValue::Str(text) => {
-                let size = view.size.unwrap_or_else(|| Size::new(size_hint(text), 20.0));
+                let size = view
+                    .size
+                    .unwrap_or_else(|| Size::new(size_hint(text), 20.0));
                 self.cmds.push(DrawCmd::DrawText {
                     x: slot.position.x as f32,
                     y: slot.position.y as f32,
@@ -137,9 +139,9 @@ impl SceneGraph {
             _ => {}
         }
 
-        // 描边边框（D16：获焦高亮外框）——在组件区域外扩 2px 绘制，边缘不被内容覆盖
+        // 描边边框（D16：获焦高亮外框）——在组件区域外扩 pad 绘制（D16 P2：pad 参数化非硬编码 2.0），边缘不被内容覆盖
         if let Some(b) = &view.border {
-            let pad = 2.0;
+            let pad = b.pad;
             let size = view.size.unwrap_or(slot.size);
             self.cmds.push(DrawCmd::StrokeRect {
                 x: slot.position.x as f32 - pad,
