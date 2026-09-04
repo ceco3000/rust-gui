@@ -229,15 +229,21 @@ pub fn platform_scale() -> f64;                             // 默认 1.0
 pub fn to_logical(physical: (f64, f64), scale: f64) -> (f32, f32);  // 物理/scale，scale>0 否则用 1.0
 pub fn window_scale(window: &Window) -> f64;                // winit scale_factor
 pub struct EventLoop { /* winit 事件循环封装 */ }
-pub enum InputEvent { MouseMove, MouseDown, MouseUp, KeyDown, KeyUp, Char, Scroll }
-pub struct FocusManager { focused: Option<WidgetId>, focusable: Vec<WidgetId> }   // 焦点管理原生在此（D12 增强）
+pub enum InputEvent { CursorMoved { x: f32, y: f32 }, Pressed, Released, Text(String) }   // 对齐代码（D20 真实驱动）
+pub enum ImeEvent { Enabled, Preedit { text: String }, Commit { text: String }, Disabled }   // D20 组合输入事件流
+pub fn to_input_event(event: &WindowEvent) -> Option<InputEvent>;   // winit→rgui 输入（光标/按下/释放/文本；IME 走 ImeEvent 通道）
+pub fn to_ime_event(event: &WindowEvent) -> Option<ImeEvent>;       // winit IME→rgui ImeEvent（Preedit/Commit 真实链路）
+pub struct FocusManager { focused: Option<WidgetId>, focusable: Vec<WidgetId>, base_focusable: Vec<WidgetId>, base_focused: Option<WidgetId>, modal: bool }   // 焦点管理原生在此（D12 增强 + D20 模态层级隔离）
 impl FocusManager {
-    pub fn set_focusable(&mut self, ids: Vec<WidgetId>);            // 注册可获焦有序列表（Tab 循环）
+    pub fn set_focusable(&mut self, ids: Vec<WidgetId>);            // 注册可获焦有序列表（Tab 循环；被移除焦点则清空，D18）
     pub fn set_focus(&mut self, id: WidgetId) -> bool;              // 仅可获焦才成功
     pub fn focus(&self) -> Option<WidgetId>;                        // 当前焦点
     pub fn is_focused(&self, id: WidgetId) -> bool;                 // 获焦查询
     pub fn focus_next(&mut self) -> Option<WidgetId>;               // Tab：move_focus(1)
     pub fn focus_prev(&mut self) -> Option<WidgetId>;               // Shift+Tab：move_focus(-1)
+    pub fn open_modal(&mut self, modal_focusable: Vec<WidgetId>);   // D20：暂存 base，焦点隔离到模态集（单层，不叠加）
+    pub fn close_modal(&mut self);                                  // D20：恢复 base 可获焦与打开前焦点
+    pub fn is_modal_open(&self) -> bool;                            // D20：是否模态（焦点隔离中）
     // move_focus(dir)：iter().position + rem_euclid 循环回绕（私有）
 }
 pub enum InputModality { Pointer, Keyboard, Touch }   // 对齐代码（D5 已确认含 Touch）
