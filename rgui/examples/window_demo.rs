@@ -145,8 +145,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mapper = move |event: &WindowEvent| -> Option<DemoMsg> {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
-                // 简化：把 position 视作逻辑坐标（正式实现按 scale_factor 换算；demo 演示命中）
-                *cursor.borrow_mut() = (position.x as f32, position.y as f32);
+                // D15：物理像素 → 逻辑坐标（按窗口 scale_factor 换算），hit-test 用逻辑坐标
+                let (lx, ly) = rgui_platform::window::to_logical(
+                    (position.x, position.y),
+                    rgui_platform::window::platform_scale(),
+                );
+                *cursor.borrow_mut() = (lx, ly);
                 None
             }
             WindowEvent::ModifiersChanged(m) => {

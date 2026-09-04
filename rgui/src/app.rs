@@ -145,7 +145,9 @@ mod backend {
             self.surface = Some(surface);
         }
 
-        fn event(&mut self, _window: &Window, event: &WindowEvent) -> bool {
+        fn event(&mut self, window: &Window, event: &WindowEvent) -> bool {
+            // D15：把窗口 scale_factor 注入平台层（demo/上层读 platform_scale() 做物理→逻辑坐标换算）
+            rgui_platform::window::set_platform_scale(window.scale_factor());
             if let Some(msg) = (self.mapper)(event) {
                 let mut ctx = UpdateContext::default();
                 self.coordinator.dispatch(msg, &mut ctx);

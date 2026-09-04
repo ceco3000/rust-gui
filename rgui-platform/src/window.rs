@@ -69,3 +69,58 @@ pub fn attributes(config: &WindowConfig) -> WindowAttributes {
             config.height as f64,
         ))
 }
+
+/// 当前平台窗口 scale_factor（D15：物理→逻辑坐标换算基准；AppRunnerImpl 每事件更新，demo/上层读取使用）。
+use std::cell::Cell;
+thread_local! {
+    static PLATFORM_SCALE: Cell<f64> = Cell::new(1.0);
+}
+
+/// 设置当前平台缩放（AppRunnerImpl 在事件处理时用 `window.scale_factor()` 更新）。
+pub fn set_platform_scale(scale: f64) {
+    PLATFORM_SCALE.with(|c| c.set(scale));
+}
+
+/// 读取当前平台缩放（默认 1.0）。
+pub fn platform_scale() -> f64 {
+    PLATFORM_SCALE.with(|c| c.get())
+}
+
+/// 物理像素坐标 → 逻辑坐标（除以 scale_factor）。D15：hit-test/布局用逻辑坐标，避免高分屏/多显示器 DPI 偏移。
+pub fn to_logical(physical: (f64, f64), scale: f64) -> (f32, f32) {
+    let s = if scale > 0.0 { scale } else { 1.0 };
+    ((physical.0 / s) as f32, (physical.1 / s) as f32)
+}
+
+/// 取窗口 scale_factor（winit）。
+pub fn window_scale(window: &Window) -> f64 {
+    window.scale_factor()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_logical_divides_by_scale() {
+        // Retina(scale=2)：物理 (200,100) → 逻辑 (100,50)
+        let (x, y) = to_logical((200.0, 100.0), 2.0);
+        assert!((x - 100.0).abs() < 0.01, "x/{x}");
+        assert!((y - 50.0).abs() < 0.01, "y/{y}");
+    }
+
+    #[test]
+    fn to_logical_identity_at_scale_one() {
+        let (x, y) = to_logical((37.0, 42.0), 1.0);
+        assert!((x - 37.0).abs() < 0.01);
+        assert!((y - 42.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn platform_scale_defaults_to_one_and_can_set() {
+        assert_eq!(platform_scale(), 1.0);
+        set_platform_scale(2.0);
+        assert_eq!(platform_scale(), 2.0);
+        set_platform_scale(1.0); // 复位
+    }
+}
