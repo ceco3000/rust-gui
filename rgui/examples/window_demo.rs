@@ -7,7 +7,6 @@
 #![cfg(feature = "window")]
 
 use std::any::Any;
-use std::cell::RefCell;
 
 use rgui::geometry::Rect;
 use rgui::hit_test::{hit_test, HitRegion};
