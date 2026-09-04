@@ -120,6 +120,7 @@ pub trait WidgetSpec: Send + Sync + 'static {
     fn update(&self, msg: Self::Message, state: &mut Self::State, ctx: &mut UpdateContext);
     fn measure(&self, state: &Self::State, constraints: BoxConstraints, ctx: &MeasureContext) -> Size;
     fn paint(&self, state: &Self::State, bounds: Rect, ctx: &mut PaintContext);
+    fn focusable(&self) -> bool { false }   // D12：默认不可获焦，组件可覆盖（Tab 导航/焦点切换）
     fn accessibility(&self, _s: &Self::State, _c: &AccessContext) -> AccessibilityNode {
         AccessibilityNode::none()
     }
@@ -223,8 +224,17 @@ pub mod window; pub mod input; pub mod ime; pub mod focus;
 pub struct Window { /* winit Window 封装 */ }
 pub struct EventLoop { /* winit 事件循环封装 */ }
 pub enum InputEvent { MouseMove, MouseDown, MouseUp, KeyDown, KeyUp, Char, Scroll }
-pub struct FocusManager { /* 焦点管理——原生在此（旧 app.rs 依赖点） */ }
-pub enum InputModality { Mouse, Keyboard }
+pub struct FocusManager { focused: Option<WidgetId>, focusable: Vec<WidgetId> }   // 焦点管理原生在此（D12 增强）
+impl FocusManager {
+    pub fn set_focusable(&mut self, ids: Vec<WidgetId>);            // 注册可获焦有序列表（Tab 循环）
+    pub fn set_focus(&mut self, id: WidgetId) -> bool;              // 仅可获焦才成功
+    pub fn focus(&self) -> Option<WidgetId>;                        // 当前焦点
+    pub fn is_focused(&self, id: WidgetId) -> bool;                 // 获焦查询
+    pub fn focus_next(&mut self) -> Option<WidgetId>;               // Tab：move_focus(1)
+    pub fn focus_prev(&mut self) -> Option<WidgetId>;               // Shift+Tab：move_focus(-1)
+    // move_focus(dir)：iter().position + rem_euclid 循环回绕（私有）
+}
+pub enum InputModality { Pointer, Keyboard, Touch }   // 对齐代码（D5 已确认含 Touch）
 ```
 
 ### B.4 `rgui-macros`（proc-macro）
