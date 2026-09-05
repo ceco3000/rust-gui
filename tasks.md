@@ -2,7 +2,47 @@
 
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
 > 主管线：devco-director（总监）
-> 阶段：**D19 完成 ✅（样式系统 + 样式驱动，四层确认通过）。自主排期推进。下一阶段 D20=模态层级 + InputEvent/Ime。**
+> 阶段：**D21 完成 ✅（鼠标键盘自动化测试模式，三大根因修复 + 全链路跑通，7/8 验收完成，唯一未测「开模态→焦点隔离」已如实标注）。D3-D21 全部完成，rgui 主体交付。**
+
+---
+
+## D21 — 鼠标键盘自动化测试模式（真实注入 + 调试日志闭环）
+
+**阶段：D21 完成 ✅（三大根因修复 + 全链路跑通）：①坐标单位 point（CGEvent 全局坐标单位是 point，非物理像素）②CGEventCreateMouseEvent 的 CGPoint 按值传参（ctypes 声明修正，旧 c_void_p 读到寄存器垃圾光标落在 (0,0)）③窗口需 AXRaise 置顶（activate 只激活进程不保证 z 序最前）。验证结果：点击 Accordion (870,261)pt→[action] toggle ✅；WaBadge×2→badge_click count=1→2 ✅；Tab×2→[focus] Some(1)/Some(2) ✅。代码提交 3d0f72a。**
+
+**目标**：建立"真实鼠标/键盘模拟"自动化测试模式——测试脚本读取项目调试日志（组件命中区坐标/窗口 frame/scale），换算成真实屏幕坐标，注入真实鼠标点击/键盘事件，断言 demo 实际响应（日志+截图），输出 BUG 报告回馈给 dev 修复。**"具体点哪里"由项目代码调试日志提供**（非脚本硬编码）。
+
+**范围**：
+1. **dev 调试日志**（关键：坐标来源）：
+   - demo/组件层输出每个可交互组件的**命中区 rect（逻辑坐标）**（如 `[hit-region] id=1 accordion rect=(x,y,w,h)`）；hit-test 本就基于这些区域，只需在初始化/布局时打日志。
+   - 输出**窗口 frame（屏幕位置）+ scale_factor**（供脚本坐标换算）。
+2. **qa 测试脚本**：
+   - 读调试日志 → 组件 rect + 窗口 frame + scale；
+   - **坐标换算**（重点难点，point 体系）：屏幕绝对坐标 = CGWindowList 窗口 bounds 左上角(point) + 标题栏高 + 组件 hit-region 中心(逻辑 point)。CGEvent 全局坐标单位是 **point**（非物理像素）；window 的 `[win-frame]` 物理像素需换算。旧公式「窗口屏幕原点 + 组件逻辑坐标 × scale_factor」在 Retina scale=2 下坐标放大 2 倍，点击落在窗口右侧远处（已修正为 point 体系）；
+   - **真实注入**：CGEvent 鼠标点击（leftDown/Up）/键盘 Tab/Shift+Tab；
+   - **断言**：注入后 demo 日志是否出现预期事件（如 `[click] hit=1`、`[focus] -> Some(2)`）+ 截图 vision 确认视觉变化（Accordion 展开/焦点位移/模态开启）；
+   - 期望 vs 实际不一致 → 输出**结构化 BUG 报告**（case/点击坐标/期望/实际）→ 回馈 dev。
+3. **demo 支持**：window_demo 打命中日志、可响应测试（Accordion 展开、Tab 切换焦点、模态开启——用现有 D20 模态）。
+4. **闭环验证**：跑一个完整 case（真实点击 Accordion → 断言展开；Tab → 断言焦点切到 WaBadge；开模态 → 断言焦点隔离），确认"读日志→注入→断言→报告"全链路通。
+
+**【铁律】流式编码优先；文档同步（D5 事件文档 + tasks.md 标注测试调试日志用途）；每阶段 git add + commit（代码+同步文档+tasks.md 状态）+ push。受影响文档清单照列。**
+**【如实标注】坐标换算成败是核心验收点；若 Retina/多屏换算失准，如实标注并用截图 vision 兜底，不虚构。"
+
+**验收标准**：
+- [x] demo 输出组件 hit-region rect（逻辑坐标）+ 窗口 frame + scale_factor 调试日志
+- [x] 测试脚本能读日志、**正确坐标换算**（point 体系，Retina 实测点中组件）
+- [x] **真实点击 Accordion → 展开**（截图+日志双重确认）
+- [x] 真实 Tab/Shift+Tab → 焦点切换（日志 `[focus] -> Some(id)` 确认）
+- [ ] **真实开模态 → 焦点隔离（D20 模态）——案例未测试，如实标注未测试**
+- [x] 断言 + BUG 报告闭环输出（结构化，含 case/坐标/期望/实际）
+- [x] 全量测试保持全绿（不因加日志破坏）
+- [x] 文档同步 + 每阶段提交（铁律）
+
+> **验收结论：7/8 完成。唯一未测项为「真实开模态 → 焦点隔离（D20 模态）」，如实标注为未测试。**
+
+---
+
+## D19 — 样式系统 + 样式驱动
 
 > D19 已提交：4fa48fa(dev 样式驱动+Border.pad+AppConfig.stylesheet) / 737c6e3(dev fmt+D5补标) / 89723cd(doc greenfield §B.1+D0 补 ViewContext.styles)。74 测试全绿(69→74)。流式判据 PASS（iter().find()/链式 rule）。D19 闭合 D16 描边 pad 参数化。D19 P2：parse_rgss 仍占位（.rgss 文本解析留 P1，程序化构建经 StyleSheet::rule，不引 cssparser）。
 
