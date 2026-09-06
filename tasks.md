@@ -2,7 +2,39 @@
 
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
 > 主管线：devco-director（总监）
-> 阶段：**D21 完成 ✅（鼠标键盘自动化测试模式，三大根因修复 + 全链路跑通，7/8 验收完成，唯一未测「开模态→焦点隔离」已如实标注）。D3-D21 全部完成，rgui 主体交付。**
+> 阶段：**D22 复核通过 ✅（生产级日志集成，dev 交付 + 总监实测复核，D21 T1-T7 全量回归零改动通过）。待 reviewer 审查 + doc 同步 + qa 资产收尾。**
+
+> D22 已验证：tracing+subscriber 入 workspace（MSRV 1.85）；测试信号→stdout 纯 token（D21 脚本零改动）；库日志→stderr（app_start/window_created/vello_init）；RUST_LOG=off 帧路径零日志；81 测试全绿。提交：f204985(dev 功能)+fbf4606(dev Cargo.lock)+fe3871d(qa 脚本 strip)+e788df2(qa gitignore pyc)+1519d1e(设计/审查文档)。
+
+---
+
+## D22 — 生产级日志集成（tracing + 测试信号迁移）
+
+**阶段：D22 已启动（用户确认「根据日志方案为项目添加日志」，方案见 tools/2025-09-01_rgui-logging-design-final.md）。** 按铁律走完整质量链。
+
+**目标**：按最终设计文档实施生产级日志——`tracing`（库日志）+ 测试信号迁到 `rgui_test_signal` target，保持 D21 脚本可解析。
+
+**选型（已定，调研确认）**：`tracing = "0.1.41"`（features `["std","log"]`）+ `tracing-subscriber = "0.3.20"`（features `["fmt","ansi","env-filter","registry"]`）+ `log`（桥，收 wgpu/vello）。MSRV 1.85 兼容（subscriber 0.3.20=1.63），无 async 冲突（用同步面）。
+
+**范围**（dev 主实现）：
+1. **Cargo 依赖**：workspace.dependencies 加 tracing/tracing-subscriber/log。
+2. **subscriber 注册**：facade(App::run) 或 demo 入口早期注册 `tracing_subscriber::fmt()` + `EnvFilter`；库日志→stderr，测试信号→stdout（双 Layer/双 target）。
+3. **库日志埋点**（logging-design-final.md §四）：app.rs app_start/app_shutdown/render_error；event_loop window_created/closed；render vello_init/glyph_atlas_rebuild/render_slow；core layout_dirty；focus focus_changed；style style_parse_warn；scene_graph scene_node_count。**热路径不埋 info+**（流式编码铁律）。
+4. **替换 eprintln**：app.rs:205 render_error → `tracing::error!`；app.rs:190 win-frame → 迁 `rgui_test_signal`。
+5. **测试信号迁移**：window_demo/d20_modal 的 `[hit-region]`/`[mouse-event]`/`[hit]`/`[action]`/`[focus]` 从 `eprintln!` 改为 `tracing::info!(target:"rgui_test_signal", "<原 token>")`，**message 文本 = 原 token 不变**（保证 D21 脚本正则零改动）。信号用轻量 event（不用 span）。
+
+**【硬约束】流式编码优先；文档同步（D5/D9/tasks.md 标注库日志 vs 测试信号分层）+ 每阶段 git add + commit + push；受影响文档清单照列。**
+**【如实标注】** 若 tracing fmt 无法做到"测试信号纯 message 输出"，如实标注并给 qa 退路（脚本 `_strip_tracing` ≤3 行）。
+
+**验收标准**：
+- [ ] tracing + subscriber 纳入 workspace.dependencies；MSRV 1.85 下 `cargo check --workspace` 过
+- [ ] 原 2 处 eprintln! 替换（render_error→tracing::error!；win-frame→rgui_test_signal）
+- [ ] 库日志埋点完成（§四清单），热路径无 info+ 埋点
+- [ ] 测试信号迁 target="rgui_test_signal"，message=原 token
+- [ ] **D21 T1-T7 全绿（脚本正则零改动或仅 ≤3 行 strip 适配）**
+- [ ] `RUST_LOG=off` 帧路径零日志开销（性能基准）
+- [ ] `cargo clippy -- -D warnings`（保留 unsafe_code=deny）过
+- [ ] 文档同步 + 每阶段提交（铁律）
 
 ---
 
@@ -38,7 +70,47 @@
 - [x] 全量测试保持全绿（不因加日志破坏）
 - [x] 文档同步 + 每阶段提交（铁律）
 
-> **验收结论：7/8 完成。唯一未测项为「真实开模态 → 焦点隔离（D20 模态）」，如实标注为未测试。**
+> **验收结论（D21-2）**：T1-T7 全部跑通（qa 脚本 + 总监实测复核 exit 0）。分层诊断 detect_layer 按 L1→L5 定位首个失败层；零 LLM/零 vision（openai/requests/http/anthropic/socket 全 0）；预检 fail-fast（exit 2 区分环境 vs 产品 bug）；BUG 报告含 fail_layer+evidence+suggest；D5 已标 in-region/模态日志（commit 5a7f0f3）；doc 核对 D21-2 说明（commit fadef2f）；reviewer 放行 PASS（P0/P1 清零）。
+
+### D21-2 遗留 P2（reviewer 观察，不阻塞，待优化）
+- **P2-1**：dev 已打 `[mouse-event] in-region`（window_demo.rs:212），但 qa detect_layer L3 未消费 in-region——"坐标换算错 vs rect 边界不一致"未区分，坐标换算错会误归 L3（应 L2）。→ 待 qa 消费 in-region 精确区分 L2/L3。
+- **P2-2**：d20_modal.rs 无 [mouse-event]/in-region，T7 的 L2 依赖 Tab 段代偿，modal_open 被当 L3 信号（变体只点不 Tab 会误报 L2）。
+- **P2-3**：suggest（建议排查项）恒为空（main 未传）。
+- **P2-4**：`--all` 不含 T7（合理，T7 可选）。
+- **P2-5**：T5 `titlebar*0` 冗余。
+
+### D21-2 ⭐ 分层诊断自动化测试（用户升级要求：脚本能判断问题在哪里 + 不调用大模型）
+
+**目标**：在 D21 全链路跑通基础上，①保证全部交互路径可被鼠标/键盘触发（场景化覆盖）②脚本必须能**判断问题在哪里**（分层诊断，定位失败环节）③**脚本不调用大模型/无视觉判断**（纯确定性日志信号匹配）。
+
+**分层诊断（Failure-Layer）——5 层，脚本顺次检查，首个失败层 = 问题所在**：
+```
+L1 注入层   脚本自检：AX trusted / CGEvent 加载 / 注入发出（点是否真的 post 成功）
+L2 窗口层   winit 收到事件？看日志 [mouse-event] left-press at logical=(x,y) / [focus]
+L3 命中层   hit_test 命中正确组件？看 [hit] id=1 / id=2 / id=none(missed)
+L4 动作层   组件状态真正更新？看 [action] toggle / badge_click(count=N) / [focus] Some(id)
+L5 功能层   二次注入验证持久效果（toggle 往返 / badge count 递增 / focus 移动）
+```
+脚本按 L1→L5 检查，**首个失败层 = 诊断结论**，BUG 报告输出 `fail_layer` + 该层证据 + 建议排查项（纯文本），全程零 LLM / 零 vision 判断（截图仅存证，人工可审）。
+
+**场景化用例（T1-T7）**：
+| # | 场景 | 注入 | 分层验收信号 |
+|---|---|---|---|
+| T1 | 点击 Accordion 展开 | 点 id=1 中心 | L3 [hit] id=1 + L4 [action] toggle |
+| T2 | Tab 切换焦点 | Tab | L4 [focus] Some(1)→Some(2) |
+| T3 | Shift+Tab 反向 | Shift+Tab | L4 [focus] Some(2)→Some(1) |
+| T4 | 点击 WaBadge 计数 | 点 id=2 中心×2 | L4 badge_click count=1→2 |
+| T5 | 点击未命中区（负向） | 点空白 | L4 [hit] id=none (missed) |
+| T6 | toggle 往返（功能层） | 点 id=1 两次 | L4 toggle + L5 状态往返 |
+| T7 | 开模态→焦点隔离（d20_modal，可选场景） | 开模态 | L4/L5 模态 focus 切换 |
+
+**验收标准**：
+- [ ] 脚本内置分层诊断器（detect_layer→[layer, evidence]），按 L1-L5 顺次检查、报告 fail_layer
+- [ ] 脚本含注入前预检（AX trusted/CG 加载/窗口定位 fail-fast，区分"脚本环境问题 vs 产品 bug"）
+- [ ] T1-T6 场景化用例（--case 单个 / --all 全量，退出码 0/1 接 CI）
+- [ ] T7 模态场景（d20_modal，需 dev 输出可断言 modal 日志 + 激活/raise 协调）
+- [ ] BUG 报告含 fail_layer + 该层证据 + 建议排查项（纯文本，**零 LLM / 零 vision 判断**）
+- [ ] 全量测试保持全绿；文档同步（D5/tasks.md）+ 每阶段提交（铁律）
 
 ---
 
