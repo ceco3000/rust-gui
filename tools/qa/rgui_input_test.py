@@ -103,7 +103,12 @@ def read_log(path):
     if not path or not os.path.exists(path):
         return ""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        return f.read()
+        text = f.read()
+    # D22：剥 tracing 前缀（若含），保持现有正则零改动。无前缀则 no-op。
+    if text.splitlines() and re.search(r'rgui_test_signal|INFO|WARN|ERROR.*\b', text.splitlines()[0]):
+        stripped = "\n".join(_strip_tracing(l) for l in text.splitlines())
+        return stripped
+    return text
 
 
 # ---------------- 窗口定位 + 激活/raise ----------------
@@ -205,6 +210,28 @@ def tab_key(shift=False):
 
 
 # ---------------- 分层诊断（核心） ----------------
+# D22 tracing 前缀剥离（可选：dev 用 tracing info!(target="rgui_test_signal", message=<token>)
+# 且 fmt 渲染含级别/时间戳前缀时启用；若 message=原 token 零前缀则此函数 no-op）。
+# 集中在此，不扩散到各 parse（保持 detect_layer 等正则零改动）。
+import re as _re
+_TRACING_RE = _re.compile(r'^.*?(?:rgui_test_signal|rgui)\s*[:=]\s*')  # 剥 "2026-.. INFO rgui_test_signal: message=" 前缀
+
+
+def _strip_tracing(line):
+    """剥掉 tracing fmt 前缀（时间戳/级别/target: message=），保留 message 原文供现有正则匹配。
+    若 line 不含前缀则原样返回（零改动路径 no-op）。"""
+    if not line:
+        return line
+    m = _re.match(r'^(?:\d{4}-\d{2}-\d{2}.*?)?(?:TRACE|DEBUG|INFO|WARN|ERROR)\S*\s*(?:\w*[_\w]*\s*[:=]\s*)*', line)
+    if m:
+        return line[m.end():]  # 剥到 message 正文
+    # 兜底：剥 "rgui_test_signal:" / "target=..:" 前缀
+    m2 = _re.match(r'^.*?(?:rgui_test_signal|message)[:=]\s*', line)
+    if m2:
+        return line[m2.end():]
+    return line
+
+
 # 按 fail_layer 生成纯文本排查建议（P2-3：建议无论如何不悬空）
 SUGGEST_BY_LAYER = {
     "L1": "脚本环境问题：检查 AXIsProcessTrusted() 是否授权(系统设置→隐私与安全→辅助功能)；CoreGraphics 是否可加载(依赖 ApplicationServices)；确认不是脚本运行环境问题。",
