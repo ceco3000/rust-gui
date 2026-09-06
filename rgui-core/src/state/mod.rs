@@ -33,6 +33,7 @@ pub enum SubscriptionLifetime {
 ///
 /// 泛型 `S` 为组件状态泛型。D4 实现最小宿主：持有状态 + dirty 标记 + 订阅集合。
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // state 暂读（占位，保留 StateStore API）
 pub struct StateStore<S = InstanceState> {
     state: InstanceState,
     dirty: bool,

@@ -12,8 +12,9 @@ pub enum RegistryError {
     NotFound,
 }
 
-/// 组件注册表（按名称注册 WidgetSpec trait 对象）。
+/// 组件注册表（按名称注册 WidgetSpec trait 对象；`inner` 暂未读，占位保留 API）。
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub struct WidgetRegistry {
     inner: RwLock<HashMap<String, Arc<dyn std::any::Any + Send + Sync>>>,
 }

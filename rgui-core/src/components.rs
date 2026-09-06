@@ -118,7 +118,7 @@ impl WidgetSpec for Accordion {
         // 内容（仅展开时显示；正文 Callout/Body 级小字号 + 语义前景，防溢出）
         if state.expanded {
             let mut content = WidgetView::empty();
-            content.props = PropValue::Str(format!("{}", state.subtitle));
+            content.props = PropValue::Str(state.subtitle.to_string());
             content.font_size = Some(12.0); // Callout 12pt
             content.foreground = Some(fg);
             content.size = Some(Size::new(300.0, 84.0));

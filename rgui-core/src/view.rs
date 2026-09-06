@@ -71,6 +71,7 @@ impl<M> WidgetView<M> {
     /// 把视图树的消息类型从 `M` 提升为 `M2`（组合根/容器复用子组件视图）。
     ///
     /// 递归映射子节点消息；props/size/border 不变。流式：`into_iter().map().collect()`。
+    #[allow(clippy::only_used_in_recursion)] // self 仅递归子节点使用（保留 self 方法签名 API）
     pub fn map_message<M2>(self, f: &impl Fn(M) -> M2) -> WidgetView<M2> {
         WidgetView {
             children: self

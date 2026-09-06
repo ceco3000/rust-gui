@@ -14,6 +14,7 @@ pub struct LayoutStyle {
     pub grow: bool,
 }
 
+#[allow(clippy::derivable_impls)] // 手写 Default（语义等价 derive，保留可读性）
 impl Default for LayoutStyle {
     fn default() -> Self {
         Self {
