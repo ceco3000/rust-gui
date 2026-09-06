@@ -239,6 +239,34 @@ fn draw_text_vertically_centered() {
 }
 
 #[test]
+fn accordion_focus_ring_four_edges_complete() {
+    // D23 焦点环 P0 深挖自证：Accordion 获焦 → 离屏渲染 → 读回顶/底/左/右四边 accent 像素完整
+    use rgui_core::components::{Accordion, AccordionState};
+    use rgui_core::context::ViewContext;
+    use rgui_core::traits::WidgetSpec;
+    let mut backend = VelloBackend::new().expect("backend");
+    let mut ctx = ViewContext::default();
+    ctx.focused = true; // 获焦 → root.border = accent systemBlue 焦点环
+    let v = Accordion.view(&AccordionState::default(), &ctx);
+    let scene = SceneGraph::from_view(&v);
+    let w = 340u32;
+    let h = 50u32;
+    let pixels = backend.render_offscreen(&scene, w, h).expect("renders");
+    // systemBlue #007AFF → linear 读回约 (0,121,255)；is_accent：蓝高、红低、绿适中
+    let is_accent = |i: usize| pixels[i + 2] > 150 && pixels[i] < 120 && pixels[i + 1] < 170;
+    let at = |x: u32, y: u32| is_accent(((y * w + x) * 4) as usize);
+    // 内缩半宽后：顶边 y≈1、底边 y≈42、左边 x≈1、右边 x≈338（stroke bounds (1.5,1.5)-(337,41)）
+    let top = (0..w).filter(|&x| at(x, 1)).count();
+    let bottom = (0..w).filter(|&x| at(x, 42)).count();
+    let left = (0..h).filter(|&y| at(1, y)).count();
+    let right = (0..h).filter(|&y| at(338, y)).count();
+    assert!(
+        top > 40 && bottom > 40 && left > 10 && right > 10,
+        "焦点环四边应完整（顶/底/左/右），got top={top} bottom={bottom} left={left} right={right}"
+    );
+}
+
+#[test]
 fn border_view_produces_stroke_rect_and_pixels() {
     // D16：带 border 的 view → from_view 产 StrokeRect → vello 描边边框像素
     let mut backend = VelloBackend::new().expect("backend");

@@ -142,7 +142,21 @@ impl SceneGraph {
             _ => {}
         }
 
-        // 描边边框（D23 缺陷2：内缩半宽，描边落在组件 bounds 内不越出窗口——原外扩 pad 致负坐标被 clip 出 L 形残缺）
+        // 递归子节点（把父节点 slot.position 累加到子节点相对位置，P2-1 修复）
+        for (child, child_slot) in view.children.iter().zip(child_slots.iter()) {
+            let accumulated = LayoutResult::new(
+                child_slot.size,
+                rgui_core::geometry::Point::new(
+                    slot.position.x + child_slot.position.x,
+                    slot.position.y + child_slot.position.y,
+                ),
+            );
+            self.emit_node(child, accumulated);
+        }
+
+        // 描边焦点环（D23 缺陷2 深挖：内缩半宽 + **画在子节点之后**——原画序在子节点前，
+        // header/content 子视图后画会覆盖焦点环顶边/上部（仅露底部横线），因此焦点环必须最后画（最上层））。
+        // 内缩半宽使描边落在组件 bounds 内、四边完整。
         if let Some(b) = &view.border {
             let inset = b.width / 2.0;
             let size = view.size.unwrap_or(slot.size);
@@ -154,18 +168,6 @@ impl SceneGraph {
                 color: b.color,
                 stroke_width: b.width,
             });
-        }
-
-        // 递归子节点（把父节点 slot.position 累加到子节点相对位置，P2-1 修复）
-        for (child, child_slot) in view.children.iter().zip(child_slots.iter()) {
-            let accumulated = LayoutResult::new(
-                child_slot.size,
-                rgui_core::geometry::Point::new(
-                    slot.position.x + child_slot.position.x,
-                    slot.position.y + child_slot.position.y,
-                ),
-            );
-            self.emit_node(child, accumulated);
         }
     }
 
