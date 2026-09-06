@@ -28,6 +28,10 @@ pub struct StyleProperties {
     pub border_width: Option<f32>,
     /// 描边外扩 pad（D16 P2：非硬编码 2.0）。
     pub border_pad: Option<f32>,
+    /// 正文/标题字号（D23：Body 13pt 阶梯语义；None = 默认正文字号）。
+    pub font_size: Option<f32>,
+    /// 语义前景色（文字；D23：非硬编码纯白，浅字/深字视背景）。
+    pub foreground: Option<Color>,
 }
 
 impl StyleProperties {
@@ -60,6 +64,18 @@ impl StyleProperties {
         self
     }
 
+    /// 设置正文/标题字号（D23 正文阶梯）。
+    pub fn font_size(mut self, s: f32) -> Self {
+        self.font_size = Some(s);
+        self
+    }
+
+    /// 设置语义前景色（文字）。
+    pub fn foreground(mut self, c: Color) -> Self {
+        self.foreground = Some(c);
+        self
+    }
+
     /// 取前景色（未指定回退默认）。
     pub fn effective_color(&self, default: Color) -> Color {
         self.color.unwrap_or(default)
@@ -85,6 +101,16 @@ impl StyleProperties {
         self.border_pad.unwrap_or(default)
     }
 
+    /// 取正文/标题字号（未指定回退默认 13pt Body）。
+    pub fn effective_font_size(&self, default: f32) -> f32 {
+        self.font_size.unwrap_or(default)
+    }
+
+    /// 取语义前景色（未指定回退默认）。
+    pub fn effective_foreground(&self, default: Color) -> Color {
+        self.foreground.unwrap_or(default)
+    }
+
     /// 是否显式指定任何属性。
     pub fn is_empty(&self) -> bool {
         self.color.is_none()
@@ -92,6 +118,8 @@ impl StyleProperties {
             && self.border_color.is_none()
             && self.border_width.is_none()
             && self.border_pad.is_none()
+            && self.font_size.is_none()
+            && self.foreground.is_none()
     }
 }
 
@@ -150,22 +178,32 @@ impl StyleSheet {
     }
 }
 
-/// 默认主题（D19：当前各组件默认配色的权威来源；作为未自定义时的回退）。
+/// 默认主题（D23：macOS 深色观感——控件灰 #3A3A3A 背景 + 浅前景 #E8E8E8（对比度约 9:1≥4.5）+ systemBlue accent + Body 13pt）。
 pub fn default_theme() -> StyleSheet {
     StyleSheet::new()
         .rule(
             "accordion",
             StyleProperties::new()
-                .background(Color::rgb(90, 130, 220))
-                .border(Color::rgb(255, 230, 80), 3.0)
-                .border_pad(2.0),
+                .background(Color::rgb(58, 58, 58)) // #3A3A3A 控件灰（非饱和亮蓝）
+                .foreground(Color::rgb(232, 232, 232)) // #E8E8E8 浅前景
+                .border(Color::rgb(0, 122, 255), 3.0) // systemBlue #007AFF accent（仅描边/焦点）
+                .border_pad(2.0)
+                .font_size(13.0), // Body 13pt
         )
         .rule(
             "wa_badge",
             StyleProperties::new()
-                .background(Color::rgb(120, 160, 210))
-                .border(Color::rgb(255, 230, 80), 3.0)
-                .border_pad(2.0),
+                .background(Color::rgb(58, 58, 58))
+                .foreground(Color::rgb(232, 232, 232))
+                .border(Color::rgb(0, 122, 255), 3.0)
+                .border_pad(2.0)
+                .font_size(13.0),
+        )
+        .rule(
+            "accent",
+            StyleProperties::new()
+                .foreground(Color::rgb(0, 122, 255))
+                .color(Color::rgb(0, 122, 255)),
         )
 }
 
@@ -214,11 +252,26 @@ mod tests {
     fn default_theme_provides_expected_components() {
         let theme = default_theme();
         let accordion = theme.lookup("accordion");
-        assert_eq!(accordion.background, Some(Color::rgb(90, 130, 220)));
-        assert_eq!(accordion.border_color, Some(Color::rgb(255, 230, 80)));
+        assert_eq!(
+            accordion.background,
+            Some(Color::rgb(58, 58, 58)),
+            "D23 控件灰"
+        );
+        assert_eq!(
+            accordion.foreground,
+            Some(Color::rgb(232, 232, 232)),
+            "D23 浅前景"
+        );
+        assert_eq!(
+            accordion.border_color,
+            Some(Color::rgb(0, 122, 255)),
+            "D23 systemBlue accent"
+        );
         assert_eq!(accordion.border_pad, Some(2.0));
+        assert_eq!(accordion.font_size, Some(13.0), "D23 Body 13pt");
         let badge = theme.lookup("wa_badge");
-        assert_eq!(badge.background, Some(Color::rgb(120, 160, 210)));
+        assert_eq!(badge.background, Some(Color::rgb(58, 58, 58)));
+        assert_eq!(badge.font_size, Some(13.0));
     }
 
     #[test]

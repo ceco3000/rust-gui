@@ -85,12 +85,12 @@ impl WidgetSpec for Accordion {
         let mut root = WidgetView::empty();
         let content_h = if state.expanded { 130.0 } else { 44.0 };
         root.size = Some(Size::new(340.0, content_h));
-        // 样式驱动（D19）：查样式表（默认主题回退）→ 获焦描边边框（D16 亮黄外框，pad 参数化）
+        // 样式驱动（D19/D23）：查样式表（默认主题回退）→ 获焦描边（accent systemBlue，pad 参数化）
         let style = ctx.styles.lookup("accordion");
         root.border = if ctx.focused {
             Some(
                 crate::view::Border::new(
-                    style.effective_border_color(Color::rgb(255, 230, 80)),
+                    style.effective_border_color(Color::rgb(0, 122, 255)),
                     style.effective_border_width(3.0),
                 )
                 .with_pad(style.effective_border_pad(2.0)),
@@ -98,23 +98,30 @@ impl WidgetSpec for Accordion {
         } else {
             None
         };
+        // 前景/字号默认（D23：浅前景 #E8E8E8 + Body 13pt）
+        let fg = style.effective_foreground(Color::rgb(232, 232, 232));
+        let fs = style.effective_font_size(13.0);
 
-        // 标题行（可点击，显示展开/收起状态标记）
+        // 标题行（可点击，显示 macOS chevron：展开 ▾ / 收起 ▸）
         let mut header = WidgetView::empty();
-        header.props = PropValue::Color(style.effective_background(Color::rgb(90, 130, 220)));
+        header.props = PropValue::Color(style.effective_background(Color::rgb(58, 58, 58)));
         header.size = Some(Size::new(340.0, 36.0));
-        let marker = if state.expanded { "-" } else { "+" };
+        let chevron = if state.expanded { "▾" } else { "▸" };
         let mut title = WidgetView::empty();
-        title.props = PropValue::Str(format!("{} [{}]", state.title, marker));
+        title.props = PropValue::Str(format!("{} {}", state.title, chevron));
+        title.font_size = Some(fs);
+        title.foreground = Some(fg);
         title.size = Some(Size::new(320.0, 28.0));
         header.children.push(title);
         root.children.push(header);
 
-        // 内容（仅展开时显示）
+        // 内容（仅展开时显示；正文 Callout/Body 级小字号 + 语义前景，防溢出）
         if state.expanded {
             let mut content = WidgetView::empty();
-            content.props = PropValue::Str(format!("⌄ {}", state.subtitle));
-            content.size = Some(Size::new(340.0, 84.0));
+            content.props = PropValue::Str(format!("{}", state.subtitle));
+            content.font_size = Some(12.0); // Callout 12pt
+            content.foreground = Some(fg);
+            content.size = Some(Size::new(300.0, 84.0));
             root.children.push(content);
         }
         root
@@ -210,13 +217,13 @@ impl WidgetSpec for WaBadge {
     fn view(&self, state: &Self::State, ctx: &ViewContext) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(Size::new(160.0, 40.0));
-        // 样式驱动（D19）：查样式表（默认主题回退）→ 背景 + 获焦描边（pad 参数化）
+        // 样式驱动（D19/D23）：查样式表（默认主题回退）→ 控件灰背景 + accent 获焦描边
         let style = ctx.styles.lookup("wa_badge");
-        root.props = PropValue::Color(style.effective_background(Color::rgb(120, 160, 210)));
+        root.props = PropValue::Color(style.effective_background(Color::rgb(58, 58, 58)));
         root.border = if ctx.focused {
             Some(
                 crate::view::Border::new(
-                    style.effective_border_color(Color::rgb(255, 230, 80)),
+                    style.effective_border_color(Color::rgb(0, 122, 255)),
                     style.effective_border_width(3.0),
                 )
                 .with_pad(style.effective_border_pad(2.0)),
@@ -226,6 +233,8 @@ impl WidgetSpec for WaBadge {
         };
         let mut label = WidgetView::empty();
         label.props = PropValue::Str(format!("{}: {}", state.label, state.count));
+        label.font_size = Some(style.effective_font_size(13.0));
+        label.foreground = Some(style.effective_foreground(Color::rgb(232, 232, 232)));
         label.size = Some(Size::new(150.0, 26.0));
         root.children.push(label);
         root

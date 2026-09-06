@@ -75,11 +75,12 @@ impl ModalRoot {
         v.props = PropValue::Str(label.to_string());
         v.size = Some(Size::new(200.0, 30.0));
         v.border = if focused {
-            Some(Border::new(Color::rgb(255, 230, 80), 3.0))
+            Some(Border::new(Color::rgb(0, 122, 255), 3.0)) // accent systemBlue 获焦焦点环
         } else {
             None
         };
         let _ = id;
+        let _ = focused;
         v
     }
 }
@@ -102,12 +103,14 @@ impl WidgetSpec for ModalRoot {
         // 后台两个按钮（模态打开时仍显示但获焦被模态隔离）
         root.children.push(Self::leaf(BASE_A, false, "(A) 后台一"));
         root.children.push(Self::leaf(BASE_B, false, "(B) 后台二"));
-        // 模态浮层（打开时覆盖，焦点隔离）
+        // 模态浮层（打开时覆盖显示；含明确 dismiss 按钮文本，满足 HIG「给优先 dismiss 途径」）
         if state.modal_open {
             let mut modal = WidgetView::empty();
-            modal.props = PropValue::Str("MODAL — 焦点隔离 (点击关闭)".to_string());
+            modal.props = PropValue::Str("MODAL  [取消]".to_string());
+            modal.font_size = Some(13.0);
+            modal.foreground = Some(Color::rgb(232, 232, 232));
             modal.size = Some(Size::new(400.0, 60.0));
-            modal.border = Some(Border::new(Color::rgb(200, 120, 220), 3.0));
+            modal.border = Some(Border::new(Color::rgb(0, 122, 255), 3.0));
             root.children.push(modal);
         }
         root
@@ -210,13 +213,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 button: MouseButton::Left,
                 ..
             } => {
-                // 打开模态 → 焦点隔离到模态按钮；关闭 → 恢复后台
-                focus.borrow_mut().open_modal(vec![MODAL_BTN]);
-                focus.borrow_mut().set_focus(MODAL_BTN);
-                let f = focus.borrow().focus();
-                tracing::info!(target: "rgui_test_signal", "[action] modal_open");
-                tracing::info!(target: "rgui_test_signal", "[focus] click -> {:?}", f.map(|w| w.0));
-                Some(ModalMsg::OpenModal)
+                // 模态打开时：左键 = dismiss（取消按钮语义，恢复后台）；否则打开模态 → 焦点隔离
+                if focus.borrow().is_modal_open() {
+                    focus.borrow_mut().close_modal();
+                    let f = focus.borrow().focus();
+                    tracing::info!(target: "rgui_test_signal", "[action] modal_close");
+                    tracing::info!(target: "rgui_test_signal", "[focus] click -> {:?}", f.map(|w| w.0));
+                    Some(ModalMsg::CloseModal)
+                } else {
+                    focus.borrow_mut().open_modal(vec![MODAL_BTN]);
+                    focus.borrow_mut().set_focus(MODAL_BTN);
+                    let f = focus.borrow().focus();
+                    tracing::info!(target: "rgui_test_signal", "[action] modal_open");
+                    tracing::info!(target: "rgui_test_signal", "[focus] click -> {:?}", f.map(|w| w.0));
+                    Some(ModalMsg::OpenModal)
+                }
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,

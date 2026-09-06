@@ -49,6 +49,10 @@ pub struct WidgetView<M = ()> {
     pub border: Option<Border>,
     /// 组件复用 key（D18：key-based reconcile 匹配标识；None = 位置型）。
     pub key: Option<u64>,
+    /// 正文/标题字号（D23：Body 13pt 阶梯；None = from_view 默认）。
+    pub font_size: Option<f32>,
+    /// 语义前景色（文字；D23：非硬编码纯白）。
+    pub foreground: Option<Color>,
     _marker: PhantomData<M>,
 }
 
@@ -78,6 +82,8 @@ impl<M> WidgetView<M> {
             size: self.size,
             border: self.border,
             key: self.key,
+            font_size: self.font_size,
+            foreground: self.foreground,
             _marker: PhantomData,
         }
     }
@@ -91,6 +97,8 @@ impl<M> Default for WidgetView<M> {
             size: None,
             border: None,
             key: None,
+            font_size: None,
+            foreground: None,
             _marker: PhantomData,
         }
     }
@@ -220,6 +228,8 @@ mod tests {
             size: None,
             border: None,
             key: None,
+            font_size: None,
+            foreground: None,
             _marker: PhantomData,
         };
 

@@ -85,7 +85,7 @@ impl VelloBackend {
                 &scene,
                 view,
                 &vello::RenderParams {
-                    base_color: peniko::Color::new([0.0, 0.0, 0.0, 1.0]),
+                    base_color: peniko::Color::new([0.157, 0.157, 0.157, 1.0]), // D23：深色窗口底 #282828（非纯黑 0,0,0）
                     width,
                     height,
                     antialiasing_method: AaConfig::Area,

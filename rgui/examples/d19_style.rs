@@ -9,17 +9,21 @@ use rgui::view::Color;
 use rgui::{App, AppConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 自定义样式表：覆盖 accordion 背景为红色、描边 pad=6
+    // 自定义样式表（D23）：主题色改用系统语义色 systemBlue/systemTeal + 深前景（保证对比度 ≥4.5:1，#101010/#007AFF≈4.66:1）
     let custom: &'static StyleSheet = Box::leak(Box::new(
         StyleSheet::new()
             .rule(
                 "accordion",
-                StyleProperties::new().background(Color::rgb(200, 40, 40)),
+                StyleProperties::new()
+                    .background(Color::rgb(0, 122, 255)) // systemBlue
+                    .foreground(Color::rgb(16, 16, 16)), // 深前景（浅底配深字）
             )
             .rule("accordion", StyleProperties::new().border_pad(6.0))
             .rule(
                 "wa_badge",
-                StyleProperties::new().background(Color::rgb(40, 120, 90)),
+                StyleProperties::new()
+                    .background(Color::rgb(90, 200, 250)) // systemTeal
+                    .foreground(Color::rgb(16, 16, 16)),
             ),
     ));
 

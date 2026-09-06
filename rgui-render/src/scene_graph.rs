@@ -129,9 +129,10 @@ impl SceneGraph {
                     x: slot.position.x as f32,
                     y: slot.position.y as f32,
                     text: text.clone(),
-                    size: size.height,
-                    // 亮白文本，保证在与多数背景（含蓝/深色）对比下可辨
-                    color: Color::rgb(255, 255, 255),
+                    // D23：字号用语义正文（Body 13pt 默认）而非 view.size.height（原误用容器高做字号）
+                    size: view.font_size.unwrap_or(13.0),
+                    // D23：语义前景色（非硬编码纯白；默认浅前景 #E8E8E8）
+                    color: view.foreground.unwrap_or_else(|| Color::rgb(232, 232, 232)),
                     // 文本区域宽（D17 供 shapeLine 换行；>0 换行）
                     width: size.width,
                 });

@@ -2,7 +2,7 @@
 
 > 版本：0.1.0
 > 工作目录：`/Users/chenchao/Documents/code/rust/RUST-GUI`
-> 写实原则：本文与当前代码实际一致（`rgui-core/src/style/`）。**D19 样式系统基础已实现**——`StyleProperties`/`StyleRule`/`StyleSheet`（`lookup` + 程序化 `rule` 构建）/**`default_theme`** 默认主题已可用；组件配色/描边从样式表驱动（`ViewContext.styles`）。`.rgss` 文本解析仍留 P1（D19 如实标注，不引入 cssparser）。
+> 写实原则：本文与当前代码实际一致（`rgui-core/src/style/`）。**D19 样式系统基础已实现**——`StyleProperties`/`StyleRule`/`StyleSheet`（`lookup` + 程序化 `rule` 构建）/**`default_theme`** 默认主题已可用；组件配色/描边从样式表驱动（`ViewContext.styles`）。**D23**：`StyleProperties` 加 `font_size`/`foreground`（正文层级 + 语义前景）；`default_theme` 改为 macOS 深色观感（控件灰 `#3A3A3A` 背景 + 浅前景 `#E8E8E8`（9.3:1≥4.5）+ systemBlue `#007AFF` accent + Body 13pt）。`.rgss` 文本解析仍留 P1（不引入 cssparser）。
 
 ---
 
@@ -19,7 +19,7 @@
 ```rust
 pub struct StyleSheet { pub rules: Vec<StyleRule> }        // 样式表
 pub struct StyleRule  { selector, properties: StyleProperties }  // 规则（selector + 属性）
-pub struct StyleProperties { color, background, border_color, border_width, border_pad } // 样式属性（全部 Option<..>）
+pub struct StyleProperties { color, background, border_color, border_width, border_pad, font_size, foreground } // 样式属性（D23 加 font_size/foreground）
 pub fn default_theme() -> StyleSheet                        // 默认主题（组件默认配色的权威来源）
 pub fn default_style() -> &'static StyleSheet               // 默认样式表单例（OnceLock）
 pub fn parse_rgss(_src) -> StyleSheet                       // 文本解析（P1 占位，不引入 cssparser）
@@ -30,7 +30,7 @@ impl StyleSheet { fn rule(sel, props) -> Self; fn lookup(sel) -> StyleProperties
 |------|------|
 | `StyleSheet { rules }` | 已实现：`rule` 程序化构建 + `lookup` 命中首条匹配规则 |
 | `StyleRule { selector, properties }` | 已实现：selector + `StyleProperties` |
-| `StyleProperties` | 已实现：`color/background/border_color/border_width/border_pad`（`None` = 未指定，组件回退默认） |
+| `StyleProperties` | 已实现：`color/background/border_color/border_width/border_pad/font_size/foreground`（`None` = 未指定，组件回退默认；D23 加 `font_size`/`foreground` 正文层级 + 语义前景） |
 | `default_theme()` | 已实现：accordion/wa_badge 默认配色（当前各组件默认色的权威来源） |
 | `default_style()` | 已实现：`&'static StyleSheet` 单例（供 `ViewContext.styles`） |
 | `parse_rgss(_src) -> StyleSheet` | **占位（P1）**：返回默认主题，不做 `.rgss` 文本解析（不引入 cssparser） |
@@ -41,9 +41,9 @@ impl StyleSheet { fn rule(sel, props) -> Self; fn lookup(sel) -> StyleProperties
 
 ---
 
-## 3. 当前实现状态（D19，写实）
+## 3. 当前实现状态（D23，写实）
 
-1. **已实现（D19）**：`StyleRule`/`StyleSheet` 基础——`StyleProperties`（color/background/border_color/border_width/border_pad）、`StyleSheet::rule` 程序化构建 + `lookup` 命中、`default_theme` 默认主题、`default_style` 单例；组件（Accordion/WaBadge）配色/描边从 `ViewContext.styles` 样式驱动（命中用样式、未命中回退默认）；`WidgetView.border` 含 `pad` 参数化（D16 P2）。
+1. **已实现（D19/D23）**：`StyleRule`/`StyleSheet` 基础——`StyleProperties`（color/background/border_color/border_width/border_pad/**font_size/foreground**（D23））、`StyleSheet::rule` 程序化构建 + `lookup` 命中、`default_theme` 默认主题、`default_style` 单例；组件（Accordion/WaBadge）配色/描边从 `ViewContext.styles` 样式驱动（命中用样式、未命中回退默认）。**D23 macOS 化**：`default_theme` 改控件灰 `#3A3A3A` 背景 + 浅前景 `#E8E8E8`（9.3:1）+ systemBlue `#007AFF` accent + Body 13pt；组件获焦为 accent 焦点环描边；折叠指示用 chevron（▾/▸）。`WidgetView.border` 含 `pad`（D16 P2）。
 2. **未实现（P1）**：`.rgss` 文本真实解析（需 cssparser，D19 不引入）、主题系统（切换运行期主题）、热重载——如实标注。
 3. **单一路径**：样式并入 core 零 GPU/平台（契约防火墙），无重型依赖。
 

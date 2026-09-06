@@ -97,7 +97,7 @@ impl WidgetSpec for ListRoot {
                 child.key = Some(it.key);
                 child.props = PropValue::Str(format!("item {}: {}", it.key, it.count));
                 child.size = Some(Size::new(480.0, 24.0));
-                child.border = Some(Border::new(Color::rgb(90, 130, 220), 3.0));
+                child.border = Some(Border::new(Color::rgb(0, 122, 255), 3.0)); // accent systemBlue
                 child
             })
             .collect();
