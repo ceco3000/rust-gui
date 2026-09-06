@@ -85,6 +85,8 @@ impl WidgetSpec for Accordion {
         let mut root = WidgetView::empty();
         let content_h = if state.expanded { 130.0 } else { 44.0 };
         root.size = Some(Size::new(340.0, content_h));
+        // D23 残留 P1-1：Accordion 内部纵向（标题行在上、内容在下），非横向并排 header+content
+        root.layout_direction = Some(crate::layout::LayoutDirection::Column);
         // 样式驱动（D19/D23）：查样式表（默认主题回退）→ 获焦描边（accent systemBlue，pad 参数化）
         let style = ctx.styles.lookup("accordion");
         root.border = if ctx.focused {
@@ -111,7 +113,7 @@ impl WidgetSpec for Accordion {
         title.props = PropValue::Str(format!("{} {}", state.title, chevron));
         title.font_size = Some(fs);
         title.foreground = Some(fg);
-        title.size = Some(Size::new(320.0, 28.0));
+        title.size = Some(Size::new(320.0, 36.0)); // 高度铺满 header（36），文字垂直居中
         header.children.push(title);
         root.children.push(header);
 
@@ -235,7 +237,7 @@ impl WidgetSpec for WaBadge {
         label.props = PropValue::Str(format!("{}: {}", state.label, state.count));
         label.font_size = Some(style.effective_font_size(13.0));
         label.foreground = Some(style.effective_foreground(Color::rgb(232, 232, 232)));
-        label.size = Some(Size::new(150.0, 26.0));
+        label.size = Some(Size::new(150.0, 40.0)); // 高度铺满 badge（40），文字垂直居中
         root.children.push(label);
         root
     }

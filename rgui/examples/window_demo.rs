@@ -93,6 +93,8 @@ impl WidgetSpec for DemoRoot {
     ) -> WidgetView<Self::Message> {
         let mut root = WidgetView::empty();
         root.size = Some(rgui::geometry::Size::new(520.0, 220.0));
+        // D23 残留 P1-2：内容区 20pt 边距（不贴窗口左缘，macOS 惯例 8pt 网格）
+        root.padding = 20.0;
         // 左：Accordion 视图（消息提升为组合根消息）；按获焦状态设 focused 视图上下文
         let mut acc_ctx = rgui::context::ViewContext::default();
         acc_ctx.focused = state.focused == Some(WidgetId::new(1));

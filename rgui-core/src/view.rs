@@ -53,6 +53,10 @@ pub struct WidgetView<M = ()> {
     pub font_size: Option<f32>,
     /// 语义前景色（文字；D23：非硬编码纯白）。
     pub foreground: Option<Color>,
+    /// 容器主轴方向（D23 残留 P1-1：Accordion 内部 Column；None = 默认 Row）。
+    pub layout_direction: Option<crate::layout::LayoutDirection>,
+    /// 容器四周 padding（D23 残留 P1-2：20pt 内容边距；0 = 无）。
+    pub padding: f32,
     _marker: PhantomData<M>,
 }
 
@@ -85,6 +89,8 @@ impl<M> WidgetView<M> {
             key: self.key,
             font_size: self.font_size,
             foreground: self.foreground,
+            layout_direction: self.layout_direction,
+            padding: self.padding,
             _marker: PhantomData,
         }
     }
@@ -100,6 +106,8 @@ impl<M> Default for WidgetView<M> {
             key: None,
             font_size: None,
             foreground: None,
+            layout_direction: None,
+            padding: 0.0,
             _marker: PhantomData,
         }
     }
@@ -231,6 +239,8 @@ mod tests {
             key: None,
             font_size: None,
             foreground: None,
+            layout_direction: None,
+            padding: 0.0,
             _marker: PhantomData,
         };
 

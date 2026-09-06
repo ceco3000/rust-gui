@@ -12,7 +12,7 @@
 
 pub mod mapping;
 
-pub use mapping::LayoutStyle;
+pub use mapping::{LayoutDirection, LayoutStyle};
 
 use crate::geometry::{Point, Rect, Size};
 
@@ -118,8 +118,14 @@ impl LayoutEngine {
 
     /// 计算容器布局，并对每个子节点返回其布局结果（位置 + 尺寸）。
     /// D6：from_view 用它获得子节点真实 bounds（布局真正作用于渲染）。
+    /// D23 残留：容器方向（Accordion Column / DemoRoot Row）+ 容器 padding（20pt 边距）+ 交叉轴垂直居中。
     #[cfg(feature = "layout")]
-    pub fn compute_children(&self, container: Size, children: &[Size]) -> Vec<LayoutResult> {
+    pub fn compute_children(
+        &self,
+        container: Size,
+        children: &[Size],
+        container_style: LayoutStyle,
+    ) -> Vec<LayoutResult> {
         use taffy::prelude::*;
         let mut taffy = TaffyTree::<()>::new();
 
@@ -138,9 +144,25 @@ impl LayoutEngine {
                 width: Dimension::Length(container.width),
                 height: Dimension::Length(container.height),
             },
-            // D23 核实：taffy 0.7.7 Style::default() flex_direction = Row（横向，源码 default struct flex_direction: FlexDirection::Row）。
-            // 子节点默认横向并排（Accordion 左 + WaBadge 右，与 hit-region 0-340/340-520 一致）；
-            // 原注释「默认 flex column」为误（已修正，未改行为——column 堆叠在当前代码并不存在）。
+            // D23 残留 P1-1：容器主轴方向（Accordion 内部 Column=标题上/内容下；默认 Row）
+            flex_direction: match container_style.direction {
+                LayoutDirection::Row => FlexDirection::Row,
+                LayoutDirection::Column => FlexDirection::Column,
+            },
+            // （D23 残留 P0-2 居中改为：文字节点铺满容器高度（见 components title/label size）
+            //  使 DrawText y 居中公式作用于全容器——不再全局 align_items:Center（避免容器内容垂直居中）
+            // D23 残留 P1-2：容器四周 padding（20pt 内容边距）
+            padding: if container_style.padding > 0.0 {
+                let p = LengthPercentage::Length(container_style.padding);
+                Rect {
+                    left: p,
+                    top: p,
+                    right: p,
+                    bottom: p,
+                }
+            } else {
+                Rect::zero()
+            },
             ..Style::default()
         };
 

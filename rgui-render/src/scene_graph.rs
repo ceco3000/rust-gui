@@ -5,7 +5,7 @@
 //! 真正的 GPU 绘制在 `vello` 模块消费此指令列表完成。
 
 use rgui_core::geometry::Size;
-use rgui_core::layout::{LayoutEngine, LayoutResult};
+use rgui_core::layout::{LayoutEngine, LayoutResult, LayoutStyle};
 use rgui_core::view::{Color, PropValue, WidgetView};
 
 /// 无显式容器时使用的默认布局容器尺寸（D6：保证有可布局空间）。
@@ -106,8 +106,12 @@ impl SceneGraph {
             .collect();
 
         // 用布局引擎计算每个子节点的真实 bounds（在根 slot 内）
+        // D23 残留：容器 LayoutStyle（方向 Column/Row + padding）由 view 声明，供 compute_children 布局
         let engine = LayoutEngine::new();
-        let child_slots = engine.compute_children(slot.size, &child_sizes);
+        let container_style = LayoutStyle::default()
+            .with_direction(view.layout_direction.unwrap_or_default())
+            .with_padding(view.padding);
+        let child_slots = engine.compute_children(slot.size, &child_sizes, container_style);
 
         // 本节点图元（根据 props）
         match &view.props {
