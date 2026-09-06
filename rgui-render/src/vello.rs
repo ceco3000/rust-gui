@@ -85,7 +85,13 @@ impl VelloBackend {
                 &scene,
                 view,
                 &vello::RenderParams {
-                    base_color: peniko::Color::new([0.157, 0.157, 0.157, 1.0]), // D23：深色窗口底 #282828（非纯黑 0,0,0）
+                    base_color: peniko::Color::new([
+                        // D23 返工：深色窗口底 #282828（sRGB 0.157）→ linear（防双 gamma 提亮为 #6E6E6E）
+                        srgb_to_linear(0.157),
+                        srgb_to_linear(0.157),
+                        srgb_to_linear(0.157),
+                        1.0,
+                    ]),
                     width,
                     height,
                     antialiasing_method: AaConfig::Area,
@@ -376,6 +382,22 @@ impl VelloBackend {
         }
     }
 }
+/// sRGB → linear（D23 返工：vello 渲染按 linear 处理输入 + 输出编码到 sRGB 目标，
+/// 因此提交给 vello 的 RGB 分量必须已是 linear，否则被双 gamma 提亮：sRGB #282828=(0.157) → 提亮为 #6E6E6E）。
+fn srgb_to_linear(s: f32) -> f32 {
+    if s <= 0.04045 {
+        s / 12.92
+    } else {
+        ((s + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 fn to_peniko_color(c: Color) -> peniko::Color {
-    peniko::Color::from_rgba8(c.r, c.g, c.b, c.a)
+    // 语义色（sRGB 8bit）→ linear 分量（vello 正确接受）；alpha 保持线性（不做 gamma）。
+    peniko::Color::new([
+        srgb_to_linear(c.r as f32 / 255.0),
+        srgb_to_linear(c.g as f32 / 255.0),
+        srgb_to_linear(c.b as f32 / 255.0),
+        c.a as f32 / 255.0,
+    ])
 }

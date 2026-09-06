@@ -158,6 +158,31 @@ fn from_view_button_renders_and_shows_text() {
 }
 
 #[test]
+fn base_color_renders_srgb_282828_without_gamma_boost() {
+    // D23 返工自证：填 #282828（sRGB 40）→ vello 输出应为 linear 分量（≈5，=linear(0.157)*255），
+    // 而非被双 gamma 提亮（修复前读到 #6E=110）。屏幕 sRGB swapchain 会把 linear 5 编码回 #282828。
+    let mut backend = VelloBackend::new().expect("creates backend");
+    let scene = SceneGraph::from_cmds(vec![DrawCmd::FillRect {
+        x: 0.0,
+        y: 0.0,
+        width: 340.0,
+        height: 120.0,
+        color: Color::rgb(40, 40, 40),
+    }]);
+    let w = 340u32;
+    let h = 120u32;
+    let pixels = backend.render_offscreen(&scene, w, h).expect("renders");
+    let center = ((h / 2 * w + w / 2) * 4) as usize;
+    let r = pixels[center];
+    assert!(
+        (r as i32 - 5).abs() <= 3,
+        "#282828 的 linear 分量应为 ~5（sRGB 40→linear(0.157)*255≈5），got {r}（修复前会被 gamma 提亮为 ~110/#6E）"
+    );
+    assert_eq!(pixels[center + 1], r, "G 通道应一致（灰）");
+    assert_eq!(pixels[center + 2], r, "B 通道应一致（灰）");
+}
+
+#[test]
 fn border_view_produces_stroke_rect_and_pixels() {
     // D16：带 border 的 view → from_view 产 StrokeRect → vello 描边边框像素
     let mut backend = VelloBackend::new().expect("backend");
