@@ -183,6 +183,62 @@ fn base_color_renders_srgb_282828_without_gamma_boost() {
 }
 
 #[test]
+fn stroke_rect_inset_within_component_bounds() {
+    // D23 缺陷2 自证：StrokeRect 内缩半宽（inset = stroke_width/2），描边落在组件 bounds 内、四边完整
+    let mut v: WidgetView<()> = WidgetView::empty();
+    v.size = Some(Size::new(100.0, 50.0));
+    v.border = Some(Border::new(Color::rgb(0, 122, 255), 4.0)); // width 4 → inset 2
+    let scene = SceneGraph::from_view(&v);
+    let stroke = scene
+        .cmds()
+        .iter()
+        .find_map(|c| match c {
+            DrawCmd::StrokeRect {
+                x,
+                y,
+                width,
+                height,
+                stroke_width,
+                ..
+            } => Some((*x, *y, *width, *height, *stroke_width)),
+            _ => None,
+        })
+        .expect("应有 StrokeRect");
+    // inset = 4/2 = 2: x=0+2=2, y=2, width=100-4=96, height=50-4=46
+    assert!(
+        (stroke.0 - 2.0).abs() < 0.01
+            && (stroke.1 - 2.0).abs() < 0.01
+            && (stroke.2 - 96.0).abs() < 0.01
+            && (stroke.3 - 46.0).abs() < 0.01,
+        "描边应内缩半宽（bounds 内完整四边，无负坐标被 clip），got {stroke:?}"
+    );
+    assert_eq!(stroke.4, 4.0, "stroke_width 应保留");
+}
+
+#[test]
+fn draw_text_vertically_centered() {
+    // D23 缺陷3 自证：DrawText y = slot 顶 + (节点高 - 字号)/2（垂直居中）
+    let mut v: WidgetView<()> = WidgetView::empty();
+    v.props = PropValue::Str("title".to_string());
+    v.size = Some(Size::new(200.0, 50.0));
+    v.font_size = Some(14.0);
+    let scene = SceneGraph::from_view(&v);
+    let (y, size) = scene
+        .cmds()
+        .iter()
+        .find_map(|c| match c {
+            DrawCmd::DrawText { y, size, .. } => Some((*y, *size)),
+            _ => None,
+        })
+        .expect("应有 DrawText");
+    assert!(
+        (y - 18.0).abs() < 0.01,
+        "文字应垂直居中 y=(50-14)/2=18，got {y}"
+    );
+    assert_eq!(size, 14.0);
+}
+
+#[test]
 fn border_view_produces_stroke_rect_and_pixels() {
     // D16：带 border 的 view → from_view 产 StrokeRect → vello 描边边框像素
     let mut backend = VelloBackend::new().expect("backend");

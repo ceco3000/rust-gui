@@ -125,12 +125,14 @@ impl SceneGraph {
                 let size = view
                     .size
                     .unwrap_or_else(|| Size::new(size_hint(text), 20.0));
+                // D23：字号用语义正文（Body 13pt 默认）而非 view.size.height（原误用容器高做字号）
+                let font_size = view.font_size.unwrap_or(13.0);
                 self.cmds.push(DrawCmd::DrawText {
                     x: slot.position.x as f32,
-                    y: slot.position.y as f32,
+                    // D23 缺陷3：文字垂直居中——y = slot 顶 + (节点高 - 字号)/2（原 y=slot 顶未居中）
+                    y: slot.position.y as f32 + (size.height - font_size) / 2.0,
                     text: text.clone(),
-                    // D23：字号用语义正文（Body 13pt 默认）而非 view.size.height（原误用容器高做字号）
-                    size: view.font_size.unwrap_or(13.0),
+                    size: font_size,
                     // D23：语义前景色（非硬编码纯白；默认浅前景 #E8E8E8）
                     color: view.foreground.unwrap_or_else(|| Color::rgb(232, 232, 232)),
                     // 文本区域宽（D17 供 shapeLine 换行；>0 换行）
@@ -140,15 +142,15 @@ impl SceneGraph {
             _ => {}
         }
 
-        // 描边边框（D16：获焦高亮外框）——在组件区域外扩 pad 绘制（D16 P2：pad 参数化非硬编码 2.0），边缘不被内容覆盖
+        // 描边边框（D23 缺陷2：内缩半宽，描边落在组件 bounds 内不越出窗口——原外扩 pad 致负坐标被 clip 出 L 形残缺）
         if let Some(b) = &view.border {
-            let pad = b.pad;
+            let inset = b.width / 2.0;
             let size = view.size.unwrap_or(slot.size);
             self.cmds.push(DrawCmd::StrokeRect {
-                x: slot.position.x as f32 - pad,
-                y: slot.position.y as f32 - pad,
-                width: size.width + 2.0 * pad,
-                height: size.height + 2.0 * pad,
+                x: slot.position.x as f32 + inset,
+                y: slot.position.y as f32 + inset,
+                width: size.width - 2.0 * inset,
+                height: size.height - 2.0 * inset,
                 color: b.color,
                 stroke_width: b.width,
             });

@@ -138,7 +138,9 @@ impl LayoutEngine {
                 width: Dimension::Length(container.width),
                 height: Dimension::Length(container.height),
             },
-            // 主轴纵向排列（默认 flex column）
+            // D23 核实：taffy 0.7.7 Style::default() flex_direction = Row（横向，源码 default struct flex_direction: FlexDirection::Row）。
+            // 子节点默认横向并排（Accordion 左 + WaBadge 右，与 hit-region 0-340/340-520 一致）；
+            // 原注释「默认 flex column」为误（已修正，未改行为——column 堆叠在当前代码并不存在）。
             ..Style::default()
         };
 
