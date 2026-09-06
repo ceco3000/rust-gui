@@ -111,6 +111,9 @@ mod backend {
             W: WidgetSpec + 'static,
             F: FnMut(&WindowEvent) -> Option<W::Message> + 'static,
         {
+            // D22：尽早注册全局日志（幂等，双流：库→stderr，测试信号 rgui_test_signal→stdout）
+            crate::logging::init_logging();
+            tracing::info!(target: "rgui", "app_start title={}", config.window_title);
             // 应用配置 → 平台窗口配置（非零尺寸）
             let wc = WindowConfig {
                 title: config.window_title.clone(),
@@ -183,13 +186,18 @@ mod backend {
             };
             let size = window.inner_size(); // 物理像素
             let scale = window.scale_factor(); // Retina 高分屏 2x 等
-                                               // D21：输出窗口 frame（屏幕位置 + 物理 size + scale_factor），变化时重输出
+                                               // D22：win-frame 迁移到测试信号 target（D21 脚本换算坐标来源；message=原 token）
             if let Ok(outer) = window.outer_position() {
                 let frame = (outer.x, outer.y, size.width, size.height, scale);
                 if self.last_frame != Some(frame) {
-                    eprintln!(
+                    tracing::info!(
+                        target: "rgui_test_signal",
                         "[win-frame] origin=({},{}) size=({},{}) scale={}",
-                        outer.x, outer.y, size.width, size.height, scale
+                        outer.x,
+                        outer.y,
+                        size.width,
+                        size.height,
+                        scale
                     );
                     self.last_frame = Some(frame);
                 }
@@ -202,7 +210,7 @@ mod backend {
             // D17：渲染尺寸统一——surface 用物理尺寸，SceneGraph 逻辑坐标经 scale 放大到物理
             if let Err(e) = backend.render_surface(surface, &graph, size.width, size.height, scale)
             {
-                eprintln!("render error: {e}");
+                tracing::error!(target: "rgui", "render_error {e}");
             }
         }
     }

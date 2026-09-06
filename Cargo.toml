@@ -24,6 +24,11 @@ rgui-render = { path = "rgui-render", version = "0.1.0" }
 rgui-platform = { path = "rgui-platform", version = "0.1.0" }
 rgui-macros = { path = "rgui-macros", version = "0.1.0" }
 
+# === 生产级日志（D22）：tracing 同步面 + log 桥（收 wgpu/vello 的 log!）。无 async。===
+tracing = { version = "0.1.41", default-features = false, features = ["std", "log"] }
+tracing-subscriber = { version = "0.3.20", default-features = false, features = ["fmt", "ansi", "env-filter", "registry"] }
+log = { version = "0.4" }
+
 # 说明：D3 阶段 0 只建立可编译骨架 + 契约占位，不实现业务逻辑。
 # 重型外部依赖（wgpu/vello/cosmic-text/fontdb/skrifa/winit/cssparser/erased-serde 等）
 # 按契约 §1.5 feature 划分，在 D4+ 实现对应后端时经 feature 门控引入，D3 不引入以确保骨架可离线快速编译。

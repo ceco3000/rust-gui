@@ -9,6 +9,7 @@ description = "rgui 渲染引擎（单一 vello 后端）：字形/路径细分/
 
 [dependencies]
 rgui-core.workspace = true
+tracing.workspace = true
 
 # 重型 GPU 依赖经 vello-backend feature 引入（单一 vello，无 skia 多后端抽象）
 vello = { version = "0.9", optional = true }

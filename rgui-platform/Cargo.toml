@@ -9,6 +9,7 @@ description = "rgui 平台层：窗口/输入/IME/焦点（winit 隔离）"
 
 [dependencies]
 rgui-core.workspace = true
+tracing.workspace = true
 
 # winit 重型平台依赖经 winit feature 引入（D7：窗口 + 事件循环）
 winit = { version = "0.30", optional = true }

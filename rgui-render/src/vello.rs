@@ -31,6 +31,7 @@ pub struct VelloBackend {
 impl VelloBackend {
     /// 创建 wgpu 无窗口设备 + vello renderer（离屏）。
     pub fn new() -> Result<Self, String> {
+        tracing::info!(target: "rgui_render", "vello_init");
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::default(),

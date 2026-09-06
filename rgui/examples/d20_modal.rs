@@ -144,6 +144,8 @@ impl WidgetSpec for ModalRoot {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // D22：尽早注册日志（幂等）——hit-region 等测试信号须在 subscriber 后打印
+    rgui::logging::init_logging();
     let config = AppConfig::new()
         .with_title("rgui d20 modal")
         .with_size(520, 220);
@@ -162,9 +164,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             200 => "modal",
             _ => "?",
         };
-        eprintln!(
+        tracing::info!(
+            target: "rgui_test_signal",
             "[hit-region] id={} {} rect=({},{},{},{})",
-            r.id, name, r.rect.x, r.rect.y, r.rect.width, r.rect.height
+            r.id,
+            name,
+            r.rect.x,
+            r.rect.y,
+            r.rect.width,
+            r.rect.height
         );
     }
 
@@ -182,13 +190,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // 模态打开时焦点自动隔离在模态集合内
                             KeyCode::Tab => {
                                 let fid = focus.borrow_mut().focus_next();
-                                eprintln!("[focus] Tab -> {:?}", fid.map(|w| w.0));
+                                tracing::info!(target: "rgui_test_signal", "[focus] Tab -> {:?}", fid.map(|w| w.0));
                             }
                             KeyCode::Escape => {
                                 focus.borrow_mut().close_modal();
                                 let f = focus.borrow().focus();
-                                eprintln!("[action] modal_close");
-                                eprintln!("[focus] Esc -> {:?}", f.map(|w| w.0));
+                                tracing::info!(target: "rgui_test_signal", "[action] modal_close");
+                                tracing::info!(target: "rgui_test_signal", "[focus] Esc -> {:?}", f.map(|w| w.0));
                                 return Some(ModalMsg::CloseModal);
                             }
                             _ => {}
@@ -206,8 +214,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 focus.borrow_mut().open_modal(vec![MODAL_BTN]);
                 focus.borrow_mut().set_focus(MODAL_BTN);
                 let f = focus.borrow().focus();
-                eprintln!("[action] modal_open");
-                eprintln!("[focus] click -> {:?}", f.map(|w| w.0));
+                tracing::info!(target: "rgui_test_signal", "[action] modal_open");
+                tracing::info!(target: "rgui_test_signal", "[focus] click -> {:?}", f.map(|w| w.0));
                 Some(ModalMsg::OpenModal)
             }
             WindowEvent::MouseInput {
@@ -217,8 +225,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } => {
                 focus.borrow_mut().close_modal();
                 let f = focus.borrow().focus();
-                eprintln!("[action] modal_close");
-                eprintln!("[focus] click -> {:?}", f.map(|w| w.0));
+                tracing::info!(target: "rgui_test_signal", "[action] modal_close");
+                tracing::info!(target: "rgui_test_signal", "[focus] click -> {:?}", f.map(|w| w.0));
                 Some(ModalMsg::CloseModal)
             }
             _ => None,

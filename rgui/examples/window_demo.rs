@@ -136,6 +136,8 @@ impl WidgetSpec for DemoRoot {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // D22：尽早注册日志（幂等）——hit-region 等测试信号须在 subscriber 后打印
+    rgui::logging::init_logging();
     let config = AppConfig::new()
         .with_title("rgui hit-test demo")
         .with_size(520, 220);
@@ -154,9 +156,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             2 => "wabadge",
             _ => "?",
         };
-        eprintln!(
+        tracing::info!(
+            target: "rgui_test_signal",
             "[hit-region] id={} {} rect=({},{},{},{})",
-            r.id, name, r.rect.x, r.rect.y, r.rect.width, r.rect.height
+            r.id,
+            name,
+            r.rect.x,
+            r.rect.y,
+            r.rect.width,
+            r.rect.height
         );
     }
 
@@ -198,7 +206,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     focus.borrow_mut().focus_next()
                 };
-                eprintln!("[focus] Tab(shift={s}) -> {:?}", fid.map(|w| w.0));
+                tracing::info!(
+                    target: "rgui_test_signal",
+                    "[focus] Tab(shift={}) -> {:?}",
+                    s,
+                    fid.map(|w| w.0)
+                );
                 Some(DemoMsg::Focus(fid))
             }
             WindowEvent::MouseInput {
@@ -210,14 +223,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // D21 联调：鼠标事件到达确认（逻辑坐标，与 hit-test 一致）——in-region 区分
                 // 「坐标没点中 vs rect 边界错」（L3 分层诊断：in-region=false→坐标换算/点窗外；true 但 hit none→rect 边界不一致）
                 let in_region = regions.iter().any(|r| r.contains(x, y));
-                eprintln!(
+                tracing::info!(
+                    target: "rgui_test_signal",
                     "[mouse-event] left-press at logical=({}, {}) in-region={}",
-                    x, y, in_region
+                    x,
+                    y,
+                    in_region
                 );
                 match hit_test(x, y, &regions) {
                     Some(1) => {
-                        eprintln!("[hit] id=1 -> AccordionMsg::Toggle");
-                        eprintln!("[action] toggle(id=1)");
+                        tracing::info!(target: "rgui_test_signal", "[hit] id=1 -> AccordionMsg::Toggle");
+                        tracing::info!(target: "rgui_test_signal", "[action] toggle(id=1)");
                         Some(DemoMsg::Accordion(AccordionMsg::Toggle))
                     }
                     Some(2) => {
@@ -226,12 +242,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             *c += 1;
                             *c
                         };
-                        eprintln!("[hit] id=2 -> WaBadgeMsg::Click");
-                        eprintln!("[action] badge_click(id=2,count={n})");
+                        tracing::info!(target: "rgui_test_signal", "[hit] id=2 -> WaBadgeMsg::Click");
+                        tracing::info!(
+                            target: "rgui_test_signal",
+                            "[action] badge_click(id=2,count={})",
+                            n
+                        );
                         Some(DemoMsg::Badge(WaBadgeMsg::Click))
                     }
                     _ => {
-                        eprintln!("[hit] id=none (missed hit-region)");
+                        tracing::info!(target: "rgui_test_signal", "[hit] id=none (missed hit-region)");
                         None
                     }
                 }

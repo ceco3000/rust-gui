@@ -134,6 +134,7 @@ impl FocusManager {
             }),
         }?;
         self.focused = Some(next);
+        tracing::debug!(target: "rgui_platform", "focus_changed {:?}", next);
         Some(next)
     }
 }

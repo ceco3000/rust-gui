@@ -124,6 +124,7 @@ impl<'a, A: App> winit::application::ApplicationHandler for Runner<'a, A> {
             .create_window(attrs)
             .expect("create platform window");
         let window = std::sync::Arc::new(window);
+        tracing::info!(target: "rgui_platform", "window_created");
         self.app.init(std::sync::Arc::clone(&window));
         // 首帧：主动请求一次重绘（窗口弹出即渲染组件）
         window.request_redraw();
@@ -141,6 +142,7 @@ impl<'a, A: App> winit::application::ApplicationHandler for Runner<'a, A> {
         if let Some(window) = &self.window {
             match &event {
                 WindowEvent::CloseRequested => {
+                    tracing::info!(target: "rgui_platform", "window_closed");
                     _event_loop.exit();
                     return;
                 }
