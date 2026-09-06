@@ -13,3 +13,7 @@ logs/
 .trae/
 .uploads/
 .claude/
+
+# Python (qa 脚本编译缓存，勿提交)
+__pycache__/
+*.pyc
