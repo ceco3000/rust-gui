@@ -9,7 +9,8 @@
 use std::any::Any;
 use std::cell::RefCell;
 
-use rgui::geometry::Size;
+use rgui::geometry::{Rect, Size};
+use rgui::hit_test::HitRegion;
 use rgui::traits::{AppMessage, PersistState, WidgetSpec};
 use rgui::view::{Border, Color, PropValue, WidgetView};
 use rgui::WidgetId;
@@ -147,6 +148,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_title("rgui d20 modal")
         .with_size(520, 220);
 
+    // hit 区域（逻辑坐标，与渲染 flex Row 布局一致；id 与 FocusManager WidgetId 一致）；后台 A/B（横排）+ 模态浮层（打开时）
+    let regions = [
+        HitRegion::new(Rect::new(0.0, 0.0, 200.0, 30.0), 100), // 后台 A
+        HitRegion::new(Rect::new(200.0, 0.0, 200.0, 30.0), 101), // 后台 B
+        HitRegion::new(Rect::new(400.0, 0.0, 400.0, 60.0), 200), // 模态浮层（打开后）
+    ];
+    // D21-2：hit-region 日志（qa 换算坐标点击，触发开/关模态）
+    for r in &regions {
+        let name = match r.id {
+            100 => "base_a",
+            101 => "base_b",
+            200 => "modal",
+            _ => "?",
+        };
+        eprintln!(
+            "[hit-region] id={} {} rect=({},{},{},{})",
+            r.id, name, r.rect.x, r.rect.y, r.rect.width, r.rect.height
+        );
+    }
+
     let focus = RefCell::new(FocusManager::new());
     // 初始可获焦 = 后台两个按钮
     focus.borrow_mut().set_focusable(vec![BASE_A, BASE_B]);
@@ -160,10 +181,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match k {
                             // 模态打开时焦点自动隔离在模态集合内
                             KeyCode::Tab => {
-                                focus.borrow_mut().focus_next();
+                                let fid = focus.borrow_mut().focus_next();
+                                eprintln!("[focus] Tab -> {:?}", fid.map(|w| w.0));
                             }
                             KeyCode::Escape => {
                                 focus.borrow_mut().close_modal();
+                                let f = focus.borrow().focus();
+                                eprintln!("[action] modal_close");
+                                eprintln!("[focus] Esc -> {:?}", f.map(|w| w.0));
                                 return Some(ModalMsg::CloseModal);
                             }
                             _ => {}
@@ -180,6 +205,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // 打开模态 → 焦点隔离到模态按钮；关闭 → 恢复后台
                 focus.borrow_mut().open_modal(vec![MODAL_BTN]);
                 focus.borrow_mut().set_focus(MODAL_BTN);
+                let f = focus.borrow().focus();
+                eprintln!("[action] modal_open");
+                eprintln!("[focus] click -> {:?}", f.map(|w| w.0));
                 Some(ModalMsg::OpenModal)
             }
             WindowEvent::MouseInput {
@@ -188,6 +216,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } => {
                 focus.borrow_mut().close_modal();
+                let f = focus.borrow().focus();
+                eprintln!("[action] modal_close");
+                eprintln!("[focus] click -> {:?}", f.map(|w| w.0));
                 Some(ModalMsg::CloseModal)
             }
             _ => None,

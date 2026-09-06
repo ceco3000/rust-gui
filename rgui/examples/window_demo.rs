@@ -207,8 +207,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } => {
                 let (x, y) = *cursor.borrow();
-                // D21 联调：鼠标事件到达确认（逻辑坐标，与 hit-test 一致）——定位"坐标没点中 vs winit 未处理鼠标"
-                eprintln!("[mouse-event] left-press at logical=({}, {})", x, y);
+                // D21 联调：鼠标事件到达确认（逻辑坐标，与 hit-test 一致）——in-region 区分
+                // 「坐标没点中 vs rect 边界错」（L3 分层诊断：in-region=false→坐标换算/点窗外；true 但 hit none→rect 边界不一致）
+                let in_region = regions.iter().any(|r| r.contains(x, y));
+                eprintln!(
+                    "[mouse-event] left-press at logical=({}, {}) in-region={}",
+                    x, y, in_region
+                );
                 match hit_test(x, y, &regions) {
                     Some(1) => {
                         eprintln!("[hit] id=1 -> AccordionMsg::Toggle");
